@@ -32,8 +32,8 @@ export default function MapPinPicker({ onSelect }: { onSelect: (lat: number, lng
       style={{ height: '300px', width: '100%' }}
     >
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-      <ClickHandler onSelect={(lat, lng) =sss> { setMarker({ lat, lng }); onSelect(lat, lng); }} />
+      <ClickHandler onSelect={(lat, lng) => { setMarker({ lat, lng }); onSelect(lat, lng); }} />
       {marker && <Marker position={[marker.lat, marker.lng]} icon={icon} />}
     </MapContainer>
   );
-}s
+}
