@@ -131,9 +131,15 @@ export function Header() {
             </button>
 
             {loggedIn && role === 'tenant' && (
-              <Link href="/search" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
-                Search Properties
-              </Link>
+              <>
+                <Link href="/home" className="flex items-center gap-1.5 text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+                  <LayoutDashboard size={16} />
+                  Dashboard
+                </Link>
+                <Link href="/search" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+                  Search Properties
+                </Link>
+              </>
             )}
 
             {loggedIn && role === 'landlord' && (
@@ -209,9 +215,15 @@ export function Header() {
             </Link>
 
             {loggedIn && role === 'tenant' && (
-              <Link href="/search" className="text-sm font-medium text-foreground py-2.5 px-2 rounded-lg hover:bg-muted">
-                Search Properties
-              </Link>
+              <>
+                <Link href="/home" className="text-sm font-medium text-foreground py-2.5 px-2 rounded-lg hover:bg-muted flex items-center gap-2">
+                  <LayoutDashboard size={16} />
+                  Dashboard
+                </Link>
+                <Link href="/search" className="text-sm font-medium text-foreground py-2.5 px-2 rounded-lg hover:bg-muted">
+                  Search Properties
+                </Link>
+              </>
             )}
             {loggedIn && role === 'landlord' && (
               <>

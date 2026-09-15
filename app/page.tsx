@@ -312,6 +312,7 @@ export default function HomePage() {
                 <ListingCard
                   key={listing.id}
                   id={listing.id}
+                  landlord_id={listing.landlord_id}
                   image={listing.photos?.[0] ?? ''}
                   price_monthly={listing.price_monthly}
                   price_yearly={listing.price_yearly}
@@ -343,6 +344,7 @@ export default function HomePage() {
                 <ListingCard
                   key={listing.id}
                   id={listing.id}
+                  landlord_id={listing.landlord_id}
                   image={listing.photos?.[0] ?? ''}
                   price_monthly={listing.price_monthly}
                   price_yearly={listing.price_yearly}
@@ -531,134 +533,134 @@ export default function HomePage() {
           </div>
         </section>
 
-     {/* Featured Upgrade Banner with Carousel */}
-<section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-primary to-emerald-900 shadow-2xl">
-    <div className="absolute top-0 right-0 w-96 h-96 bg-amber-400/10 rounded-full blur-3xl -translate-y-1/3 translate-x-1/3" />
-    <div className="absolute bottom-0 left-0 w-72 h-72 bg-emerald-400/10 rounded-full blur-3xl translate-y-1/3 -translate-x-1/3" />
-    <div
-      className="absolute inset-0 opacity-[0.07]"
-      style={{
-        backgroundImage: 'radial-gradient(circle, #fbbf24 1px, transparent 1px)',
-        backgroundSize: '24px 24px',
-      }}
-    />
+        {/* Featured Upgrade Banner with Carousel */}
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-primary to-emerald-900 shadow-2xl">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-amber-400/10 rounded-full blur-3xl -translate-y-1/3 translate-x-1/3" />
+            <div className="absolute bottom-0 left-0 w-72 h-72 bg-emerald-400/10 rounded-full blur-3xl translate-y-1/3 -translate-x-1/3" />
+            <div
+              className="absolute inset-0 opacity-[0.07]"
+              style={{
+                backgroundImage: 'radial-gradient(circle, #fbbf24 1px, transparent 1px)',
+                backgroundSize: '24px 24px',
+              }}
+            />
 
-    <div className="relative z-10 grid md:grid-cols-2 gap-10 md:gap-12 items-center p-8 md:p-14">
-      <div>
-        <span className="inline-flex items-center gap-1.5 bg-white/10 backdrop-blur-md border border-amber-400/30 text-amber-300 text-xs font-bold px-4 py-1.5 rounded-full mb-6 tracking-wide">
-          <Crown size={13} className="text-amber-400" />
-          FEATURED LISTING
-        </span>
-
-        <h3 className="text-3xl md:text-5xl font-extrabold text-white leading-tight mb-4">
-          List Your Property as{' '}
-          <span className="bg-gradient-to-r from-amber-300 to-amber-500 bg-clip-text text-transparent">
-            Featured
-          </span>
-        </h3>
-
-        <p className="text-white/70 text-sm md:text-base mb-6 max-w-sm leading-relaxed">
-          Increase visibility, get more inquiries, and close deals faster by upgrading to a Featured Listing.
-        </p>
-
-        <div className="inline-flex items-center gap-2.5 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-3 mb-7">
-          <div className="w-8 h-8 rounded-full bg-amber-400/15 flex items-center justify-center shrink-0">
-            <Eye size={15} className="text-amber-400" />
-          </div>
-          <p className="text-xs md:text-sm text-white/90">
-            Featured listings get up to <span className="font-bold text-amber-400">5× more views</span>
-          </p>
-        </div>
-
-        <Button
-          onClick={() => router.push(featured.length > 0 ? `/listing/${featured[featuredIndex].id}/feature` : '/dashboard/listings')}
-          className="bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-amber-950 font-bold px-7 py-6 rounded-full shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.03] transition-all duration-300"
-        >
-          Upgrade to Featured
-          <ChevronRight size={18} className="ml-1" />
-        </Button>
-      </div>
-
-      <div className="relative">
-        {featured.length > 0 && (
-          <div className="relative bg-white rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-500">
-            <div className="relative h-52 md:h-60">
-              <img
-                src={featured[featuredIndex]?.photos?.[0] ?? '/hero.jpg'}
-                alt={featured[featuredIndex]?.property_type ?? 'Featured property'}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
-              <span className="absolute top-3.5 left-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 text-xs font-bold px-3 py-1.5 rounded-full shadow">
-                Featured
-              </span>
-              <button
-                aria-label="Save property"
-                className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:bg-white hover:scale-110 transition-all duration-200"
-              >
-                <Heart size={16} className="text-foreground" />
-              </button>
-            </div>
-
-            <div className="p-5">
-              <p className="text-xl font-extrabold text-primary mb-1.5">
-                ₦{featured[featuredIndex]?.price_monthly?.toLocaleString()}
-                <span className="text-sm font-medium text-muted-foreground">/month</span>
-              </p>
-              <p className="text-sm text-muted-foreground flex items-center gap-1 mb-3">
-                <MapPin size={13} />
-                {featured[featuredIndex]?.location_text}
-              </p>
-              <div className="flex items-center gap-4 text-xs text-muted-foreground border-t border-border pt-3">
-                <span className="flex items-center gap-1.5">
-                  <HomeIcon size={13} /> {featured[featuredIndex]?.property_type}
+            <div className="relative z-10 grid md:grid-cols-2 gap-10 md:gap-12 items-center p-8 md:p-14">
+              <div>
+                <span className="inline-flex items-center gap-1.5 bg-white/10 backdrop-blur-md border border-amber-400/30 text-amber-300 text-xs font-bold px-4 py-1.5 rounded-full mb-6 tracking-wide">
+                  <Crown size={13} className="text-amber-400" />
+                  FEATURED LISTING
                 </span>
-                <span className="flex items-center gap-1.5">
-                  <Bed size={13} /> {featured[featuredIndex]?.bedrooms} Beds
-                </span>
+
+                <h3 className="text-3xl md:text-5xl font-extrabold text-white leading-tight mb-4">
+                  List Your Property as{' '}
+                  <span className="bg-gradient-to-r from-amber-300 to-amber-500 bg-clip-text text-transparent">
+                    Featured
+                  </span>
+                </h3>
+
+                <p className="text-white/70 text-sm md:text-base mb-6 max-w-sm leading-relaxed">
+                  Increase visibility, get more inquiries, and close deals faster by upgrading to a Featured Listing.
+                </p>
+
+                <div className="inline-flex items-center gap-2.5 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-3 mb-7">
+                  <div className="w-8 h-8 rounded-full bg-amber-400/15 flex items-center justify-center shrink-0">
+                    <Eye size={15} className="text-amber-400" />
+                  </div>
+                  <p className="text-xs md:text-sm text-white/90">
+                    Featured listings get up to <span className="font-bold text-amber-400">5× more views</span>
+                  </p>
+                </div>
+
+                <Button
+                  onClick={() => router.push(featured.length > 0 ? `/listing/${featured[featuredIndex].id}/feature` : '/dashboard/listings')}
+                  className="bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-amber-950 font-bold px-7 py-6 rounded-full shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.03] transition-all duration-300"
+                >
+                  Upgrade to Featured
+                  <ChevronRight size={18} className="ml-1" />
+                </Button>
+              </div>
+
+              <div className="relative">
+                {featured.length > 0 && (
+                  <div className="relative bg-white rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-500">
+                    <div className="relative h-52 md:h-60">
+                      <img
+                        src={featured[featuredIndex]?.photos?.[0] ?? '/hero.jpg'}
+                        alt={featured[featuredIndex]?.property_type ?? 'Featured property'}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
+                      <span className="absolute top-3.5 left-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 text-xs font-bold px-3 py-1.5 rounded-full shadow">
+                        Featured
+                      </span>
+                      <button
+                        aria-label="Save property"
+                        className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:bg-white hover:scale-110 transition-all duration-200"
+                      >
+                        <Heart size={16} className="text-foreground" />
+                      </button>
+                    </div>
+
+                    <div className="p-5">
+                      <p className="text-xl font-extrabold text-primary mb-1.5">
+                        ₦{featured[featuredIndex]?.price_monthly?.toLocaleString()}
+                        <span className="text-sm font-medium text-muted-foreground">/month</span>
+                      </p>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1 mb-3">
+                        <MapPin size={13} />
+                        {featured[featuredIndex]?.location_text}
+                      </p>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground border-t border-border pt-3">
+                        <span className="flex items-center gap-1.5">
+                          <HomeIcon size={13} /> {featured[featuredIndex]?.property_type}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <Bed size={13} /> {featured[featuredIndex]?.bedrooms} Beds
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {featured.length > 1 && (
+                  <>
+                    <button
+                      aria-label="Previous featured property"
+                      onClick={() => setFeaturedIndex((i) => (i - 1 + featured.length) % featured.length)}
+                      className="absolute top-1/2 -translate-y-1/2 -left-4 md:-left-5 w-10 h-10 rounded-full bg-white/95 backdrop-blur-md shadow-lg flex items-center justify-center hover:bg-white hover:scale-110 transition-all duration-200"
+                    >
+                      <ChevronLeft size={18} className="text-foreground" />
+                    </button>
+                    <button
+                      aria-label="Next featured property"
+                      onClick={() => setFeaturedIndex((i) => (i + 1) % featured.length)}
+                      className="absolute top-1/2 -translate-y-1/2 -right-4 md:-right-5 w-10 h-10 rounded-full bg-white/95 backdrop-blur-md shadow-lg flex items-center justify-center hover:bg-white hover:scale-110 transition-all duration-200"
+                    >
+                      <ChevronRight size={18} className="text-foreground" />
+                    </button>
+
+                    <div className="flex justify-center gap-1.5 mt-5">
+                      {featured.map((_, i) => (
+                        <button
+                          key={i}
+                          aria-label={`Go to featured property ${i + 1}`}
+                          onClick={() => setFeaturedIndex(i)}
+                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                            i === featuredIndex
+                              ? 'bg-gradient-to-r from-amber-300 to-amber-500 w-7'
+                              : 'bg-white/30 w-1.5 hover:bg-white/50'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
-        )}
-
-        {featured.length > 1 && (
-          <>
-            <button
-              aria-label="Previous featured property"
-              onClick={() => setFeaturedIndex((i) => (i - 1 + featured.length) % featured.length)}
-              className="absolute top-1/2 -translate-y-1/2 -left-4 md:-left-5 w-10 h-10 rounded-full bg-white/95 backdrop-blur-md shadow-lg flex items-center justify-center hover:bg-white hover:scale-110 transition-all duration-200"
-            >
-              <ChevronLeft size={18} className="text-foreground" />
-            </button>
-            <button
-              aria-label="Next featured property"
-              onClick={() => setFeaturedIndex((i) => (i + 1) % featured.length)}
-              className="absolute top-1/2 -translate-y-1/2 -right-4 md:-right-5 w-10 h-10 rounded-full bg-white/95 backdrop-blur-md shadow-lg flex items-center justify-center hover:bg-white hover:scale-110 transition-all duration-200"
-            >
-              <ChevronRight size={18} className="text-foreground" />
-            </button>
-
-            <div className="flex justify-center gap-1.5 mt-5">
-              {featured.map((_, i) => (
-                <button
-                  key={i}
-                  aria-label={`Go to featured property ${i + 1}`}
-                  onClick={() => setFeaturedIndex(i)}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
-                    i === featuredIndex
-                      ? 'bg-gradient-to-r from-amber-300 to-amber-500 w-7'
-                      : 'bg-white/30 w-1.5 hover:bg-white/50'
-                  }`}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  </div>
-</section>
+        </section>
 
         {/* Ready to Get Started */}
         <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">

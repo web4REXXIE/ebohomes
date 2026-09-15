@@ -29,7 +29,6 @@ const AMENITIES = ['Parking Space', '24/7 Security', 'Water Supply', 'Generator'
 export default function SearchPage() {
   const router = useRouter()
 
-
   const [listings, setListings] = useState<any[]>([])
   const [filtered, setFiltered] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,26 +40,26 @@ export default function SearchPage() {
   const [search, setSearch] = useState('')
   const [propertyType, setPropertyType] = useState('')
   const [minPrice, setMinPrice] = useState(0)
-const [maxPrice, setMaxPrice] = useState(10000000000000)
+  const [maxPrice, setMaxPrice] = useState(10000000000000)
   const [bedrooms, setBedrooms] = useState<string>('')
   const [bathrooms, setBathrooms] = useState<string>('')
   const [amenities, setAmenities] = useState<string[]>([])
 
   // Pre-fill from Home page search
   useEffect(() => {
-  const params = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams(window.location.search)
 
-  setLocationText(params.get('location') || '')
-  setPropertyType(params.get('type') || '')
+    setLocationText(params.get('location') || '')
+    setPropertyType(params.get('type') || '')
 
-  if (params.get('minPrice')) {
-    setMinPrice(Number(params.get('minPrice')))
-  }
+    if (params.get('minPrice')) {
+      setMinPrice(Number(params.get('minPrice')))
+    }
 
-  if (params.get('maxPrice')) {
-    setMaxPrice(Number(params.get('maxPrice')))
-  }
-}, [])
+    if (params.get('maxPrice')) {
+      setMaxPrice(Number(params.get('maxPrice')))
+    }
+  }, [])
 
   useEffect(() => {
     const fetchListings = async () => {
@@ -85,8 +84,8 @@ const [maxPrice, setMaxPrice] = useState(10000000000000)
     if (search) {
       results = results.filter(
         (l) =>
-         l.title?.toLowerCase().includes(search.toLowerCase()) ||
-         l.location_text?.toLowerCase().includes(search.toLowerCase())
+          l.title?.toLowerCase().includes(search.toLowerCase()) ||
+          l.location_text?.toLowerCase().includes(search.toLowerCase())
       )
     }
     if (propertyType) results = results.filter((l) => l.property_type === propertyType)
@@ -350,6 +349,7 @@ const [maxPrice, setMaxPrice] = useState(10000000000000)
                   <ListingCard
                     key={listing.id}
                     id={listing.id}
+                    landlord_id={listing.landlord_id}
                     image={listing.photos?.[0] ?? ''}
                     price_monthly={listing.price_monthly}
                     price_yearly={listing.price_yearly}

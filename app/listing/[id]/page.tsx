@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, Flag, Calendar } from 'lucide-react'
+import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, Flag, Calendar, MessageSquare, FileText } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
@@ -238,6 +238,22 @@ export default function ListingDetailPage() {
                       <Phone size={16} /> Call Landlord
                     </Button>
                   </a>
+
+                  <Button
+                    onClick={() => router.push(`/apply/${listing.id}`)}
+                    disabled={listing.status && listing.status !== 'available'}
+                    className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold mt-2 flex items-center justify-center gap-2"
+                  >
+                    <FileText size={16} /> Apply Now
+                  </Button>
+
+                  <Button
+                    onClick={() => router.push(`/messages?to=${listing.landlord_id}&listing=${listing.id}`)}
+                    variant="outline"
+                    className="w-full font-semibold mt-2 flex items-center justify-center gap-2"
+                  >
+                    <MessageSquare size={16} /> Message Landlord
+                  </Button>
                 </div>
               </div>
             </div>
