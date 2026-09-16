@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import {
   Mail, Lock, Eye, EyeOff, Phone, User, Home as HomeIcon,
   ShieldCheck, Lock as LockIcon, Headphones, Camera, FileText, Check, MessageCircle
@@ -13,8 +14,9 @@ import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
-  const [isSignup, setIsSignup] = useState(false)
+  const [isSignup, setIsSignup] = useState(searchParams.get('mode') === 'signup')
   const [signupStep, setSignupStep] = useState(1) // 1: Account, 2: Role, 3: Verification
 
   // Account fields
@@ -40,12 +42,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
+  // Reacts every time the URL's ?mode= param changes, even without a full remount —
+  // this is what makes clicking "Log in" / "Sign Up" work while already on /login.
   useEffect(() => {
-  const params = new URLSearchParams(window.location.search)
-  if (params.get('mode') === 'signup') {
-    setIsSignup(true)
-  }
-}, [])
+    setIsSignup(searchParams.get('mode') === 'signup')
+  }, [searchParams])
+
   useEffect(() => {
     if (showCamera && videoRef.current) {
       navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } }).then((stream) => {
@@ -203,7 +205,7 @@ export default function LoginPage() {
   }
 
   const switchMode = (toSignup: boolean) => {
-    setIsSignup(toSignup)
+    router.push(toSignup ? '/login?mode=signup' : '/login')
     setSignupStep(1)
     setMessage('')
   }
@@ -627,9 +629,9 @@ export default function LoginPage() {
                       <input type="checkbox" defaultChecked className="accent-primary" />
                       Remember me
                     </label>
-                    <a href="#" className="text-xs text-primary font-medium hover:underline">
+                    <Link href="/forgot-password" className="text-xs text-primary font-medium hover:underline">
                       Forgot password?
-                    </a>
+                    </Link>
                   </div>
 
                   {message && <p className="text-sm text-destructive text-center mb-4">{message}</p>}
