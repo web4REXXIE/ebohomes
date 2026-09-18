@@ -95,61 +95,57 @@ export function SplashScreen({
             />
 
             {/* Premium loading indicator */}
-            <div
-              className="
-                absolute
-                bottom-8
-                left-1/2
-                -translate-x-1/2
-                flex
-                flex-col
-                items-center
-                gap-3
-              "
-            >
-              {/* Loading bar */}
-              <div
-                className="
-                  relative
-                  w-28
-                  sm:w-32
-                  h-[3px]
-                  overflow-hidden
-                  rounded-full
-                  bg-white/30
-                  backdrop-blur-sm
-                "
-              >
-                <div
-                  className="
-                    absolute
-                    left-0
-                    top-0
-                    h-full
-                    w-1/2
-                    rounded-full
-                    bg-[#24A65A]
-                    shadow-[0_0_8px_rgba(36,166,90,0.45)]
-                    animate-ebohomes-loading
-                  "
-                />
-              </div>
+          <div
+  className="
+    absolute
+    bottom-20
+    left-1/2
+    -translate-x-1/2
+    flex
+    flex-col
+    items-center
+    gap-3
+    z-[110]
+  "
+>
+  <div
+    className="
+      relative
+      w-32
+      h-[4px]
+      overflow-hidden
+      rounded-full
+      bg-white/30
+    "
+  >
+    <div
+      className="
+        absolute
+        left-0
+        top-0
+        h-full
+        w-1/2
+        rounded-full
+        bg-[#24A65A]
+        shadow-[0_0_10px_rgba(36,166,90,0.7)]
+        animate-ebohomes-loading
+      "
+    />
+  </div>
 
-              {/* Brand loading text */}
-              <p
-                className="
-                  text-white
-                  text-[9px]
-                  sm:text-[10px]
-                  font-medium
-                  tracking-[0.38em]
-                  uppercase
-                  drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]
-                "
-              >
-                EboHomes
-              </p>
-            </div>
+  <p
+    className="
+      text-white
+      text-sm
+      font-bold
+      tracking-[0.28em]
+      uppercase
+      drop-shadow-[0_2px_5px_rgba(0,0,0,0.8)]
+    "
+  >
+    EBOHOMES
+  </p>
+</div>
           </div>
         </div>
       )}
