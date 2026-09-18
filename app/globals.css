@@ -191,3 +191,21 @@
   0%, 30% { opacity: 0; transform: translateY(30px); }
   100% { opacity: 1; transform: translateY(0); }
 }
+
+@keyframes ebhomes-loading {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  50% {
+    transform: translateX(100%);
+  }
+
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+.animate-ebohomes-loading {
+  animation: ebhomes-loading 1.5s ease-in-out infinite;
+}
