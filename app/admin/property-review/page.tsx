@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, X, FileEdit, Home as HomeIcon } from 'lucide-react'
+import { Check, X, FileEdit, Home as HomeIcon, ShieldCheck, ShieldOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 
@@ -18,6 +18,9 @@ export default function PropertyReviewPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'pending' | 'approved' | 'rejected'>('pending')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [ownershipDocUrl, setOwnershipDocUrl] = useState('')
+  const [rejectReason, setRejectReason] = useState('')
+  const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     fetchListings()
@@ -41,8 +44,34 @@ export default function PropertyReviewPage() {
       setSelectedId(filtered[0].id)
     }
     if (filtered.length === 0) setSelectedId(null)
+    setRejectReason('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, listings])
+
+  useEffect(() => {
+    setRejectReason('')
+  }, [selected?.id])
+
+  // ---- generate a signed URL for the ownership document whenever the selected listing changes ----
+  useEffect(() => {
+    const loadDocUrl = async () => {
+      setOwnershipDocUrl('')
+      if (!selected?.ownership_doc_url) return
+
+      // old data may still hold a full public URL — use it as-is for now
+      if (selected.ownership_doc_url.startsWith('http')) {
+        setOwnershipDocUrl(selected.ownership_doc_url)
+        return
+      }
+
+      // otherwise treat it as a storage path and generate a signed URL
+      const { data } = await supabase.storage
+        .from('ownership-docs')
+        .createSignedUrl(selected.ownership_doc_url, 60 * 5)
+      if (data?.signedUrl) setOwnershipDocUrl(data.signedUrl)
+    }
+    loadDocUrl()
+  }, [selected?.id])
 
   const handleToggleFeatured = async (id: string, current: boolean) => {
     const { error } = await supabase.from('listings').update({ featured: !current }).eq('id', id)
@@ -52,13 +81,88 @@ export default function PropertyReviewPage() {
   }
 
   const handleApprove = async (id: string) => {
-    const { error } = await supabase.from('listings').update({ status: 'approved' }).eq('id', id)
-    if (!error) setListings((prev) => prev.map((l) => (l.id === id ? { ...l, status: 'approved' } : l)))
+    setUpdating(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const nowIso = new Date().toISOString()
+
+    const { error } = await supabase
+      .from('listings')
+      .update({
+        status: 'approved',
+        reviewed_by: user?.id ?? null,
+        reviewed_at: nowIso,
+        rejection_reason: null,
+      })
+      .eq('id', id)
+
+    if (!error) {
+      setListings((prev) => prev.map((l) =>
+        l.id === id ? { ...l, status: 'approved', reviewed_at: nowIso, rejection_reason: null } : l
+      ))
+    } else {
+      alert('Failed to approve: ' + error.message)
+    }
+    setUpdating(false)
   }
 
   const handleReject = async (id: string) => {
-    const { error } = await supabase.from('listings').update({ status: 'rejected' }).eq('id', id)
-    if (!error) setListings((prev) => prev.map((l) => (l.id === id ? { ...l, status: 'rejected' } : l)))
+    if (!rejectReason.trim()) {
+      alert('Please enter a rejection reason before rejecting.')
+      return
+    }
+    setUpdating(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const nowIso = new Date().toISOString()
+    const reason = rejectReason.trim()
+
+    const { error } = await supabase
+      .from('listings')
+      .update({
+        status: 'rejected',
+        reviewed_by: user?.id ?? null,
+        reviewed_at: nowIso,
+        rejection_reason: reason,
+      })
+      .eq('id', id)
+
+    if (!error) {
+      setListings((prev) => prev.map((l) =>
+        l.id === id ? { ...l, status: 'rejected', reviewed_at: nowIso, rejection_reason: reason } : l
+      ))
+      setRejectReason('')
+    } else {
+      alert('Failed to reject: ' + error.message)
+    }
+    setUpdating(false)
+  }
+
+  const handleToggleVerified = async (id: string, current: boolean) => {
+    const confirmMsg = current
+      ? 'Remove the EboHomes Verified badge from this property?'
+      : 'Mark this property as EboHomes Verified? This tells tenants EboHomes has confirmed real-world facts about it — only do this if you actually have grounds to back that claim.'
+    if (!window.confirm(confirmMsg)) return
+
+    setUpdating(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const nowIso = new Date().toISOString()
+
+    const { error } = await supabase
+      .from('listings')
+      .update({
+        verified: !current,
+        verified_by: !current ? (user?.id ?? null) : null,
+        verified_at: !current ? nowIso : null,
+      })
+      .eq('id', id)
+
+    if (!error) {
+      setListings((prev) => prev.map((l) =>
+        l.id === id ? { ...l, verified: !current, verified_at: !current ? nowIso : null } : l
+      ))
+    } else {
+      alert('Failed to update verification: ' + error.message)
+    }
+    setUpdating(false)
   }
 
   const counts = {
@@ -112,7 +216,10 @@ export default function PropertyReviewPage() {
                   </div>
                 )}
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{l.title ?? 'Untitled listing'}</p>
+                  <p className="text-sm font-semibold text-foreground truncate flex items-center gap-1">
+                    {l.title ?? 'Untitled listing'}
+                    {l.verified && <ShieldCheck size={13} className="text-emerald-600 shrink-0" />}
+                  </p>
                   <p className="text-xs text-muted-foreground truncate">{l.location_text}</p>
                   <p className="text-[11px] text-muted-foreground">
                     Submitted {l.created_at ? new Date(l.created_at).toLocaleDateString() : ''}
@@ -150,7 +257,14 @@ export default function PropertyReviewPage() {
               <div className="bg-card border border-border rounded-lg p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h2 className="text-xl font-bold text-foreground">{selected.title ?? 'Untitled listing'}</h2>
+                    <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                      {selected.title ?? 'Untitled listing'}
+                      {selected.verified && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                          <ShieldCheck size={12} /> EboHomes Verified
+                        </span>
+                      )}
+                    </h2>
                     <p className="text-sm text-muted-foreground">{selected.location_text}</p>
                   </div>
                   <p className="text-lg font-bold text-primary">₦{selected.price_monthly?.toLocaleString()}/mo</p>
@@ -186,12 +300,29 @@ export default function PropertyReviewPage() {
                   <p><span className="text-muted-foreground">Available:</span> <span className="font-medium text-foreground">{selected.availability_date ?? 'Immediately'}</span></p>
                 </div>
 
+                {(selected.status === 'approved' || selected.status === 'rejected') && selected.reviewed_at && (
+                  <p className="text-xs text-muted-foreground mb-1 border-t border-border pt-3">
+                    {selected.status === 'approved' ? 'Approved' : 'Rejected'} on {new Date(selected.reviewed_at).toLocaleString()}
+                  </p>
+                )}
+                {selected.status === 'rejected' && selected.rejection_reason && (
+                  <p className="text-xs text-destructive mb-1">
+                    <span className="font-semibold">Reason:</span> {selected.rejection_reason}
+                  </p>
+                )}
+                {selected.verified && selected.verified_at && (
+                  <p className="text-xs text-emerald-700 mb-3">
+                    <ShieldCheck size={12} className="inline mr-1" />
+                    Verified on {new Date(selected.verified_at).toLocaleString()}
+                  </p>
+                )}
+
                 {selected.ownership_doc_url && (
                   <a
-                    href={selected.ownership_doc_url}
+                    href={ownershipDocUrl || '#'}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm text-primary font-medium hover:underline mb-4"
+                    className="inline-flex items-center gap-1.5 text-sm text-primary font-medium hover:underline"
                   >
                     <FileEdit size={14} /> View ownership document
                   </a>
@@ -209,17 +340,30 @@ export default function PropertyReviewPage() {
                   ))}
                 </ul>
 
+                {selected.status !== 'rejected' && (
+                  <label className="block mb-3">
+                    <span className="text-xs font-medium text-muted-foreground">Rejection reason (required to reject)</span>
+                    <textarea
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. Photos don't match the description"
+                      className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                    />
+                  </label>
+                )}
+
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button
                     onClick={() => handleApprove(selected.id)}
-                    disabled={selected.status === 'approved'}
+                    disabled={updating || selected.status === 'approved'}
                     className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold flex items-center justify-center gap-2"
                   >
                     <Check size={16} /> Approve Property
                   </Button>
                   <Button
                     onClick={() => handleReject(selected.id)}
-                    disabled={selected.status === 'rejected'}
+                    disabled={updating || selected.status === 'rejected' || !rejectReason.trim()}
                     variant="outline"
                     className="flex-1 border-destructive text-destructive hover:bg-destructive/10 font-semibold flex items-center justify-center gap-2"
                   >
@@ -235,6 +379,25 @@ export default function PropertyReviewPage() {
                     ⭐️ {selected.featured ? 'Unfeature' : 'Feature'} Property
                   </Button>
                 </div>
+              </div>
+
+              {/* Verification — separate from approval */}
+              <div className="bg-card border border-border rounded-lg p-5">
+                <h3 className="font-semibold text-foreground mb-1">EboHomes Verification</h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  A distinct trust claim from approval — only mark this once you have real grounds (inspection, confirmed ownership, etc.) to back it.
+                </p>
+                <Button
+                  onClick={() => handleToggleVerified(selected.id, !!selected.verified)}
+                  disabled={updating}
+                  variant="outline"
+                  className={`w-full font-semibold flex items-center justify-center gap-2 ${
+                    selected.verified ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-border text-muted-foreground'
+                  }`}
+                >
+                  {selected.verified ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
+                  {selected.verified ? 'Remove Verified Badge' : 'Mark as EboHomes Verified'}
+                </Button>
               </div>
             </div>
           )}
