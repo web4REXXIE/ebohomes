@@ -25,10 +25,19 @@ export default function EditListingPage() {
 
   useEffect(() => {
     const fetchListing = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        setMessage('You must be logged in to edit a listing.');
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('listings')
         .select('*')
         .eq('id', id)
+        .eq('landlord_id', user.id)
         .single();
 
       if (error || !data) {
@@ -56,6 +65,14 @@ export default function EditListingPage() {
     setSaving(true);
     setMessage('');
 
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      setMessage('You must be logged in to save changes.');
+      setSaving(false);
+      return;
+    }
+
     const { error } = await supabase
       .from('listings')
       .update({
@@ -68,7 +85,8 @@ export default function EditListingPage() {
         contact_info: formData.phoneNumber,
         availability_date: formData.availabilityDate || null,
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('landlord_id', user.id);
 
     setSaving(false);
 

@@ -24,6 +24,8 @@ type Landlord = {
   badge: string | null
   avatar_url: string | null
   created_at: string
+  verification_reviewed_at: string | null
+  rejection_reason: string | null
 }
 
 type Tab = 'pending' | 'verified' | 'rejected'
@@ -35,6 +37,8 @@ export default function VerifyLandlordsPage() {
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
+  const [docUrl, setDocUrl] = useState('')
+  const [rejectReason, setRejectReason] = useState('')
 
   const fetchLandlords = useCallback(async () => {
     setLoading(true)
@@ -53,7 +57,7 @@ export default function VerifyLandlordsPage() {
   function statusOf(l: Landlord): Tab {
     if (l.verification_status === 'verified' || l.verified === true) return 'verified'
     if (l.verification_status === 'rejected') return 'rejected'
-    return 'pending' // covers null, 'pending', or anything unrecognized
+    return 'pending'
   }
 
   const filtered = landlords.filter((l) => {
@@ -74,8 +78,28 @@ export default function VerifyLandlordsPage() {
       setSelectedId(filtered[0].id)
     }
     if (filtered.length === 0) setSelectedId(null)
+    setRejectReason('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, landlords, search])
+
+  useEffect(() => {
+    setRejectReason('')
+    const loadDocUrl = async () => {
+      setDocUrl('')
+      if (!selected?.ownership_doc_url) return
+
+      if (selected.ownership_doc_url.startsWith('http')) {
+        setDocUrl(selected.ownership_doc_url)
+        return
+      }
+
+      const { data } = await supabase.storage
+        .from('ownership-docs')
+        .createSignedUrl(selected.ownership_doc_url, 60 * 5)
+      if (data?.signedUrl) setDocUrl(data.signedUrl)
+    }
+    loadDocUrl()
+  }, [selected?.id])
 
   const counts = {
     pending: landlords.filter((l) => statusOf(l) === 'pending').length,
@@ -85,24 +109,62 @@ export default function VerifyLandlordsPage() {
 
   async function handleVerify(id: string) {
     setUpdating(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const nowIso = new Date().toISOString()
+
     const { error } = await supabase
       .from('profiles')
-      .update({ verification_status: 'verified', verified: true })
+      .update({
+        verification_status: 'verified',
+        verified: true,
+        verification_reviewed_by: user?.id ?? null,
+        verification_reviewed_at: nowIso,
+        rejection_reason: null,
+      })
       .eq('id', id)
+
     if (!error) {
-      setLandlords((prev) => prev.map((l) => (l.id === id ? { ...l, verification_status: 'verified', verified: true } : l)))
+      setLandlords((prev) => prev.map((l) =>
+        l.id === id
+          ? { ...l, verification_status: 'verified', verified: true, verification_reviewed_at: nowIso, rejection_reason: null }
+          : l
+      ))
+    } else {
+      alert('Failed to verify: ' + error.message)
     }
     setUpdating(false)
   }
 
   async function handleReject(id: string) {
+    if (!rejectReason.trim()) {
+      alert('Please enter a rejection reason before rejecting.')
+      return
+    }
     setUpdating(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const nowIso = new Date().toISOString()
+    const reason = rejectReason.trim()
+
     const { error } = await supabase
       .from('profiles')
-      .update({ verification_status: 'rejected', verified: false })
+      .update({
+        verification_status: 'rejected',
+        verified: false,
+        verification_reviewed_by: user?.id ?? null,
+        verification_reviewed_at: nowIso,
+        rejection_reason: reason,
+      })
       .eq('id', id)
+
     if (!error) {
-      setLandlords((prev) => prev.map((l) => (l.id === id ? { ...l, verification_status: 'rejected', verified: false } : l)))
+      setLandlords((prev) => prev.map((l) =>
+        l.id === id
+          ? { ...l, verification_status: 'rejected', verified: false, verification_reviewed_at: nowIso, rejection_reason: reason }
+          : l
+      ))
+      setRejectReason('')
+    } else {
+      alert('Failed to reject: ' + error.message)
     }
     setUpdating(false)
   }
@@ -119,7 +181,6 @@ export default function VerifyLandlordsPage() {
       <h1 className="text-2xl font-bold text-foreground mb-1">Verify Landlords</h1>
       <p className="text-sm text-muted-foreground mb-6">Review and verify landlord registrations and documents.</p>
 
-      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {cards.map((c) => (
           <div key={c.label} className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
@@ -134,7 +195,6 @@ export default function VerifyLandlordsPage() {
         ))}
       </div>
 
-      {/* Search */}
       <div className="relative mb-4">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -145,7 +205,6 @@ export default function VerifyLandlordsPage() {
         />
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 mb-6">
         {(['pending', 'verified', 'rejected'] as const).map((t) => (
           <button
@@ -168,7 +227,6 @@ export default function VerifyLandlordsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* List */}
           <div className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
             {filtered.map((l) => (
               <button
@@ -196,7 +254,6 @@ export default function VerifyLandlordsPage() {
             ))}
           </div>
 
-          {/* Detail */}
           {selected && (
             <div className="lg:col-span-2 space-y-4">
               <div className="bg-card border border-border rounded-lg p-5">
@@ -250,9 +307,19 @@ export default function VerifyLandlordsPage() {
                     <p><span className="text-muted-foreground">Badge:</span> <span className="font-medium text-foreground">{selected.badge}</span></p>
                   )}
                 </div>
+
+                {statusOf(selected) !== 'pending' && selected.verification_reviewed_at && (
+                  <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
+                    {statusOf(selected) === 'verified' ? 'Verified' : 'Rejected'} on {new Date(selected.verification_reviewed_at).toLocaleString()}
+                  </p>
+                )}
+                {statusOf(selected) === 'rejected' && selected.rejection_reason && (
+                  <p className="text-xs text-destructive mt-1">
+                    <span className="font-semibold">Reason:</span> {selected.rejection_reason}
+                  </p>
+                )}
               </div>
 
-              {/* Bank details */}
               {(selected.bank_name || selected.bank_account_name || selected.bank_account_number) && (
                 <div className="bg-card border border-border rounded-lg p-5">
                   <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
@@ -266,12 +333,11 @@ export default function VerifyLandlordsPage() {
                 </div>
               )}
 
-              {/* Documents */}
               <div className="bg-card border border-border rounded-lg p-5">
                 <h3 className="font-semibold text-foreground mb-3">Documents</h3>
                 {selected.ownership_doc_url ? (
                   <a
-                    href={selected.ownership_doc_url}
+                    href={docUrl || '#'}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-2 text-sm text-primary font-medium hover:underline border border-border rounded-lg px-3 py-2"
@@ -283,25 +349,36 @@ export default function VerifyLandlordsPage() {
                 )}
               </div>
 
-              {/* Actions */}
-              <div className="bg-card border border-border rounded-lg p-5">
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <button
-                    onClick={() => handleVerify(selected.id)}
-                    disabled={updating || statusOf(selected) === 'verified'}
-                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    <Check size={16} /> Verify Landlord
-                  </button>
-                  <button
-                    onClick={() => handleReject(selected.id)}
-                    disabled={updating || statusOf(selected) === 'rejected'}
-                    className="flex-1 border border-destructive text-destructive hover:bg-destructive/10 font-semibold rounded-lg py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    <X size={16} /> Reject
-                  </button>
+              {statusOf(selected) === 'pending' && (
+                <div className="bg-card border border-border rounded-lg p-5 space-y-3">
+                  <label className="block">
+                    <span className="text-xs font-medium text-muted-foreground">Rejection reason (required to reject)</span>
+                    <textarea
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. CAC number doesn't match business name"
+                      className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                    />
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                      onClick={() => handleVerify(selected.id)}
+                      disabled={updating}
+                      className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {updating ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Verify Landlord
+                    </button>
+                    <button
+                      onClick={() => handleReject(selected.id)}
+                      disabled={updating || !rejectReason.trim()}
+                      className="flex-1 border border-destructive text-destructive hover:bg-destructive/10 font-semibold rounded-lg py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <X size={16} /> Reject
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>

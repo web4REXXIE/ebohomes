@@ -18,12 +18,14 @@ import {
   Bell,
   Menu,
   X,
+  ShieldCheck,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const NAV = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'My Listings', href: '/dashboard/listings', icon: List },
+  { label: 'Get Verified', href: '/dashboard/verify', icon: ShieldCheck },
   { label: 'Add New Listing', href: '/list-property', icon: Plus },
   { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badgeKey: 'messages' },
   { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
@@ -113,7 +115,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  return (
+return (
     <div className="min-h-screen flex bg-background">
       {/* Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 border-r border-border bg-card shrink-0 h-screen sticky top-0">
@@ -199,7 +201,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </header>
 
-        {mobileNavOpen && (
+{mobileNavOpen && (
           <div className="fixed inset-0 z-50 lg:hidden">
             <div className="absolute inset-0 bg-black/50" onClick={() => setMobileNavOpen(false)} />
             <div className="absolute left-0 top-0 h-full w-72 bg-card shadow-xl flex flex-col">

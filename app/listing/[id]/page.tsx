@@ -8,6 +8,7 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import dynamic from 'next/dynamic'
+import { ReportListingModal } from '@/components/report-listing-modal'
 
 const MapPlaceholder = dynamic(
   () => import('@/components/map-placeholder').then((mod) => ({ default: mod.MapPlaceholder })),
@@ -22,6 +23,7 @@ export default function ListingDetailPage() {
   const [loading, setLoading] = useState(true)
   const [currentPhoto, setCurrentPhoto] = useState(0)
   const [saved, setSaved] = useState(false)
+  const [showReportModal, setShowReportModal] = useState(false)
 
   useEffect(() => {
     const fetchListing = async () => {
@@ -191,9 +193,16 @@ export default function ListingDetailPage() {
               </div>
             )}
 
-            <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors">
-              <Flag size={12} /> Report this listing
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center gap-2 text-sm font-semibold text-destructive border border-destructive rounded-md px-3 py-2 hover:bg-destructive hover:text-white transition-colors"
+            >
+              <Flag size={14} /> Report this listing
             </button>
+
+            {showReportModal && (
+              <ReportListingModal listingId={listing.id} onClose={() => setShowReportModal(false)} />
+            )}
           </div>
 
           {/* Right: sticky contact card */}

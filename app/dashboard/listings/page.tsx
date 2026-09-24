@@ -1,221 +1,276 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import {
-  Home,
-  CheckCircle2,
-  Clock,
-  Star,
-  Eye,
-  MessageCircle,
-  Plus,
-  List,
-  CreditCard,
-  ArrowRight,
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, Flag, Calendar, MessageSquare, FileText } from 'lucide-react'
+import { Header } from '@/components/header'
+import { Footer } from '@/components/footer'
+import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
+import dynamic from 'next/dynamic'
+import { ReportListingModal } from '@/components/report-listing-modal'
 
-export default function DashboardOverview() {
+const MapPlaceholder = dynamic(
+  () => import('@/components/map-placeholder').then((mod) => ({ default: mod.MapPlaceholder })),
+  { ssr: false }
+)
+a
+export default function ListingDetailPage() {
+  const { id } = useParams()
   const router = useRouter()
-  const [profile, setProfile] = useState<any>(null)
-  const [allListings, setAllListings] = useState<any[]>([])
-  const [stats, setStats] = useState({ total: 0, published: 0, pending: 0, featured: 0, totalViews: 0, newEnquiries: 0 })
-  const [attention, setAttention] = useState<any[]>([])
-  const [activity, setActivity] = useState<any[]>([])
+  const [listing, setListing] = useState<any>(null)
+  const [landlord, setLandlord] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [currentPhoto, setCurrentPhoto] = useState(0)
+  const [saved, setSaved] = useState(false)
+  const [showReportModal, setShowReportModal] = useState(false)
 
   useEffect(() => {
-    const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+    const fetchListing = async () => {
+      const { data } = await supabase.from('listings').select('*').eq('id', id).single()
+      setListing(data)
 
-      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profileData)
-
-      const { data: listings } = await supabase
-        .from('listings')
-        .select('*')
-        .eq('landlord_id', user.id)
-        .order('created_at', { ascending: false })
-
-      setAllListings(listings ?? [])
-
-      const total = listings?.length ?? 0
-      const published = listings?.filter((l) => l.status === 'approved').length ?? 0
-      const pending = listings?.filter((l) => l.status === 'pending').length ?? 0
-      const featured = listings?.filter((l) => l.featured).length ?? 0
-      const totalViews = listings?.reduce((sum, l) => sum + (l.views ?? 0), 0) ?? 0
-
-      setStats({ total, published, pending, featured, totalViews, newEnquiries: 0 })
-      setAttention(listings?.filter((l) => l.status === 'pending' || l.status === 'rejected').slice(0, 3) ?? [])
-
-      const { data: notifs } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5)
-
-      setActivity(notifs ?? [])
+      if (data?.landlord_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, phone, verified')
+          .eq('id', data.landlord_id)
+          .maybeSingle()
+        setLandlord(profile)
+      }
       setLoading(false)
     }
-    load()
-  }, [])
+    if (id) fetchListing()
+  }, [id])
 
   if (loading) {
     return (
-      <div className="p-6 max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-3 gap-4">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="h-24 bg-card rounded-2xl border border-border animate-pulse" />
-        ))}
+      <div className="min-h-screen flex flex-col bg-background">
+        <Header />
+        <div className="max-w-6xl mx-auto px-4 py-10 w-full animate-pulse">
+          <div className="h-96 bg-secondary rounded-lg mb-4" />
+          <div className="h-6 bg-secondary rounded w-1/3 mb-2" />
+          <div className="h-4 bg-secondary rounded w-1/4" />
+        </div>
+        <Footer />
       </div>
     )
   }
 
-  const featurableListing =
-    allListings.find((l) => l.status === 'approved' && !l.featured) ??
-    allListings.find((l) => l.status === 'approved') ??
-    allListings[0] ??
-    null
-
-  const handleFeatureClick = () => {
-    if (featurableListing) {
-      router.push(`/listing/${featurableListing.id}/feature`)
-    } else {
-      router.push('/dashboard/listings')
-    }
+  if (!listing) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Header />
+        <div className="max-w-2xl mx-auto px-4 py-20 text-center">
+          <p className="text-lg font-semibold text-foreground mb-2">Listing not found</p>
+          <button onClick={() => router.push('/search')} className="text-primary text-sm font-medium hover:underline">
+            ← Back to search
+          </button>
+        </div>
+        <Footer />
+      </div>
+    )
   }
 
-  const STAT_CARDS = [
-    { label: 'Total Listings', sub: 'All your properties', value: stats.total, icon: Home, color: 'bg-primary/10 text-primary' },
-    { label: 'Published', sub: 'Live on EboHomes', value: stats.published, icon: CheckCircle2, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Pending Review', sub: 'Awaiting approval', value: stats.pending, icon: Clock, color: 'bg-amber-50 text-amber-600' },
-    { label: 'Featured', sub: 'Currently featured', value: stats.featured, icon: Star, color: 'bg-amber-50 text-amber-500' },
-    { label: 'Total Views', sub: 'All time views', value: stats.totalViews, icon: Eye, color: 'bg-blue-50 text-blue-600' },
-    { label: 'New Enquiries', sub: 'This week', value: stats.newEnquiries, icon: MessageCircle, color: 'bg-purple-50 text-purple-600' },
-  ]
-
-  const QUICK_ACTIONS = [
-    { label: 'Add New Property', sub: 'List a new property', icon: Plus, href: '/list-property', action: undefined, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Feature a Property', sub: 'Get more visibility', icon: Star, href: '', action: handleFeatureClick, color: 'bg-amber-50 text-amber-500' },
-    { label: 'View My Listings', sub: 'Manage properties', icon: List, href: '/dashboard/listings', action: undefined, color: 'bg-blue-50 text-blue-600' },
-    { label: 'Messages', sub: 'View messages', icon: MessageCircle, href: '/dashboard/messages', action: undefined, color: 'bg-purple-50 text-purple-600' },
-    { label: 'Payments', sub: 'View transactions', icon: CreditCard, href: '/dashboard/payments', action: undefined, color: 'bg-primary/10 text-primary' },
-  ]
+  const photos: string[] = listing.photos || []
+  const whatsappMessage = `Hi, I found your listing on EboHomes: ${listing.title} in ${listing.location_text}. Is it still available?`
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground mb-1">Good morning, {profile?.name?.split(' ')[0] ?? 'Landlord'} 👋</h1>
-          <p className="text-sm text-muted-foreground">Welcome back! Here's what's happening with your properties.</p>
-        </div>
-      </div>
+    <div className="min-h-screen flex flex-col bg-background">
+      <Header />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-        {STAT_CARDS.map((s) => (
-          <div key={s.label} className="bg-card border border-border rounded-2xl p-4">
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center mb-3 ${s.color}`}>
-              <s.icon size={16} />
-            </div>
-            <p className="text-xl font-extrabold text-foreground">{s.value}</p>
-            <p className="text-xs font-semibold text-foreground">{s.label}</p>
-            <p className="text-[11px] text-muted-foreground">{s.sub}</p>
-          </div>
-        ))}
-      </div>
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+        <button onClick={() => router.back()} className="text-sm text-primary font-medium hover:underline mb-4">
+          ← Back to search
+        </button>
 
-      <div className="grid lg:grid-cols-3 gap-6 mb-8">
-        <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-foreground">Recent Activity</h2>
-            <button onClick={() => router.push('/dashboard/notifications')} className="text-xs font-semibold text-primary">
-              View All
-            </button>
-          </div>
-          {activity.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No recent activity yet.</p>
-          ) : (
-            <div className="space-y-4">
-              {activity.map((a) => (
-                <div key={a.id} className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <CheckCircle2 size={14} className="text-primary" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm text-foreground">{a.title}</p>
-                    <p className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200 rounded-2xl p-5 flex flex-col">
-          <h3 className="font-bold text-foreground mb-1.5">Promote Your Listings</h3>
-          <p className="text-xs text-muted-foreground mb-4 flex-1">
-            Feature your properties to get up to 5× more views and receive more enquiries from serious tenants.
-          </p>
-          <button
-            onClick={handleFeatureClick}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-bold rounded-full py-2.5"
-          >
-            Upgrade to Featured
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-8">
-        <h2 className="font-bold text-foreground mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {QUICK_ACTIONS.map((a) => (
-            <button
-              key={a.label}
-              onClick={() => (a.action ? a.action() : router.push(a.href))}
-              className="bg-card border border-border rounded-2xl p-4 text-left hover:border-primary/40 hover:shadow-sm transition-all"
-            >
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center mb-3 ${a.color}`}>
-                <a.icon size={16} />
-              </div>
-              <p className="text-sm font-semibold text-foreground">{a.label}</p>
-              <p className="text-xs text-muted-foreground">{a.sub}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold text-foreground">Listings Requiring Attention</h2>
-          <button onClick={() => router.push('/dashboard/listings')} className="text-xs font-semibold text-primary flex items-center gap-1">
-            View All <ArrowRight size={12} />
-          </button>
-        </div>
-        {attention.length === 0 ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted-foreground text-sm">
-            Nothing needs your attention right now 🎉
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {attention.map((l) => (
-              <div key={l.id} className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4">
-                <img src={l.photos?.[0] ?? '/placeholder-property.jpg'} alt={l.property_type} className="w-16 h-16 rounded-xl object-cover shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-foreground text-sm truncate">{l.property_type}</p>
-                  <p className="text-xs text-muted-foreground truncate">{l.location_text}</p>
-                </div>
-                <span className={`text-xs font-bold px-3 py-1.5 rounded-full shrink-0 ${
-                  l.status === 'pending' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'
-                }`}>
-                  {l.status === 'pending' ? 'Pending Review' : 'Rejected'}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left: photos + details */}
+          <div className="lg:col-span-2">
+            {/* Photo gallery */}
+            <div className="relative rounded-lg overflow-hidden border border-border mb-2">
+              {listing.verified && (
+                <span className="absolute top-3 left-3 z-10 bg-primary text-primary-foreground text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1">
+                  <ShieldCheck size={12} /> Verified
                 </span>
+              )}
+              <button
+                onClick={() => setSaved(!saved)}
+                className="absolute top-3 right-14 z-10 w-9 h-9 rounded-full bg-white/90 flex items-center justify-center"
+              >
+                <Heart size={18} className={saved ? 'fill-destructive text-destructive' : 'text-foreground'} />
+              </button>
+              <button className="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-white/90 flex items-center justify-center">
+                <Share2 size={16} className="text-foreground" />
+              </button>
+
+              {photos.length > 0 ? (
+                <img src={photos[currentPhoto]} alt={listing.title} className="w-full h-96 object-cover" />
+              ) : (
+                <div className="w-full h-96 bg-secondary flex items-center justify-center text-muted-foreground">
+                  No Photos
+                </div>
+              )}
+              {photos.length > 1 && (
+                <span className="absolute bottom-3 left-3 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                  {currentPhoto + 1} / {photos.length}
+                </span>
+              )}
+            </div>
+
+            {photos.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto mb-6 pb-1">
+                {photos.map((url, i) => (
+                  <img
+                    key={i}
+                    src={url}
+                    onClick={() => setCurrentPhoto(i)}
+                    className={`w-20 h-16 object-cover rounded-md cursor-pointer border-2 shrink-0 ${
+                      i === currentPhoto ? 'border-primary' : 'border-transparent'
+                    }`}
+                  />
+                ))}
               </div>
-            ))}
+            )}
+
+            {/* Title & price */}
+            <div className="flex items-start justify-between gap-4 mb-1">
+              <h1 className="text-2xl font-bold text-foreground">{listing.title}</h1>
+            </div>
+            <p className="flex items-center gap-1 text-muted-foreground text-sm mb-4">
+              <MapPin size={14} /> {listing.location_text}
+            </p>
+
+            <div className="flex flex-wrap gap-2 mb-6">
+              {listing.property_type && (
+                <span className="bg-secondary text-foreground text-xs font-medium px-3 py-1.5 rounded-full">
+                  {listing.property_type}
+                </span>
+              )}
+              {listing.bedrooms != null && (
+                <span className="bg-secondary text-foreground text-xs font-medium px-3 py-1.5 rounded-full">
+                  {listing.bedrooms} Bedrooms
+                </span>
+              )}
+              {listing.bathrooms != null && (
+                <span className="bg-secondary text-foreground text-xs font-medium px-3 py-1.5 rounded-full">
+                  {listing.bathrooms} Bathrooms
+                </span>
+              )}
+              {listing.availability_date && (
+                <span className="bg-primary/10 text-primary text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1">
+                  <Calendar size={12} /> Available: {listing.availability_date}
+                </span>
+              )}
+            </div>
+
+            {listing.description && (
+              <div className="mb-6">
+                <h3 className="font-semibold text-foreground mb-2">Description</h3>
+                <p className="text-muted-foreground text-sm leading-relaxed">{listing.description}</p>
+              </div>
+            )}
+
+            {listing.amenities?.length > 0 && (
+              <div className="mb-6">
+                <h3 className="font-semibold text-foreground mb-3">Amenities</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {listing.amenities.map((a: string) => (
+                    <span key={a} className="text-sm text-foreground flex items-center gap-2">
+                      <ShieldCheck size={14} className="text-primary" /> {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {listing.lat && listing.lng && (
+              <div className="mb-6">
+                <h3 className="font-semibold text-foreground mb-3">Location</h3>
+                <div className="rounded-lg overflow-hidden border border-border">
+                  <MapPlaceholder height="h-64" listings={[{ id: listing.id, lat: listing.lat, lng: listing.lng, title: listing.title }]} />
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center gap-2 text-sm font-semibold text-destructive border border-destructive rounded-md px-3 py-2 hover:bg-destructive hover:text-white transition-colors"
+            >
+              <Flag size={14} /> Report this listing
+            </button>
+
+            {showReportModal && (
+              <ReportListingModal listingId={listing.id} onClose={() => setShowReportModal(false)} />
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Right: sticky contact card */}
+          <div className="lg:col-span-1">
+            <div className="sticky top-24 space-y-4">
+              <div className="bg-card border border-border rounded-lg p-5">
+                <p className="text-2xl font-bold text-primary">₦{listing.price_monthly?.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mb-4">per month</p>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-sm font-semibold text-foreground mb-3">Contact Landlord</p>
+                  {landlord && (
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold text-foreground">
+                        {landlord.full_name?.[0] ?? 'L'}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{landlord.full_name}</p>
+                        {landlord.verified && (
+                          <p className="text-xs text-primary flex items-center gap-1">
+                            <ShieldCheck size={11} /> Verified Landlord
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={() =>
+                      window.open(
+                        `https://wa.me/${listing.contact_info?.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMessage)}`,
+                        '_blank'
+                      )
+                    }
+                    className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-semibold mb-2 flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle size={16} /> Chat on WhatsApp
+                  </Button>
+
+                  <a href={`tel:${listing.contact_info}`}>
+                    <Button variant="outline" className="w-full font-semibold flex items-center justify-center gap-2">
+                      <Phone size={16} /> Call Landlord
+                    </Button>
+                  </a>
+
+                  <Button
+                    onClick={() => router.push(`/apply/${listing.id}`)}
+                    disabled={listing.status && listing.status !== 'available'}
+                    className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold mt-2 flex items-center justify-center gap-2"
+                  >
+                    <FileText size={16} /> Apply Now
+                  </Button>
+
+                  <Button
+                    onClick={() => router.push(`/messages?to=${listing.landlord_id}&listing=${listing.id}`)}
+                    variant="outline"
+                    className="w-full font-semibold mt-2 flex items-center justify-center gap-2"
+                  >
+                    <MessageSquare size={16} /> Message Landlord
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <Footer />
     </div>
   )
 }
