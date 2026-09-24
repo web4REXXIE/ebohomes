@@ -1,8 +1,21 @@
-'use client';
+='use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
-import { PROPERTY_TYPES } from '@/lib/mock-data';
+
+const PROPERTY_TYPES = [
+  'Flat / Apartment',
+  'Bungalow',
+  'Duplex',
+  'Self Contain',
+  'Penthouse',
+  'Hostel',
+  'Office',
+  'Shop / Mall',
+  'Warehouse',
+  'Land / Plot',
+  'Event Center',
+];
 
 export default function EditListingPage() {
   const router = useRouter();
@@ -81,6 +94,7 @@ export default function EditListingPage() {
         property_type: formData.propertyType,
         bedrooms: Number(formData.bedrooms),
         price_monthly: Number(formData.monthlyRent),
+        price_yearly: Number(formData.monthlyRent) * 12,
         description: formData.description,
         contact_info: formData.phoneNumber,
         availability_date: formData.availabilityDate || null,
