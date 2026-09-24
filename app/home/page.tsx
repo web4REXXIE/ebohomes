@@ -241,7 +241,7 @@ export default function TenantHomePage() {
               {continueBrowsing.map((l) => (
                 <Link key={l.id} href={`/listing/${l.id}`} className="flex items-center gap-3 hover:bg-secondary/40 rounded-lg p-2 -mx-2">
                   <img
-                    src={l.photos?.[0] || '/placeholder-property.jpg'}
+                    src={l.photos?.[0] || '/placeholder.jpg'}
                     alt=""
                     className="w-14 h-14 rounded-lg object-cover shrink-0"
                   />
@@ -379,7 +379,7 @@ function ListingMini({ listing, verified }: { listing: Listing; verified?: boole
   return (
     <Link href={`/listing/${listing.id}`} className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
       <div className="relative h-28">
-        <img src={listing.photos?.[0] || '/placeholder-property.jpg'} alt="" className="w-full h-full object-cover" />
+        <img src={listing.photos?.[0] || '/placeholder.jpg'} alt="" className="w-full h-full object-cover" />
         {verified && (
           <span className="absolute top-2 left-2 bg-white/95 text-primary text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
             <ShieldCheck size={10} /> Verified

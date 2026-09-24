@@ -189,7 +189,7 @@ export default function DashboardOverview() {
           <div className="space-y-3">
             {attention.map((l) => (
               <div key={l.id} className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4">
-                <img src={l.photos?.[0] ?? '/placeholder-property.jpg'} alt={l.property_type} className="w-16 h-16 rounded-xl object-cover shrink-0" />
+                <img src={l.photos?.[0] ?? '/placeholder.jpg'} alt={l.property_type} className="w-16 h-16 rounded-xl object-cover shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-foreground text-sm truncate">{l.property_type}</p>
                   <p className="text-xs text-muted-foreground truncate">{l.location_text}</p>

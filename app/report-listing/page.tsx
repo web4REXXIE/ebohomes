@@ -67,7 +67,7 @@ export default function ReportListingPage() {
             >
               <div className="flex items-center gap-3 min-w-0">
                 <img
-                  src={listing.photos?.[0] ?? '/placeholder-property.jpg'}
+                  src={listing.photos?.[0] ?? '/placeholder.jpg'}
                   alt={listing.title}
                   className="w-14 h-14 object-cover rounded-md shrink-0"
                 />
