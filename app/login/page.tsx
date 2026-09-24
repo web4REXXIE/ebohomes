@@ -155,7 +155,7 @@ export default function LoginPage() {
         role,
         phone,
         verified: false,
-        verification_status: role === 'landlord' ? 'pending' : 'approved',
+        verification_status: role === 'landlord' ? null : 'approved',
         ownership_doc_url: ownershipDoc || null,
       })
       setMessage(
