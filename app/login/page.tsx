@@ -189,7 +189,7 @@ export default function LoginPage() {
       if (profile?.role === 'tenant') {
         router.push('/')
       } else if (profile?.role === 'landlord') {
-        router.push(profile?.verification_status === 'approved' ? '/dashboard' : '/verification-pending')
+        router.push(profile?.verification_status === 'approved' ? '/dashboard' : '/dashboard/verify')
       } else {
         router.push('/')
       }
