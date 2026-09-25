@@ -11,6 +11,7 @@ export default function GetVerifiedPage() {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState<string | null>(null)
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null)
 
   const [docUploading, setDocUploading] = useState(false)
   const [docName, setDocName] = useState('')
@@ -37,7 +38,7 @@ export default function GetVerifiedPage() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('business_name, business_address, cac_number, bank_name, bank_account_name, bank_account_number, ownership_doc_url, verification_status, verified')
+        .select('business_name, business_address, cac_number, bank_name, bank_account_name, bank_account_number, ownership_doc_url, verification_status, verified, rejection_reason')
         .eq('id', user.id)
         .single()
 
@@ -52,6 +53,7 @@ export default function GetVerifiedPage() {
           ownership_doc_url: data.ownership_doc_url || '',
         })
         setStatus(data.verified ? 'verified' : (data.verification_status || null))
+        setRejectionReason(data.rejection_reason || null)
 
         // if a doc path already exists, generate a signed preview link
         if (data.ownership_doc_url) {
@@ -192,7 +194,14 @@ export default function GetVerifiedPage() {
       {status === 'rejected' && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3">
           <XCircle size={18} className="text-red-600 shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700">Your previous submission was not approved. Please review your details and resubmit.</p>
+          <div className="text-sm text-red-700">
+            <p className="font-semibold mb-1">Your previous submission was not approved.</p>
+            {rejectionReason ? (
+              <p><span className="font-semibold">Reason:</span> {rejectionReason}</p>
+            ) : (
+              <p>Please review your details and resubmit.</p>
+            )}
+          </div>
         </div>
       )}
 
