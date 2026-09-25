@@ -44,7 +44,7 @@ export default function ListingDetailPage() {
 
       if (data?.landlord_id) {
         const { data: profile } = await supabase
-          .from('profiles')
+          .from('profiles_public')
           .select('full_name, phone, verified')
           .eq('id', data.landlord_id)
           .maybeSingle()
