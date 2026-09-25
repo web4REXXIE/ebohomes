@@ -6,7 +6,6 @@ import { useState, useEffect } from 'react'
 import {
   Heart,
   Camera,
-  ShieldCheck,
   Zap,
   Bed,
   Bath,
@@ -32,7 +31,7 @@ type ListingCardProps = {
   living_rooms?: number
   build_size?: number
   photoCount?: number
-  verified?: boolean
+  verified?: boolean // kept for future Phase 6 use — not displayed at property level today (no evidence backs it yet)
   featured?: boolean
 }
 
@@ -145,11 +144,6 @@ export function ListingCard({
               <div className="flex items-center gap-1 bg-gradient-to-r from-amber-300 to-amber-500 text-amber-950 text-[11px] font-bold px-3 py-1.5 rounded-br-xl shadow">
                 <span>★</span> FEATURED
               </div>
-              {verified && (
-                <div className="flex items-center gap-1 bg-white/95 text-primary text-[10px] font-semibold px-2.5 py-1 rounded-br-lg shadow">
-                  <ShieldCheck size={11} /> Verified
-                </div>
-              )}
             </div>
 
             <SaveButton />
@@ -216,17 +210,12 @@ export function ListingCard({
     )
   }
 
-  // Non-featured card — now with a working, labeled save button
+  // Non-featured card
   return (
     <div className="block bg-card rounded-lg overflow-hidden border border-border hover:shadow-md transition-shadow">
       <Link href={`/listing/${id}`} className="block">
         <div className="relative h-40">
           <img src={image || '/placeholder.jpg'} alt={property_type} className="w-full h-full object-cover" />
-          {verified && (
-            <span className="absolute top-2 left-2 bg-white/95 text-primary text-[10px] font-semibold px-2 py-1 rounded-full flex items-center gap-1">
-              <ShieldCheck size={11} /> Verified
-            </span>
-          )}
           <SaveButton small />
         </div>
       </Link>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, Flag, Calendar, MessageSquare, FileText } from 'lucide-react'
+import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, ShieldOff, Flag, Calendar, MessageSquare, FileText } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
@@ -136,11 +136,6 @@ export default function ListingDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
             <div className="relative rounded-lg overflow-hidden border border-border mb-2">
-              {listing.verified && (
-                <span className="absolute top-3 left-3 z-10 bg-primary text-primary-foreground text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1">
-                  <ShieldCheck size={12} /> Verified
-                </span>
-              )}
               <button
                 onClick={handleToggleSave}
                 disabled={savedBusy}
@@ -254,27 +249,54 @@ export default function ListingDetailPage() {
 
           <div className="lg:col-span-1">
             <div className="sticky top-24 space-y-4">
-              <div className="bg-card border border-border rounded-lg p-5">
+              <div className="bg-card border border-border rounded-lg p-4 sm:p-5">
                 <p className="text-2xl font-bold text-primary">₦{listing.price_monthly?.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground mb-4">per month</p>
 
-                <div className="border-t border-border pt-4">
-                  <p className="text-sm font-semibold text-foreground mb-3">Contact Landlord</p>
-                  {landlord && (
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold text-foreground">
+                {/* ---- Landlord identity block: intentionally its own visual zone, separate from anything about the property itself ---- */}
+                {landlord && (
+                  <div className="mb-4 pb-4 border-b border-border">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold text-foreground shrink-0">
                         {landlord.full_name?.[0] ?? 'L'}
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{landlord.full_name}</p>
-                        {landlord.verified && (
-                          <p className="text-xs text-primary flex items-center gap-1">
-                            <ShieldCheck size={11} /> Verified Landlord
-                          </p>
-                        )}
-                      </div>
+                      <p className="text-sm font-medium text-foreground truncate min-w-0">{landlord.full_name}</p>
                     </div>
-                  )}
+
+                    {landlord.verified ? (
+                      <div className="flex items-start gap-2 sm:gap-2.5 bg-emerald-50 border-2 border-emerald-300 rounded-xl px-3 py-2.5 sm:px-3.5 sm:py-3">
+                        <ShieldCheck size={20} className="text-emerald-600 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-sm sm:text-base font-extrabold text-emerald-800 leading-tight">
+                            Verified Landlord
+                          </p>
+                          <p className="text-[11px] sm:text-xs text-emerald-700 leading-snug mt-0.5">
+                            Identity &amp; ownership document reviewed by EboHomes
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2 sm:gap-2.5 bg-secondary border-2 border-border rounded-xl px-3 py-2.5 sm:px-3.5 sm:py-3">
+                        <ShieldOff size={20} className="text-muted-foreground shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-sm sm:text-base font-bold text-foreground leading-tight">
+                            Not Yet Verified
+                          </p>
+                          <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug mt-0.5">
+                            EboHomes has not confirmed this landlord's identity
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="mt-2 text-[10px] sm:text-[11px] text-muted-foreground leading-snug">
+                      This checks the landlord's identity only — EboHomes has not inspected or confirmed the condition of this specific property.
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-sm font-semibold text-foreground mb-3">Contact Landlord</p>
 
                   <Button
                     onClick={() =>
