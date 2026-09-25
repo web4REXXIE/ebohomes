@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, Send, Paperclip, Phone, Video, MoreVertical, Loader2 } from 'lucide-react'
+import { Search, Send, Paperclip, Phone, Video, MoreVertical, Loader2, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 type Profile = {
@@ -206,7 +206,7 @@ export default function MessagesPage() {
   return (
     <div className="flex h-[calc(100vh-0px)] max-h-screen">
       {/* Conversation list */}
-      <div className="w-full sm:w-80 border-r border-border flex flex-col shrink-0">
+      <div className={`w-full sm:w-80 border-r border-border flex-col shrink-0 ${activePartnerId ? 'hidden sm:flex' : 'flex'}`}>
         <div className="p-4 border-b border-border">
           <h1 className="font-bold text-foreground">Messages</h1>
           <p className="text-xs text-muted-foreground">Stay connected with tenants, buyers and our team.</p>
@@ -255,7 +255,7 @@ export default function MessagesPage() {
       </div>
 
       {/* Thread panel */}
-      <div className="hidden sm:flex flex-col flex-1 min-w-0">
+      <div className={`flex-col flex-1 min-w-0 ${activePartnerId ? 'flex' : 'hidden sm:flex'}`}>
         {!activePartnerId ? (
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
             Select a conversation to start messaging
@@ -264,6 +264,13 @@ export default function MessagesPage() {
           <>
             <div className="p-4 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActivePartnerId(null)}
+                  className="sm:hidden text-muted-foreground shrink-0"
+                  aria-label="Back to conversations"
+                >
+                  <ArrowLeft size={18} />
+                </button>
                 <Avatar profile={activePartner} />
                 <div>
                   <p className="text-sm font-semibold text-foreground">{activePartner?.full_name ?? 'Unknown user'}</p>
