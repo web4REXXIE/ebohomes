@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Clock, CheckCircle2, XCircle, FileText, Loader2 } from 'lucide-react'
+import { Clock, CheckCircle2, XCircle, FileText, Loader2, Home } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { CreateTenancyModal } from '@/components/create-tenancy-modal'
 
 type ApplicationRow = {
   id: string
@@ -12,9 +13,19 @@ type ApplicationRow = {
   created_at: string
   listing_id: string
   tenant_id: string
+  landlord_id: string
   application_data: any
   listing?: { title: string; location_text: string; price_monthly: number; photos: string[] }
   tenant?: { full_name: string; phone: string }
+}
+
+type TenancyRow = {
+  id: string
+  application_id: string
+  status: string
+  rent_amount: number
+  rent_period: string
+  start_date: string
 }
 
 const TABS = ['pending', 'approved', 'rejected'] as const
@@ -25,6 +36,8 @@ export default function LandlordApplicationsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>('pending')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [tenanciesByApp, setTenanciesByApp] = useState<Record<string, TenancyRow>>({})
+  const [tenancyModalApp, setTenancyModalApp] = useState<ApplicationRow | null>(null)
 
   useEffect(() => {
     load()
@@ -43,7 +56,7 @@ export default function LandlordApplicationsPage() {
 
     const { data: apps } = await supabase
       .from('applications')
-      .select('id, status, message, created_at, listing_id, tenant_id, application_data')
+      .select('id, status, message, created_at, listing_id, tenant_id, landlord_id, application_data')
       .eq('landlord_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -68,6 +81,21 @@ export default function LandlordApplicationsPage() {
     }))
 
     setApplications(merged)
+
+    const approvedIds = merged.filter((a) => a.status === 'approved').map((a) => a.id)
+    if (approvedIds.length > 0) {
+      const { data: tenancies } = await supabase
+        .from('tenancies')
+        .select('id, application_id, status, rent_amount, rent_period, start_date')
+        .in('application_id', approvedIds)
+
+      const map: Record<string, TenancyRow> = {}
+      tenancies?.forEach((t) => {
+        map[t.application_id] = t
+      })
+      setTenanciesByApp(map)
+    }
+
     setLoading(false)
   }
 
@@ -196,11 +224,42 @@ export default function LandlordApplicationsPage() {
                       </button>
                     </div>
                   )}
+
+                  {app.status === 'approved' && (
+                    tenanciesByApp[app.id] ? (
+                      <div className="mt-3 bg-primary/5 border border-primary/20 rounded-md p-2 text-xs">
+                        <p className="font-semibold text-primary capitalize">Tenancy: {tenanciesByApp[app.id].status}</p>
+                        <p className="text-muted-foreground mt-0.5">
+                          ₦{tenanciesByApp[app.id].rent_amount?.toLocaleString()} / {tenanciesByApp[app.id].rent_period} · from {tenanciesByApp[app.id].start_date}
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setTenancyModalApp(app)}
+                        className="flex items-center gap-1 text-sm font-semibold text-primary-foreground bg-primary hover:bg-primary/90 rounded-md px-3 py-1.5 mt-3"
+                      >
+                        <Home size={14} /> Create Tenancy
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {tenancyModalApp && (
+        <CreateTenancyModal
+          application={tenancyModalApp}
+          listing={tenancyModalApp.listing!}
+          landlordId={tenancyModalApp.landlord_id}
+          onClose={() => setTenancyModalApp(null)}
+          onCreated={(tenancy) => {
+            setTenanciesByApp((prev) => ({ ...prev, [tenancy.application_id]: tenancy }))
+            setTenancyModalApp(null)
+          }}
+        />
       )}
     </div>
   )

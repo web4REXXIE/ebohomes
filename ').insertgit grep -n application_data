@@ -1,0 +1,18 @@
+[35mapp/admin/layout.tsx[m[36m:[m[32m19[m[36m:[m  { href: '/admin/[1;31mpayments[m', label: 'Payments', icon: CreditCard },
+[35mapp/admin/page.tsx[m[36m:[m[32m57[m[36m:[m      { data: [1;31mpayments[m },
+[35mapp/admin/page.tsx[m[36m:[m[32m72[m[36m:[m      supabase.from('[1;31mpayments[m').select('amount, created_at').order('created_at', { ascending: true }),
+[35mapp/admin/page.tsx[m[36m:[m[32m76[m[36m:[m    const totalRevenue = ([1;31mpayments[m ?? []).reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0)
+[35mapp/admin/page.tsx[m[36m:[m[32m80[m[36m:[m    ;([1;31mpayments[m ?? []).forEach((p: any) => {
+[35mapp/admin/page.tsx[m[36m:[m[32m102[m[36m:[m    ;([1;31mpayments[m ?? []).slice(-3).forEach((p: any) =>
+[35mapp/admin/page.tsx[m[36m:[m[32m151[m[36m:[m    { label: 'Total Revenue', value: `₦${stats.totalRevenue.toLocaleString()}`, icon: Wallet, tint: 'text-amber-600 bg-amber-50', href: '/admin/[1;31mpayments[m' },
+[35mapp/admin/page.tsx[m[36m:[m[32m166[m[36m:[m    { label: 'Payments', icon: Wallet, href: '/admin/[1;31mpayments[m' },
+[35mapp/contact/page.tsx[m[36m:[m[32m12[m[36m:[m  { q: 'How do [1;31mpayments[m work?', a: 'For now, [1;31mpayments[m are made directly via bank transfer with confirmation handled by our team. Card [1;31mpayments[m are coming soon.' },
+[35mapp/dashboard/layout.tsx[m[36m:[m[32m33[m[36m:[m  { label: 'Payments', href: '/dashboard/[1;31mpayments[m', icon: CreditCard },
+[35mapp/dashboard/page.tsx[m[36m:[m[32m87[m[36m:[m    { label: 'Payments', sub: 'View transactions', icon: CreditCard, href: '/dashboard/[1;31mpayments[m', color: 'bg-primary/10 text-primary' },
+[35mapp/privacy/page.tsx[m[36m:[m[32m49[m[36m:[m          <li><strong>Payment/transaction information</strong> &mdash; where in-platform [1;31mpayments[m are enabled, transaction records and payment status. <span className="italic">EboHomes does not store full card or bank account numbers; these are handled by a licensed payment processor.</span> [TO CONFIRM once a payment provider is selected]</li>
+[35mapp/privacy/page.tsx[m[36m:[m[32m74[m[36m:[m          <li>Facilitate communication, bookings, applications and, where enabled, [1;31mpayments[m;</li>
+[35mapp/terms/page.tsx[m[36m:[m[32m21[m[36m:[m  { id: '[1;31mpayments[m', label: '12. Payments & Transactions' },
+[35mapp/terms/page.tsx[m[36m:[m[32m80[m[36m:[m          <li>Communicate and make any [1;31mpayments[m only through the channels EboHomes designates as official;</li>
+[35mapp/terms/page.tsx[m[36m:[m[32m161[m[36m:[m      <LegalSection id="[1;31mpayments[m" number="12" title="Payments and Transactions">
+[35mapp/terms/page.tsx[m[36m:[m[32m163[m[36m:[m          Where EboHomes enables in-platform [1;31mpayments[m, such [1;31mpayments[m will
+[35mapp/terms/page.tsx[m[36m:[m[32m167[m[36m:[m          responsible for [1;31mpayments[m made outside the platform.
