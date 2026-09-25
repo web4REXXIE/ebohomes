@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, X, FileEdit, Home as HomeIcon, ShieldCheck, ShieldOff } from 'lucide-react'
+import Link from 'next/link'
+import { Check, X, FileEdit, Home as HomeIcon, ShieldCheck, ShieldOff, ClipboardCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 
@@ -398,6 +399,20 @@ export default function PropertyReviewPage() {
                   {selected.verified ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
                   {selected.verified ? 'Remove Verified Badge' : 'Mark as EboHomes Verified'}
                 </Button>
+              </div>
+
+              {/* Inspection — separate action, feeds Phase 6 property intelligence */}
+              <div className="bg-card border border-border rounded-lg p-5">
+                <h3 className="font-semibold text-foreground mb-1">Property Inspection</h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Record what you actually found on a visit — road, water, security, and more.
+                </p>
+                <Link
+                  href={`/admin/inspections?listing=${selected.id}`}
+                  className="w-full inline-flex items-center justify-center gap-2 font-semibold border border-border rounded-lg px-4 py-2.5 text-sm hover:bg-secondary transition-colors"
+                >
+                  <ClipboardCheck size={16} /> Inspect this property
+                </Link>
               </div>
             </div>
           )}
