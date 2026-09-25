@@ -15,11 +15,21 @@ const MapPlaceholder = dynamic(
   { ssr: false }
 )
 
+function InspectionField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-foreground font-medium">{value}</p>
+    </div>
+  )
+}
+
 export default function ListingDetailPage() {
   const { id } = useParams()
   const router = useRouter()
   const [listing, setListing] = useState<any>(null)
   const [landlord, setLandlord] = useState<any>(null)
+  const [inspection, setInspection] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [currentPhoto, setCurrentPhoto] = useState(0)
   const [saved, setSaved] = useState(false)
@@ -47,6 +57,17 @@ export default function ListingDetailPage() {
           .eq('id', data.landlord_id)
           .maybeSingle()
         setLandlord(profile)
+      }
+
+      if (data?.id) {
+        const { data: inspectionData } = await supabase
+          .from('property_inspections')
+          .select('inspected_at, road_condition, water_source, electricity_notes, network_notes, security_notes, neighborhood_type, nearby_landmarks, environment_notes, condition_notes, overall_notes')
+          .eq('listing_id', data.id)
+          .order('inspected_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        setInspection(inspectionData)
       }
 
       const { data: userData } = await supabase.auth.getUser()
@@ -226,6 +247,34 @@ export default function ListingDetailPage() {
               </div>
             )}
 
+            {inspection && (
+              <div className="mb-6 border border-primary/20 bg-primary/5 rounded-lg p-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <ShieldCheck size={18} className="text-primary" />
+                  <h3 className="font-semibold text-foreground">EboHomes Inspected</h3>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Verified on {new Date(inspection.inspected_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {inspection.road_condition && <InspectionField label="Road" value={inspection.road_condition} />}
+                  {inspection.water_source && <InspectionField label="Water" value={inspection.water_source} />}
+                  {inspection.electricity_notes && <InspectionField label="Electricity" value={inspection.electricity_notes} />}
+                  {inspection.network_notes && <InspectionField label="Network" value={inspection.network_notes} />}
+                  {inspection.security_notes && <InspectionField label="Security" value={inspection.security_notes} />}
+                  {inspection.neighborhood_type && <InspectionField label="Neighbourhood" value={inspection.neighborhood_type} />}
+                </div>
+                {inspection.nearby_landmarks && (
+                  <p className="text-sm text-muted-foreground mt-3">
+                    <span className="font-medium text-foreground">Nearby: </span>{inspection.nearby_landmarks}
+                  </p>
+                )}
+                {(inspection.overall_notes || inspection.condition_notes) && (
+                  <p className="text-sm text-muted-foreground mt-3">{inspection.overall_notes || inspection.condition_notes}</p>
+                )}
+              </div>
+            )}
+
             {listing.lat && listing.lng && (
               <div className="mb-6">
                 <h3 className="font-semibold text-foreground mb-3">Location</h3>
@@ -253,7 +302,6 @@ export default function ListingDetailPage() {
                 <p className="text-2xl font-bold text-primary">₦{listing.price_monthly?.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground mb-4">per month</p>
 
-                {/* ---- Landlord identity block: intentionally its own visual zone, separate from anything about the property itself ---- */}
                 {landlord && (
                   <div className="mb-4 pb-4 border-b border-border">
                     <div className="flex items-center gap-3 mb-3">
