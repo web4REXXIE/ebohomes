@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, ShieldOff, Flag, Calendar, MessageSquare, FileText } from 'lucide-react'
+import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, ShieldOff, Flag, Calendar, MessageSquare, FileText, Route, Droplet, Zap, Wifi, Lock, Building2 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
@@ -14,15 +14,6 @@ const MapPlaceholder = dynamic(
   () => import('@/components/map-placeholder').then((mod) => ({ default: mod.MapPlaceholder })),
   { ssr: false }
 )
-
-function InspectionField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-foreground font-medium">{value}</p>
-    </div>
-  )
-}
 
 export default function ListingDetailPage() {
   const { id } = useParams()
@@ -145,6 +136,17 @@ export default function ListingDetailPage() {
   const photos: string[] = listing.photos || []
   const whatsappMessage = `Hi, I found your listing on EboHomes: ${listing.title} in ${listing.location_text}. Is it still available?`
 
+  const inspectionFields = inspection
+    ? [
+        { key: 'road_condition', label: 'Road', icon: Route, value: inspection.road_condition },
+        { key: 'water_source', label: 'Water', icon: Droplet, value: inspection.water_source },
+        { key: 'electricity_notes', label: 'Electricity', icon: Zap, value: inspection.electricity_notes },
+        { key: 'network_notes', label: 'Network', icon: Wifi, value: inspection.network_notes },
+        { key: 'security_notes', label: 'Security', icon: Lock, value: inspection.security_notes },
+        { key: 'neighborhood_type', label: 'Neighbourhood', icon: Building2, value: inspection.neighborhood_type },
+      ].filter((f) => f.value)
+    : []
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
@@ -248,29 +250,45 @@ export default function ListingDetailPage() {
             )}
 
             {inspection && (
-              <div className="mb-6 border border-primary/20 bg-primary/5 rounded-lg p-5">
-                <div className="flex items-center gap-2 mb-1">
-                  <ShieldCheck size={18} className="text-primary" />
-                  <h3 className="font-semibold text-foreground">EboHomes Inspected</h3>
+              <div className="mb-6 rounded-xl border-2 border-emerald-300 bg-emerald-50 overflow-hidden">
+                <div className="flex items-center gap-2.5 px-5 pt-4 pb-3 border-b border-emerald-200">
+                  <div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center shrink-0">
+                    <ShieldCheck size={18} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="font-extrabold text-emerald-900 leading-tight">EboHomes Inspected</p>
+                    <p className="text-xs text-emerald-700">
+                      Verified {new Date(inspection.inspected_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Verified on {new Date(inspection.inspected_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {inspection.road_condition && <InspectionField label="Road" value={inspection.road_condition} />}
-                  {inspection.water_source && <InspectionField label="Water" value={inspection.water_source} />}
-                  {inspection.electricity_notes && <InspectionField label="Electricity" value={inspection.electricity_notes} />}
-                  {inspection.network_notes && <InspectionField label="Network" value={inspection.network_notes} />}
-                  {inspection.security_notes && <InspectionField label="Security" value={inspection.security_notes} />}
-                  {inspection.neighborhood_type && <InspectionField label="Neighbourhood" value={inspection.neighborhood_type} />}
-                </div>
-                {inspection.nearby_landmarks && (
-                  <p className="text-sm text-muted-foreground mt-3">
-                    <span className="font-medium text-foreground">Nearby: </span>{inspection.nearby_landmarks}
-                  </p>
+
+                {inspectionFields.length > 0 && (
+                  <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {inspectionFields.map(({ key, label, icon: Icon, value }) => (
+                      <div key={key} className="flex items-start gap-2">
+                        <Icon size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">{label}</p>
+                          <p className="text-sm text-emerald-950 font-medium">{value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
+
+                {inspection.nearby_landmarks && (
+                  <div className="px-5 pb-3">
+                    <p className="text-sm text-emerald-800">
+                      <span className="font-semibold">Nearby: </span>{inspection.nearby_landmarks}
+                    </p>
+                  </div>
+                )}
+
                 {(inspection.overall_notes || inspection.condition_notes) && (
-                  <p className="text-sm text-muted-foreground mt-3">{inspection.overall_notes || inspection.condition_notes}</p>
+                  <div className="px-5 pb-4">
+                    <p className="text-sm text-emerald-800">{inspection.overall_notes || inspection.condition_notes}</p>
+                  </div>
                 )}
               </div>
             )}
