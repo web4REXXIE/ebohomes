@@ -23,11 +23,21 @@ export default function ListingDetailPage() {
   const [loading, setLoading] = useState(true)
   const [currentPhoto, setCurrentPhoto] = useState(0)
   const [saved, setSaved] = useState(false)
+  const [savedBusy, setSavedBusy] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [showReportModal, setShowReportModal] = useState(false)
+  const [notAvailable, setNotAvailable] = useState(false)
 
   useEffect(() => {
     const fetchListing = async () => {
       const { data } = await supabase.from('listings').select('*').eq('id', id).single()
+
+      if (data && data.status !== 'approved') {
+        setNotAvailable(true)
+        setLoading(false)
+        return
+      }
+
       setListing(data)
 
       if (data?.landlord_id) {
@@ -38,10 +48,47 @@ export default function ListingDetailPage() {
           .maybeSingle()
         setLandlord(profile)
       }
+
+      const { data: userData } = await supabase.auth.getUser()
+      const uid = userData?.user?.id ?? null
+      setUserId(uid)
+      if (uid && data?.id) {
+        const { data: existing } = await supabase
+          .from('saved_properties')
+          .select('id')
+          .eq('tenant_id', uid)
+          .eq('listing_id', data.id)
+          .maybeSingle()
+        setSaved(!!existing)
+      }
+
       setLoading(false)
     }
     if (id) fetchListing()
   }, [id])
+
+  async function handleToggleSave() {
+    if (savedBusy) return
+    if (!userId) {
+      router.push('/login')
+      return
+    }
+    setSavedBusy(true)
+    if (saved) {
+      await supabase
+        .from('saved_properties')
+        .delete()
+        .eq('tenant_id', userId)
+        .eq('listing_id', listing.id)
+      setSaved(false)
+    } else {
+      await supabase
+        .from('saved_properties')
+        .insert({ tenant_id: userId, listing_id: listing.id })
+      setSaved(true)
+    }
+    setSavedBusy(false)
+  }
 
   if (loading) {
     return (
@@ -57,12 +104,14 @@ export default function ListingDetailPage() {
     )
   }
 
-  if (!listing) {
+  if (!listing || notAvailable) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
         <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-          <p className="text-lg font-semibold text-foreground mb-2">Listing not found</p>
+          <p className="text-lg font-semibold text-foreground mb-2">
+            {notAvailable ? 'This listing is no longer available' : 'Listing not found'}
+          </p>
           <button onClick={() => router.push('/search')} className="text-primary text-sm font-medium hover:underline">
             ← Back to search
           </button>
@@ -85,9 +134,7 @@ export default function ListingDetailPage() {
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left: photos + details */}
           <div className="lg:col-span-2">
-            {/* Photo gallery */}
             <div className="relative rounded-lg overflow-hidden border border-border mb-2">
               {listing.verified && (
                 <span className="absolute top-3 left-3 z-10 bg-primary text-primary-foreground text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1">
@@ -95,7 +142,8 @@ export default function ListingDetailPage() {
                 </span>
               )}
               <button
-                onClick={() => setSaved(!saved)}
+                onClick={handleToggleSave}
+                disabled={savedBusy}
                 className="absolute top-3 right-14 z-10 w-9 h-9 rounded-full bg-white/90 flex items-center justify-center"
               >
                 <Heart size={18} className={saved ? 'fill-destructive text-destructive' : 'text-foreground'} />
@@ -133,7 +181,6 @@ export default function ListingDetailPage() {
               </div>
             )}
 
-            {/* Title & price */}
             <div className="flex items-start justify-between gap-4 mb-1">
               <h1 className="text-2xl font-bold text-foreground">{listing.title}</h1>
             </div>
@@ -205,7 +252,6 @@ export default function ListingDetailPage() {
             )}
           </div>
 
-          {/* Right: sticky contact card */}
           <div className="lg:col-span-1">
             <div className="sticky top-24 space-y-4">
               <div className="bg-card border border-border rounded-lg p-5">
@@ -250,7 +296,7 @@ export default function ListingDetailPage() {
 
                   <Button
                     onClick={() => router.push(`/apply/${listing.id}`)}
-                    disabled={listing.status && listing.status !== 'available'}
+                    disabled={listing.status !== 'approved'}
                     className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold mt-2 flex items-center justify-center gap-2"
                   >
                     <FileText size={16} /> Apply Now
