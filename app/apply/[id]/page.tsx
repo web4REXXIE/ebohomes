@@ -125,32 +125,34 @@ export default function ApplyPage() {
     )
   }
 
-  if (submitted) {
+  if (alreadyApplied) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
         <div className="max-w-xl mx-auto px-4 py-20 text-center">
-          <CheckCircle2 size={48} className="text-primary mx-auto mb-4" />
-          <h1 className="text-xl font-bold text-foreground mb-2">Application submitted</h1>
-          <p className="text-muted-foreground text-sm mb-6">
-            The landlord has been notified. You can track the status of this application from your dashboard.
-          </p>
-          <Button onClick={() => router.push('/home')}>Go to dashboard</Button>
+          <CheckCircle2 size={48} className="mx-auto mb-4 text-primary" />
+          <p className="text-lg font-semibold text-foreground mb-2">You've already applied</p>
+          <p className="text-muted-foreground mb-6">You have already submitted an application for this property. Check your messages for updates.</p>
+          <button onClick={() => router.push('/messages')} className="text-primary text-sm font-medium hover:underline">
+            Go to messages
+          </button>
         </div>
         <Footer />
       </div>
     )
   }
 
-  if (alreadyApplied) {
+  if (submitted) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
         <div className="max-w-xl mx-auto px-4 py-20 text-center">
-          <FileText size={40} className="text-muted-foreground mx-auto mb-4" />
-          <h1 className="text-lg font-semibold text-foreground mb-2">You've already applied to this property</h1>
-          <p className="text-muted-foreground text-sm mb-6">Check your dashboard for the current status.</p>
-          <Button onClick={() => router.push('/home')}>Go to dashboard</Button>
+          <CheckCircle2 size={48} className="mx-auto mb-4 text-primary" />
+          <p className="text-lg font-semibold text-foreground mb-2">Application submitted!</p>
+          <p className="text-muted-foreground mb-6">The landlord has received your application. You'll be notified when they respond.</p>
+          <button onClick={() => router.push('/messages')} className="text-primary text-sm font-medium hover:underline">
+            Check messages
+          </button>
         </div>
         <Footer />
       </div>
@@ -160,51 +162,52 @@ export default function ApplyPage() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
-      <main className="flex-1 max-w-xl mx-auto w-full px-4 py-10">
-        <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-primary font-medium hover:underline mb-6">
-          <ArrowLeft size={14} /> Back
+
+      <main className="flex-1 max-w-xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+        <button onClick={() => router.back()} className="flex items-center gap-1 text-primary text-sm font-medium hover:underline mb-6">
+          <ArrowLeft size={16} /> Back
         </button>
 
-        <div className="bg-card border border-border rounded-lg p-5 mb-6">
-          <p className="text-sm text-muted-foreground mb-1">Applying for</p>
-          <h1 className="text-lg font-bold text-foreground">{listing.title}</h1>
-          <p className="text-sm text-muted-foreground">{listing.location_text}</p>
-          <p className="text-primary font-semibold mt-2">₦{listing.price_monthly?.toLocaleString()}/month</p>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-foreground mb-2">Apply for {listing?.title}</h1>
+          <p className="text-muted-foreground text-sm">{listing?.location_text}</p>
         </div>
 
-        <div className="space-y-4">
+        <div className="bg-card border border-border rounded-lg p-6 space-y-6">
           <div>
-            <label className="text-sm font-medium text-foreground mb-1 block">Preferred move-in date (optional)</label>
+            <label className="block text-sm font-semibold text-foreground mb-2">Move-in date</label>
             <input
               type="date"
               value={moveInDate}
               onChange={(e) => setMoveInDate(e.target.value)}
-              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
+              className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
             />
           </div>
 
           <div>
-            <label className="text-sm font-medium text-foreground mb-1 block">Message to landlord (optional)</label>
+            <label className="block text-sm font-semibold text-foreground mb-2">Message to landlord (optional)</label>
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
+              placeholder="Tell the landlord about yourself..."
+              className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
               rows={4}
-              placeholder="Introduce yourself — who you are, when you'd like to move in, any questions."
-              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground resize-none"
             />
           </div>
 
-          <Button onClick={handleSubmit} disabled={submitting} className="w-full font-semibold">
-            {submitting ? (
-              <span className="flex items-center justify-center gap-2">
-                <Loader2 size={16} className="animate-spin" /> Submitting...
-              </span>
-            ) : (
-              'Submit Application'
-            )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50"
+          >
+            {submitting ? <Loader2 size={16} className="animate-spin mr-2" /> : <FileText size={16} className="mr-2" />}
+            {submitting ? 'Submitting...' : 'Submit Application'}
           </Button>
         </div>
       </main>
+
       <Footer />
     </div>
   )
