@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, ShieldOff, Flag, Calendar, MessageSquare, FileText, Route, Droplet, Zap, Wifi, Lock, Building2 } from 'lucide-react'
+import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, ShieldOff, Flag, Calendar, MessageSquare, FileText, Route, Droplet, Zap, Wifi, Lock, Building2, ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Leaf, Home } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,7 @@ export default function ListingDetailPage() {
   const [listing, setListing] = useState<any>(null)
   const [landlord, setLandlord] = useState<any>(null)
   const [inspection, setInspection] = useState<any>(null)
+  const [inspectionExpanded, setInspectionExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [currentPhoto, setCurrentPhoto] = useState(0)
   const [saved, setSaved] = useState(false)
@@ -53,7 +54,7 @@ export default function ListingDetailPage() {
       if (data?.id) {
         const { data: inspectionData } = await supabase
           .from('property_inspections')
-          .select('inspected_at, road_condition, water_source, electricity_notes, network_notes, security_notes, neighborhood_type, nearby_landmarks, environment_notes, condition_notes, overall_notes')
+          .select('inspected_at, road_condition, road_matches, water_source, water_matches, electricity_notes, electricity_matches, network_notes, network_matches, security_notes, security_matches, neighborhood_type, nearby_landmarks, environment_notes, environment_matches, condition_notes, condition_matches, overall_notes')
           .eq('listing_id', data.id)
           .order('inspected_at', { ascending: false })
           .limit(1)
@@ -138,12 +139,19 @@ export default function ListingDetailPage() {
 
   const inspectionFields = inspection
     ? [
-        { key: 'road_condition', label: 'Road', icon: Route, value: inspection.road_condition },
-        { key: 'water_source', label: 'Water', icon: Droplet, value: inspection.water_source },
-        { key: 'electricity_notes', label: 'Electricity', icon: Zap, value: inspection.electricity_notes },
-        { key: 'network_notes', label: 'Network', icon: Wifi, value: inspection.network_notes },
-        { key: 'security_notes', label: 'Security', icon: Lock, value: inspection.security_notes },
-        { key: 'neighborhood_type', label: 'Neighbourhood', icon: Building2, value: inspection.neighborhood_type },
+        { key: 'road_condition', label: 'Road', icon: Route, value: inspection.road_condition, match: inspection.road_matches },
+        { key: 'water_source', label: 'Water', icon: Droplet, value: inspection.water_source, match: inspection.water_matches },
+        { key: 'electricity_notes', label: 'Electricity', icon: Zap, value: inspection.electricity_notes, match: inspection.electricity_matches },
+        { key: 'network_notes', label: 'Network', icon: Wifi, value: inspection.network_notes, match: inspection.network_matches },
+        { key: 'security_notes', label: 'Security', icon: Lock, value: inspection.security_notes, match: inspection.security_matches },
+        { key: 'neighborhood_type', label: 'Neighbourhood', icon: Building2, value: inspection.neighborhood_type, match: null as boolean | null },
+      ].filter((f) => f.value)
+    : []
+
+  const inspectionNotes = inspection
+    ? [
+        { key: 'environment', label: 'Environment', icon: Leaf, value: inspection.environment_notes, match: inspection.environment_matches },
+        { key: 'condition', label: 'Condition', icon: Home, value: inspection.overall_notes || inspection.condition_notes, match: inspection.condition_matches },
       ].filter((f) => f.value)
     : []
 
@@ -251,43 +259,80 @@ export default function ListingDetailPage() {
 
             {inspection && (
               <div className="mb-6 rounded-xl border-2 border-emerald-300 bg-emerald-50 overflow-hidden">
-                <div className="flex items-center gap-2.5 px-5 pt-4 pb-3 border-b border-emerald-200">
-                  <div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center shrink-0">
-                    <ShieldCheck size={18} className="text-white" />
+                <button
+                  type="button"
+                  onClick={() => setInspectionExpanded((v) => !v)}
+                  className="w-full flex items-center justify-between gap-2.5 px-5 py-4 text-left"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center shrink-0">
+                      <ShieldCheck size={18} className="text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-emerald-900 leading-tight">EboHomes Inspected</p>
+                      <p className="text-xs text-emerald-700 truncate">
+                        Verified {new Date(inspection.inspected_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })} · Tap for details
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-extrabold text-emerald-900 leading-tight">EboHomes Inspected</p>
-                    <p className="text-xs text-emerald-700">
-                      Verified {new Date(inspection.inspected_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </p>
-                  </div>
-                </div>
+                  {inspectionExpanded ? (
+                    <ChevronUp size={20} className="text-emerald-700 shrink-0" />
+                  ) : (
+                    <ChevronDown size={20} className="text-emerald-700 shrink-0" />
+                  )}
+                </button>
 
-                {inspectionFields.length > 0 && (
-                  <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {inspectionFields.map(({ key, label, icon: Icon, value }) => (
-                      <div key={key} className="flex items-start gap-2">
-                        <Icon size={16} className="text-emerald-600 shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">{label}</p>
-                          <p className="text-sm text-emerald-950 font-medium">{value}</p>
-                        </div>
+                {inspectionExpanded && (
+                  <div className="border-t border-emerald-200">
+                    {inspectionFields.length > 0 && (
+                      <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {inspectionFields.map(({ key, label, icon: Icon, value, match }) => (
+                          <div key={key} className="flex items-start gap-2">
+                            <Icon size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">{label}</p>
+                                {match === true && <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />}
+                                {match === false && <AlertTriangle size={12} className="text-amber-600 shrink-0" />}
+                              </div>
+                              <p className="text-sm text-emerald-950 font-medium">{value}</p>
+                              {match === false && (
+                                <p className="text-[11px] text-amber-700 mt-0.5">Differs from listing description</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {inspection.nearby_landmarks && (
-                  <div className="px-5 pb-3">
-                    <p className="text-sm text-emerald-800">
-                      <span className="font-semibold">Nearby: </span>{inspection.nearby_landmarks}
-                    </p>
-                  </div>
-                )}
+                    {inspectionNotes.length > 0 && (
+                      <div className="px-5 pb-4 space-y-3 border-t border-emerald-200 pt-3">
+                        {inspectionNotes.map(({ key, label, icon: Icon, value, match }) => (
+                          <div key={key} className="flex items-start gap-2">
+                            <Icon size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">{label}</p>
+                                {match === true && <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />}
+                                {match === false && <AlertTriangle size={12} className="text-amber-600 shrink-0" />}
+                              </div>
+                              <p className="text-sm text-emerald-950">{value}</p>
+                              {match === false && (
+                                <p className="text-[11px] text-amber-700 mt-0.5">Differs from listing description</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                {(inspection.overall_notes || inspection.condition_notes) && (
-                  <div className="px-5 pb-4">
-                    <p className="text-sm text-emerald-800">{inspection.overall_notes || inspection.condition_notes}</p>
+                    {inspection.nearby_landmarks && (
+                      <div className="px-5 pb-4">
+                        <p className="text-sm text-emerald-800">
+                          <span className="font-semibold">Nearby: </span>{inspection.nearby_landmarks}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
