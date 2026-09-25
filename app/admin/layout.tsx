@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  LayoutDashboard, ClipboardCheck, Users, ShieldCheck,
+  LayoutDashboard, ClipboardCheck, ClipboardList, Users, ShieldCheck,
   BarChart3, CreditCard, MessageSquare, Settings, LogOut, Building2, Loader2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase'
 const NAV_ITEMS = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
+  { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
   { href: '/admin/users', label: 'Manage Users', icon: Users },
   { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
