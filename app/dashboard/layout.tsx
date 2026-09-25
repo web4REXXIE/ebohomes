@@ -12,7 +12,6 @@ import {
   CreditCard,
   Heart,
   User,
-  Settings,
   HelpCircle,
   Star,
   Bell,
@@ -32,7 +31,6 @@ const NAV = [
   { label: 'Payments', href: '/dashboard/payments', icon: CreditCard },
   { label: 'Saved', href: '/dashboard/saved', icon: Heart },
   { label: 'Profile', href: '/dashboard/profile', icon: User },
-  { label: 'Settings', href: '/dashboard/settings', icon: Settings },
   { label: 'Help & Support', href: '/dashboard/support', icon: HelpCircle },
 ]
 
