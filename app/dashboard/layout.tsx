@@ -18,12 +18,14 @@ import {
   Menu,
   X,
   ShieldCheck,
+  FileText,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const NAV = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'My Listings', href: '/dashboard/listings', icon: List },
+  { label: 'Applications', href: '/dashboard/applications', icon: FileText, badgeKey: 'applications' },
   { label: 'Get Verified', href: '/dashboard/verify', icon: ShieldCheck },
   { label: 'Add New Listing', href: '/list-property', icon: Plus },
   { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badgeKey: 'messages' },
@@ -41,6 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [loading, setLoading] = useState(true)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [unreadNotifs, setUnreadNotifs] = useState(0)
+  const [pendingApplications, setPendingApplications] = useState(0)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   useEffect(() => {
@@ -76,8 +79,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .eq('user_id', user.id)
         .eq('read', false)
 
+      const { count: pendingAppCount } = await supabase
+        .from('applications')
+        .select('*', { count: 'exact', head: true })
+        .eq('landlord_id', user.id)
+        .eq('status', 'pending')
+
       setUnreadMessages(msgCount ?? 0)
       setUnreadNotifs(notifCount ?? 0)
+      setPendingApplications(pendingAppCount ?? 0)
       setLoading(false)
     }
 
@@ -113,7 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-return (
+  return (
     <div className="min-h-screen flex bg-background">
       {/* Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 border-r border-border bg-card shrink-0 h-screen sticky top-0">
@@ -132,7 +142,7 @@ return (
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {NAV.map((item) => {
             const active = pathname === item.href
-            const badge = item.badgeKey === 'messages' ? unreadMessages : 0
+            const badge = item.badgeKey === 'messages' ? unreadMessages : item.badgeKey === 'applications' ? pendingApplications : 0
             return (
               <Link
                 key={item.href}
@@ -199,7 +209,7 @@ return (
           </button>
         </header>
 
-{mobileNavOpen && (
+        {mobileNavOpen && (
           <div className="fixed inset-0 z-50 lg:hidden">
             <div className="absolute inset-0 bg-black/50" onClick={() => setMobileNavOpen(false)} />
             <div className="absolute left-0 top-0 h-full w-72 bg-card shadow-xl flex flex-col">
@@ -210,7 +220,7 @@ return (
               <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
                 {NAV.map((item) => {
                   const active = pathname === item.href
-                  const badge = item.badgeKey === 'messages' ? unreadMessages : 0
+                  const badge = item.badgeKey === 'messages' ? unreadMessages : item.badgeKey === 'applications' ? pendingApplications : 0
                   return (
                     <Link
                       key={item.href}
