@@ -6,6 +6,7 @@ import {
   Loader2, Check, X, Phone, MapPin, Building2, Landmark,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getOwnershipSignedUrl } from '@/lib/ownership-docs'
 
 type Landlord = {
   id: string
@@ -88,17 +89,11 @@ export default function VerifyLandlordsPage() {
       setDocUrl('')
       if (!selected?.ownership_doc_url) return
 
-      if (selected.ownership_doc_url.startsWith('http')) {
-        setDocUrl(selected.ownership_doc_url)
-        return
-      }
-
-      const { data } = await supabase.storage
-        .from('ownership-docs')
-        .createSignedUrl(selected.ownership_doc_url, 60 * 5)
-      if (data?.signedUrl) setDocUrl(data.signedUrl)
+      const signedUrl = await getOwnershipSignedUrl(selected.ownership_doc_url, selected.id)
+      if (signedUrl) setDocUrl(signedUrl)
     }
     loadDocUrl()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id])
 
   const counts = {
@@ -336,14 +331,18 @@ export default function VerifyLandlordsPage() {
               <div className="bg-card border border-border rounded-lg p-5">
                 <h3 className="font-semibold text-foreground mb-3">Documents</h3>
                 {selected.ownership_doc_url ? (
-                  <a
-                    href={docUrl || '#'}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-sm text-primary font-medium hover:underline border border-border rounded-lg px-3 py-2"
-                  >
-                    <FileText size={15} /> View submitted document
-                  </a>
+                  docUrl ? (
+                    <a
+                      href={docUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 text-sm text-primary font-medium hover:underline border border-border rounded-lg px-3 py-2"
+                    >
+                      <FileText size={15} /> View submitted document
+                    </a>
+                  ) : (
+                    <p className="text-sm text-destructive">Document unavailable: invalid path.</p>
+                  )
                 ) : (
                   <p className="text-sm text-muted-foreground">No document uploaded yet.</p>
                 )}

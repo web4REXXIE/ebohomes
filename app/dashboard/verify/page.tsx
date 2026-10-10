@@ -4,6 +4,14 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck, Clock, XCircle, FileText, Check } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import {
+  OWNERSHIP_BUCKET,
+  OWNERSHIP_ACCEPT,
+  validateOwnershipFile,
+  buildOwnershipPath,
+  isValidOwnershipPath,
+  getOwnershipSignedUrl,
+} from '@/lib/ownership-docs'
 
 export default function GetVerifiedPage() {
   const router = useRouter()
@@ -24,7 +32,7 @@ export default function GetVerifiedPage() {
     bank_name: '',
     bank_account_name: '',
     bank_account_number: '',
-    ownership_doc_url: '', // now stores a storage PATH, not a public URL
+    ownership_doc_url: '', // stores a storage PATH, not a public URL
   })
 
   useEffect(() => {
@@ -55,12 +63,15 @@ export default function GetVerifiedPage() {
         setStatus(data.verified ? 'verified' : (data.verification_status || null))
         setRejectionReason(data.rejection_reason || null)
 
-        // if a doc path already exists, generate a signed preview link
+        // if a doc path already exists, validate it and generate a signed preview link
         if (data.ownership_doc_url) {
-          const { data: signed } = await supabase.storage
-            .from('ownership-docs')
-            .createSignedUrl(data.ownership_doc_url, 60 * 5) // valid 5 minutes
-          if (signed?.signedUrl) setDocPreviewUrl(signed.signedUrl)
+          if (isValidOwnershipPath(data.ownership_doc_url, user.id)) {
+            const signedUrl = await getOwnershipSignedUrl(data.ownership_doc_url, user.id)
+            if (signedUrl) setDocPreviewUrl(signedUrl)
+          } else {
+            // old/invalid value (e.g. a full URL) — clear it so the user re-uploads
+            setFormData((p) => ({ ...p, ownership_doc_url: '' }))
+          }
         }
       }
       setLoading(false)
@@ -69,25 +80,36 @@ export default function GetVerifiedPage() {
   }, [])
 
   const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const input = e.target
+    const file = input.files?.[0]
     if (!file) return
-    setDocUploading(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      setDocUploading(false)
+    const err = validateOwnershipFile(file)
+    if (err) {
+      alert(err)
+      input.value = ''
       return
     }
 
-    const filePath = `${user.id}/verification-${Date.now()}-${file.name}`
+    setDocUploading(true)
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData?.user
+    if (!user) {
+      alert('You must be logged in.')
+      setDocUploading(false)
+      router.replace('/login')
+      return
+    }
 
+    const filePath = buildOwnershipPath(user.id, 'verification', file)
     const { error: uploadError } = await supabase.storage
-      .from('ownership-docs')
-      .upload(filePath, file)
+      .from(OWNERSHIP_BUCKET)
+      .upload(filePath, file, { contentType: file.type, upsert: false })
 
     if (uploadError) {
       alert('Failed to upload document: ' + uploadError.message)
       setDocUploading(false)
+      input.value = ''
       return
     }
 
@@ -95,13 +117,12 @@ export default function GetVerifiedPage() {
     setFormData((p) => ({ ...p, ownership_doc_url: filePath }))
     setDocName(file.name)
 
-    // generate a signed URL just for immediate on-screen preview
-    const { data: signed } = await supabase.storage
-      .from('ownership-docs')
-      .createSignedUrl(filePath, 60 * 5)
-    if (signed?.signedUrl) setDocPreviewUrl(signed.signedUrl)
+    // signed URL just for immediate on-screen preview
+    const signedUrl = await getOwnershipSignedUrl(filePath, user.id)
+    if (signedUrl) setDocPreviewUrl(signedUrl)
 
     setDocUploading(false)
+    input.value = ''
   }
 
   const removeDoc = () => {
@@ -130,6 +151,12 @@ export default function GetVerifiedPage() {
       return
     }
 
+    if (!isValidOwnershipPath(formData.ownership_doc_url, user.id)) {
+      setMessage('Invalid verification document. Please remove it and upload again.')
+      setSubmitting(false)
+      return
+    }
+
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -139,7 +166,7 @@ export default function GetVerifiedPage() {
         bank_name: formData.bank_name,
         bank_account_name: formData.bank_account_name,
         bank_account_number: formData.bank_account_number,
-        ownership_doc_url: formData.ownership_doc_url, // storage path now
+        ownership_doc_url: formData.ownership_doc_url, // storage path
         verification_status: 'pending',
       })
       .eq('id', user.id)
@@ -288,7 +315,7 @@ export default function GetVerifiedPage() {
                   <FileText size={16} /> Click to upload document
                 </span>
               )}
-              <input type="file" accept="image/*,application/pdf" onChange={handleDocUpload} className="hidden" />
+              <input type="file" accept={OWNERSHIP_ACCEPT} onChange={handleDocUpload} className="hidden" />
             </label>
           )}
         </div>

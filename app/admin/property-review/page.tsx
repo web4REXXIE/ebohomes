@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check, X, FileEdit, Home as HomeIcon, ShieldCheck, ShieldOff, ClipboardCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getOwnershipSignedUrl } from '@/lib/ownership-docs'
 import { Button } from '@/components/ui/button'
 
 const CHECKLIST = [
@@ -59,19 +60,11 @@ export default function PropertyReviewPage() {
       setOwnershipDocUrl('')
       if (!selected?.ownership_doc_url) return
 
-      // old data may still hold a full public URL — use it as-is for now
-      if (selected.ownership_doc_url.startsWith('http')) {
-        setOwnershipDocUrl(selected.ownership_doc_url)
-        return
-      }
-
-      // otherwise treat it as a storage path and generate a signed URL
-      const { data } = await supabase.storage
-        .from('ownership-docs')
-        .createSignedUrl(selected.ownership_doc_url, 60 * 5)
-      if (data?.signedUrl) setOwnershipDocUrl(data.signedUrl)
+      const signedUrl = await getOwnershipSignedUrl(selected.ownership_doc_url, selected.landlord_id)
+      if (signedUrl) setOwnershipDocUrl(signedUrl)
     }
     loadDocUrl()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id])
 
   const handleToggleFeatured = async (id: string, current: boolean) => {
@@ -319,14 +312,18 @@ export default function PropertyReviewPage() {
                 )}
 
                 {selected.ownership_doc_url && (
-                  <a
-                    href={ownershipDocUrl || '#'}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm text-primary font-medium hover:underline"
-                  >
-                    <FileEdit size={14} /> View ownership document
-                  </a>
+                  ownershipDocUrl ? (
+                    <a
+                      href={ownershipDocUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-primary font-medium hover:underline"
+                    >
+                      <FileEdit size={14} /> View ownership document
+                    </a>
+                  ) : (
+                    <p className="text-sm text-destructive">Document unavailable: invalid path.</p>
+                  )
                 )}
               </div>
 

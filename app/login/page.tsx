@@ -1,23 +1,25 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   Mail, Lock, Eye, EyeOff, Phone, User, Home as HomeIcon,
-  ShieldCheck, Lock as LockIcon, Headphones, Camera, FileText, Check, MessageCircle
+  ShieldCheck, Lock as LockIcon, Headphones, Check, MessageCircle
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
+import { getSiteUrl } from '@/lib/site-url'
+import { VerifyEmail } from '@/components/auth/verify-email'
 
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
   const [isSignup, setIsSignup] = useState(searchParams.get('mode') === 'signup')
-  const [signupStep, setSignupStep] = useState(1) // 1: Account, 2: Role, 3: Verification
+  const [signupStep, setSignupStep] = useState(1) // 1: Account, 2: Role
 
   // Account fields
   const [fullName, setFullName] = useState('')
@@ -31,30 +33,15 @@ export default function LoginPage() {
   // Role
   const [role, setRole] = useState('')
 
-  // Verification (landlord only)
-  const [ownershipDoc, setOwnershipDoc] = useState('')
-  const [docUploading, setDocUploading] = useState(false)
-  const [selfieUrl, setSelfieUrl] = useState('')
-  const [showCamera, setShowCamera] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
-  // Reacts every time the URL's ?mode= param changes, even without a full remount —
-  // this is what makes clicking "Log in" / "Sign Up" work while already on /login.
+  // Email verification step (OTP). null = not verifying.
+  const [verifyEmail, setVerifyEmail] = useState<{ email: string; justCreated: boolean } | null>(null)
+
   useEffect(() => {
     setIsSignup(searchParams.get('mode') === 'signup')
   }, [searchParams])
-
-  useEffect(() => {
-    if (showCamera && videoRef.current) {
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } }).then((stream) => {
-        if (videoRef.current) videoRef.current.srcObject = stream
-      })
-    }
-  }, [showCamera])
 
   // Password validation
   const passwordChecks = {
@@ -65,45 +52,6 @@ export default function LoginPage() {
   }
   const passwordValid = Object.values(passwordChecks).every(Boolean)
   const passwordsMatch = password.length > 0 && password === confirmPassword
-
-  const captureSelfie = async () => {
-    if (!videoRef.current || !canvasRef.current) return
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext('2d')?.drawImage(video, 0, 0)
-    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', 0.8))
-    if (!blob) return
-    const stream = video.srcObject as MediaStream
-    stream?.getTracks().forEach((t) => t.stop())
-    const data = new FormData()
-    data.append('file', blob, 'selfie.jpg')
-    data.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!)
-    const res = await fetch(
-      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
-      { method: 'POST', body: data }
-    )
-    const json = await res.json()
-    if (json.secure_url) setSelfieUrl(json.secure_url)
-    setShowCamera(false)
-  }
-
-  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setDocUploading(true)
-    const data = new FormData()
-    data.append('file', file)
-    data.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!)
-    const res = await fetch(
-      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/auto/upload`,
-      { method: 'POST', body: data }
-    )
-    const json = await res.json()
-    if (json.secure_url) setOwnershipDoc(json.secure_url)
-    setDocUploading(false)
-  }
 
   // Step 1 -> Step 2
   const handleStep1Continue = (e: React.FormEvent) => {
@@ -124,17 +72,45 @@ export default function LoginPage() {
     setSignupStep(2)
   }
 
-  // Step 2 -> submit (tenant) or Step 3 (landlord)
+  // Step 2 -> create account (documents are submitted later from /dashboard/verify)
   const handleStep2Continue = () => {
     if (!role) {
       setMessage('Please select a role.')
       return
     }
     setMessage('')
-    if (role === 'tenant') {
-      completeSignup()
+    completeSignup()
+  }
+
+  // Creates the profile row from the auth metadata. Safe to call repeatedly:
+  // an existing profile is never overwritten.
+  const ensureProfile = async (user: { id: string; user_metadata?: Record<string, any> }) => {
+    const meta = user.user_metadata ?? {}
+    const userRole = meta.role === 'landlord' ? 'landlord' : 'tenant'
+    await supabase.from('profiles').upsert(
+      {
+        id: user.id,
+        full_name: meta.full_name ?? null,
+        role: userRole,
+        phone: meta.phone ?? null,
+        verified: false,
+        verification_status: userRole === 'landlord' ? null : 'approved',
+      },
+      { onConflict: 'id', ignoreDuplicates: true }
+    )
+  }
+
+  const redirectAfterAuth = async (userId: string) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, verification_status')
+      .eq('id', userId)
+      .single()
+
+    if (profile?.role === 'landlord') {
+      router.push(profile.verification_status === 'approved' ? '/dashboard' : '/dashboard/verify')
     } else {
-      setSignupStep(3)
+      router.push('/')
     }
   }
 
@@ -144,63 +120,48 @@ export default function LoginPage() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName, role } },
+      options: { data: { full_name: fullName, role, phone } },
     })
+    setLoading(false)
+
     if (error) {
       setMessage(error.message)
-    } else if (data.user) {
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        full_name: fullName,
-        role,
-        phone,
-        verified: false,
-        verification_status: role === 'landlord' ? null : 'approved',
-        ownership_doc_url: ownershipDoc || null,
-      })
-      setMessage(
-        role === 'tenant'
-          ? 'Account created! You can now log in.'
-          : 'Account created! Please log in to complete verification.'
-      )
-      setTimeout(() => {
-        setIsSignup(false)
-        setSignupStep(1)
-      }, 1500)
+      return
     }
-    setLoading(false)
+    // Supabase hides duplicate emails by returning a user with no identities
+    if (data.user && data.user.identities?.length === 0) {
+      setMessage('An account with this email already exists. Please log in instead.')
+      return
+    }
+    setVerifyEmail({ email, justCreated: true })
   }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      setMessage(error.message)
-    } else {
-      const { data: userData } = await supabase.auth.getUser()
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, verification_status')
-        .eq('id', userData?.user?.id)
-        .single()
-
-      if (profile?.role === 'tenant') {
-        router.push('/')
-      } else if (profile?.role === 'landlord') {
-        router.push(profile?.verification_status === 'approved' ? '/dashboard' : '/dashboard/verify')
+      if (error.code === 'email_not_confirmed' || /not confirmed/i.test(error.message)) {
+        setVerifyEmail({ email, justCreated: false })
       } else {
-        router.push('/')
+        setMessage(
+          /invalid login/i.test(error.message) ? 'Incorrect email or password.' : error.message
+        )
       }
+      setLoading(false)
+      return
     }
+    // Covers users who verified their email but never got a profile row
+    await ensureProfile(data.user)
+    await redirectAfterAuth(data.user.id)
     setLoading(false)
   }
 
   const handleGoogleAuth = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/` },
+      options: { redirectTo: `${getSiteUrl()}/` },
     })
   }
 
@@ -213,7 +174,6 @@ export default function LoginPage() {
   const steps = [
     { n: 1, label: 'Account Details' },
     { n: 2, label: 'Choose Role' },
-    { n: 3, label: 'Verification', sub: '(Landlords only)' },
   ]
 
   return (
@@ -301,7 +261,26 @@ export default function LoginPage() {
         {/* Right panel — form */}
         <div className="flex items-center justify-center p-6 sm:p-12">
           <div className="w-full max-w-md">
-            {isSignup ? (
+            {verifyEmail ? (
+              <VerifyEmail
+                email={verifyEmail.email}
+                justCreated={verifyEmail.justCreated}
+                onVerified={async () => {
+                  const { data } = await supabase.auth.getUser()
+                  if (data.user) await ensureProfile(data.user)
+                }}
+                onContinue={async () => {
+                  const { data } = await supabase.auth.getUser()
+                  if (data.user) await redirectAfterAuth(data.user.id)
+                  else router.push('/')
+                }}
+                onBack={() => {
+                  setVerifyEmail(null)
+                  setSignupStep(1)
+                  setMessage('')
+                }}
+              />
+            ) : isSignup ? (
               <>
                 <h2 className="text-2xl font-bold text-foreground text-center mb-1">Create Account</h2>
                 <p className="text-muted-foreground text-sm text-center mb-6">It only takes a few minutes</p>
@@ -322,7 +301,6 @@ export default function LoginPage() {
                         </div>
                         <p className="text-[11px] text-center text-muted-foreground mt-1 whitespace-nowrap">
                           {step.label}
-                          {step.sub && <span className="block">{step.sub}</span>}
                         </p>
                       </div>
                       {i < steps.length - 1 && (
@@ -467,7 +445,11 @@ export default function LoginPage() {
                       ))}
                     </div>
 
-                    {message && <p className="text-sm text-destructive text-center mb-4">{message}</p>}
+                    {message && (
+                      <p className={`text-sm text-center mb-4 ${message.includes('created') ? 'text-primary' : 'text-destructive'}`}>
+                        {message}
+                      </p>
+                    )}
 
                     <div className="flex gap-3">
                       <Button type="button" variant="outline" onClick={() => setSignupStep(1)} className="flex-1 font-semibold py-2.5">
@@ -479,92 +461,7 @@ export default function LoginPage() {
                         disabled={loading}
                         className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5"
                       >
-                        {loading ? 'Please wait...' : role === 'landlord' ? 'Continue to Verification →' : 'Create Account'}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 3 — Verification (landlord only) */}
-                {signupStep === 3 && (
-                  <div>
-                    <h3 className="font-semibold text-foreground mb-1">Step 3: Verification</h3>
-                    <p className="text-xs text-muted-foreground mb-4">
-                      Landlords must verify ownership before listing properties
-                    </p>
-
-                    <div className="mb-4">
-                      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Proof of Ownership</label>
-                      <label className={`flex items-center gap-2 justify-center border-2 border-dashed rounded-lg p-4 cursor-pointer text-sm transition-colors ${
-                        ownershipDoc ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:bg-secondary'
-                      }`}>
-                        {docUploading ? (
-                          <span>Uploading...</span>
-                        ) : ownershipDoc ? (
-                          <><Check size={16} /> Document uploaded</>
-                        ) : (
-                          <><FileText size={16} /> Upload ownership/authorization document</>
-                        )}
-                        <input type="file" accept="image/*,application/pdf" onChange={handleDocUpload} className="hidden" />
-                      </label>
-                    </div>
-
-                    <div className="mb-6">
-                      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Face Verification (Selfie)</label>
-                      {!selfieUrl ? (
-                        !showCamera ? (
-                          <button
-                            type="button"
-                            onClick={() => setShowCamera(true)}
-                            className="w-full flex items-center gap-2 justify-center border-2 border-dashed border-border rounded-lg p-4 text-sm text-muted-foreground hover:bg-secondary transition-colors"
-                          >
-                            <Camera size={16} /> Open camera for selfie
-                          </button>
-                        ) : (
-                          <div className="relative rounded-lg overflow-hidden">
-                            <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-lg block" />
-                            <button
-                              type="button"
-                              onClick={captureSelfie}
-                              className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-semibold px-4 py-1.5 rounded-full"
-                            >
-                              Capture
-                            </button>
-                          </div>
-                        )
-                      ) : (
-                        <div className="text-center">
-                          <img src={selfieUrl} alt="Selfie" className="w-16 h-16 rounded-full object-cover border-2 border-primary mx-auto" />
-                          <p className="text-xs text-primary mt-1">Selfie captured</p>
-                          <button
-                            type="button"
-                            onClick={() => { setSelfieUrl(''); setShowCamera(false) }}
-                            className="text-xs text-muted-foreground underline"
-                          >
-                            Retake
-                          </button>
-                        </div>
-                      )}
-                      <canvas ref={canvasRef} className="hidden" />
-                    </div>
-
-                    {message && (
-                      <p className={`text-sm text-center mb-4 ${message.includes('created') ? 'text-primary' : 'text-destructive'}`}>
-                        {message}
-                      </p>
-                    )}
-
-                    <div className="flex gap-3">
-                      <Button type="button" variant="outline" onClick={() => setSignupStep(2)} className="flex-1 font-semibold py-2.5">
-                        Back
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={completeSignup}
-                        disabled={loading}
-                        className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5"
-                      >
-                        {loading ? 'Please wait...' : 'Complete Signup'}
+                        {loading ? 'Please wait...' : 'Create Account'}
                       </Button>
                     </div>
                   </div>

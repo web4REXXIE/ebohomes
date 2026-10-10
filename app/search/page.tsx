@@ -15,14 +15,25 @@ const MapPlaceholder = dynamic(
   { ssr: false }
 )
 
+// Values must match what is stored in listings.property_type (same list as /list-property)
 const PROPERTY_TYPES = [
   { value: '', label: 'All Types' },
-  { value: 'flat', label: 'Flat / Apartment' },
-  { value: 'bungalow', label: 'Bungalow' },
-  { value: 'duplex', label: 'Duplex' },
-  { value: 'self-contain', label: 'Self Contain' },
-  { value: 'penthouse', label: 'Penthouse' },
+  { value: 'Flat / Apartment', label: 'Flat / Apartment' },
+  { value: 'Bungalow', label: 'Bungalow' },
+  { value: 'Duplex', label: 'Duplex' },
+  { value: 'Self Contain', label: 'Self Contain' },
+  { value: 'Penthouse', label: 'Penthouse' },
+  { value: 'Hostel', label: 'Hostel' },
+  { value: 'Office', label: 'Office' },
+  { value: 'Shop / Mall', label: 'Shop / Mall' },
+  { value: 'Warehouse', label: 'Warehouse' },
+  { value: 'Land / Plot', label: 'Land / Plot' },
+  { value: 'Event Center', label: 'Event Center' },
 ]
+
+// '4+' means 4 or more; any other value is an exact match
+const matchCount = (actual: number | null | undefined, wanted: string) =>
+  wanted.endsWith('+') ? Number(actual) >= parseInt(wanted) : String(actual) === wanted
 
 const AMENITIES = ['Parking Space', '24/7 Security', 'Water Supply', 'Generator', 'Furnished']
 
@@ -59,6 +70,9 @@ export default function SearchPage() {
     if (params.get('maxPrice')) {
       setMaxPrice(Number(params.get('maxPrice')))
     }
+
+    const beds = params.get('bedrooms')
+    if (beds && ['1', '2', '3', '4+'].includes(beds)) setBedrooms(beds)
   }, [])
 
   useEffect(() => {
@@ -90,8 +104,8 @@ export default function SearchPage() {
     }
     if (propertyType) results = results.filter((l) => l.property_type === propertyType)
     results = results.filter((l) => l.price_monthly >= minPrice && l.price_monthly <= maxPrice)
-    if (bedrooms) results = results.filter((l) => String(l.bedrooms) === bedrooms)
-    if (bathrooms) results = results.filter((l) => String(l.bathrooms) === bathrooms)
+    if (bedrooms) results = results.filter((l) => matchCount(l.bedrooms, bedrooms))
+    if (bathrooms) results = results.filter((l) => matchCount(l.bathrooms, bathrooms))
     if (amenities.length > 0) {
       results = results.filter((l) => amenities.some((a) => l.amenities?.includes(a)))
     }

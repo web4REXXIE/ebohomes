@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import {
   Sun, Moon, LogOut, LayoutDashboard, Menu, X,
   Info, HelpCircle, Mail, PlusCircle, ChevronRight,
@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabase'
 
 export function Header() {
   const router = useRouter()
+  const pathname = usePathname()
   const [isDark, setIsDark] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [role, setRole] = useState<string | null>(null)
@@ -53,6 +54,16 @@ export function Header() {
     return () => { document.body.style.overflow = '' }
   }, [drawerOpen])
 
+  // Escape closes the mobile menu
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDrawerOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+
   const toggleDarkMode = () => {
     if (!mounted) return
     document.documentElement.classList.toggle('dark')
@@ -81,10 +92,17 @@ export function Header() {
 
   const dashboardHref = role === 'landlord' ? '/dashboard' : '/home'
 
+  // Highlights the link for the page you are on
+  const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href))
+  const navLink = (href: string) =>
+    `flex flex-col items-center gap-0.5 text-sm font-medium transition-colors ${
+      isActive(href) ? 'text-primary' : 'text-foreground/70 hover:text-primary'
+    }`
+
   if (!mounted) {
     return (
       <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-sm border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 md:h-20 flex items-center justify-between">
           <div className="h-10 w-36 bg-muted rounded-lg animate-pulse" />
           <div className="flex items-center gap-2">
             <div className="h-9 w-20 bg-muted rounded-xl" />
@@ -99,37 +117,41 @@ export function Header() {
     <>
       <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-sm border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
+          <div className="flex items-center justify-between h-16 md:h-20">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setDrawerOpen(true)}
-                className="md:hidden p-2 rounded-xl hover:bg-muted text-foreground -ml-2"
+                className="md:hidden p-2.5 rounded-xl hover:bg-muted text-foreground -ml-2"
                 aria-label="Open menu"
               >
                 <Menu size={22} />
               </button>
 
               <Link href="/" className="flex items-center gap-2 shrink-0">
-                <img src="/logo-horizontal-compact.png" alt="EboHomes" className="h-16 sm:h-20 w-auto" />
+                <img
+                  src="/logo-horizontal-compact.png"
+                  alt="EboHomes"
+                  className="h-11 w-auto sm:h-12 lg:h-14 mix-blend-multiply dark:mix-blend-normal"
+                />
               </Link>
             </div>
 
             <nav className="hidden md:flex items-center gap-7">
-              <Link href="/" className="flex flex-col items-center gap-0.5 text-sm font-medium text-primary">
+              <Link href="/" className={navLink('/')} aria-current={isActive('/') ? 'page' : undefined}>
                 <HomeIcon size={18} />
                 Home
               </Link>
-              <Link href="/search" className="flex flex-col items-center gap-0.5 text-sm font-medium text-foreground/70 hover:text-primary transition-colors">
+              <Link href="/search" className={navLink('/search')} aria-current={isActive('/search') ? 'page' : undefined}>
                 <SearchIcon size={18} />
                 Properties
               </Link>
               {loggedIn && (
                 <>
-                  <Link href="/saved" className="flex flex-col items-center gap-0.5 text-sm font-medium text-foreground/70 hover:text-primary transition-colors">
+                  <Link href="/saved" className={navLink('/saved')} aria-current={isActive('/saved') ? 'page' : undefined}>
                     <Heart size={18} />
                     Saved
                   </Link>
-                  <Link href="/messages" className="flex flex-col items-center gap-0.5 text-sm font-medium text-foreground/70 hover:text-primary transition-colors">
+                  <Link href="/messages" className={navLink('/messages')} aria-current={isActive('/messages') ? 'page' : undefined}>
                     <MessageCircle size={18} />
                     Messages
                   </Link>
@@ -155,7 +177,8 @@ export function Header() {
 
               {!loggedIn && (
                 <>
-                  <Link href="/login">
+                  {/* Below 380px only Sign Up shows here; Log in stays in the menu */}
+                  <Link href="/login" className="max-[380px]:hidden">
                     <Button variant="outline" size="sm">Log in</Button>
                   </Link>
                   <Link href="/login?mode=signup">
@@ -197,6 +220,8 @@ export function Header() {
 
       {/* Mobile drawer */}
       <div
+        inert={!drawerOpen}
+        aria-hidden={!drawerOpen}
         className={`md:hidden fixed inset-0 z-50 transition-opacity duration-300 ${
           drawerOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
@@ -206,12 +231,15 @@ export function Header() {
           onClick={() => setDrawerOpen(false)}
         />
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menu"
           className={`absolute top-0 left-0 h-full w-[82%] max-w-[320px] bg-card shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
             drawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="flex items-center justify-between h-20 px-5 border-b border-border shrink-0">
-            <img src="/logo-horizontal-compact.png" alt="EboHomes" className="h-12 w-auto" />
+          <div className="flex items-center justify-between h-16 px-5 border-b border-border shrink-0">
+            <img src="/logo-horizontal-compact.png" alt="EboHomes" className="h-10 w-auto mix-blend-multiply dark:mix-blend-normal" />
             <button
               onClick={() => setDrawerOpen(false)}
               className="p-2 -mr-2 rounded-xl hover:bg-muted text-foreground"
@@ -233,8 +261,8 @@ export function Header() {
             )}
 
             <DrawerGroup label="Explore">
-              <DrawerItem href="/" label="Home" onClick={() => setDrawerOpen(false)} />
-              <DrawerItem href="/search" label="Properties" onClick={() => setDrawerOpen(false)} />
+              <DrawerItem icon={<HomeIcon size={18} />} href="/" label="Home" onClick={() => setDrawerOpen(false)} />
+              <DrawerItem icon={<SearchIcon size={18} />} href="/search" label="Properties" onClick={() => setDrawerOpen(false)} />
               <DrawerItem
                 icon={<HelpCircle size={18} />}
                 label="How It Works"

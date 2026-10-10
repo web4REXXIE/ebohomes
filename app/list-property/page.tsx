@@ -1,6 +1,6 @@
 'use client'
 import { supabase } from '@/lib/supabase'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, Upload, Check, MapPin, X } from 'lucide-react'
@@ -8,13 +8,33 @@ import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import dynamic from 'next/dynamic'
+import {
+  OWNERSHIP_BUCKET,
+  OWNERSHIP_ACCEPT,
+  validateOwnershipFile,
+  buildOwnershipPath,
+  isValidOwnershipPath,
+} from '@/lib/ownership-docs'
 
 const MapPlaceholder = dynamic(
   () => import('@/components/map-placeholder').then((mod) => ({ default: mod.MapPlaceholder })),
   { ssr: false }
 )
 
-const PROPERTY_TYPES = ['Flat / Apartment', 'Bungalow', 'Duplex', 'Self Contain', 'Penthouse']
+const PROPERTY_TYPES = [
+  'Flat / Apartment',
+  'Bungalow',
+  'Duplex',
+  'Self Contain',
+  'Penthouse',
+  'Hostel',
+  'Office',
+  'Shop / Mall',
+  'Warehouse',
+  'Land / Plot',
+  'Event Center',
+]
+
 const AMENITIES = [
   { id: 'generator', label: 'Generator' },
   { id: 'water', label: 'Water Supply' },
@@ -52,19 +72,6 @@ export default function ListPropertyPage() {
     phoneNumber: '',
     availabilityDate: '',
   })
-  const PROPERTY_TYPES = [
-  'Flat / Apartment',
-  'Bungalow',
-  'Duplex',
-  'Self Contain',
-  'Penthouse',
-  'Hostel',
-  'Office',
-  'Shop / Mall',
-  'Warehouse',
-  'Land / Plot',
-  'Event Center',
-]
 
   const [showMapModal, setShowMapModal] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -72,34 +79,57 @@ export default function ListPropertyPage() {
   const [docUploading, setDocUploading] = useState(false)
   const [docName, setDocName] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
 
- const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0]
-  if (!file) return
-  setDocUploading(true)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data?.user) {
+        router.replace('/login')
+        return
+      }
+      setAuthChecked(true)
+    })
+  }, [router])
 
-  const { data: userData } = await supabase.auth.getUser()
-  const userId = userData?.user?.id ?? 'anonymous'
-  const filePath = `${userId}/${Date.now()}-${file.name}`
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target
+    const file = input.files?.[0]
+    if (!file) return
 
-  const { error: uploadError } = await supabase.storage
-    .from('ownership-docs')
-    .upload(filePath, file)
+    const err = validateOwnershipFile(file)
+    if (err) {
+      alert(err)
+      input.value = ''
+      return
+    }
 
-  if (uploadError) {
-    alert('Failed to upload document: ' + uploadError.message)
+    setDocUploading(true)
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData?.user
+    if (!user) {
+      alert('You must be logged in.')
+      setDocUploading(false)
+      router.replace('/login')
+      return
+    }
+
+    const filePath = buildOwnershipPath(user.id, 'listing', file)
+    const { error: uploadError } = await supabase.storage
+      .from(OWNERSHIP_BUCKET)
+      .upload(filePath, file, { contentType: file.type, upsert: false })
+
+    if (uploadError) {
+      alert('Failed to upload document: ' + uploadError.message)
+      setDocUploading(false)
+      input.value = ''
+      return
+    }
+
+    setOwnershipDoc(filePath) // path only
+    setDocName(file.name)
     setDocUploading(false)
-    return
+    input.value = ''
   }
-
-  const { data } = supabase.storage
-    .from('ownership-docs')
-    .getPublicUrl(filePath)
-
-  setOwnershipDoc(data.publicUrl)
-  setDocName(file.name)
-  setDocUploading(false)
-}
 
   const removeDoc = () => {
     setOwnershipDoc('')
@@ -164,16 +194,22 @@ export default function ListPropertyPage() {
       return
     }
 
+    if (ownershipDoc && !isValidOwnershipPath(ownershipDoc, userData.user.id)) {
+      alert('Invalid ownership document. Please remove it and upload again.')
+      setSubmitting(false)
+      return
+    }
+
     const { error } = await supabase.from('listings').insert({
       landlord_id: userData.user.id,
       title: formData.title || `${formData.bedrooms} bed ${formData.propertyType} in ${formData.location}`,
       description: formData.description,
       listing_type: formData.listingType,
       price_monthly: Number(formData.monthlyRent),
-
       location_text: formData.location,
       lat: formData.lat,
       lng: formData.lng,
+      price_yearly: formData.annualRent ? Number(formData.annualRent) : null,
       property_type: formData.propertyType,
       bedrooms: Number(formData.bedrooms),
       bathrooms: formData.bathrooms ? Number(formData.bathrooms) : null,
@@ -196,6 +232,10 @@ export default function ListPropertyPage() {
     }
 
     setSubmitted(true)
+  }
+
+  if (!authChecked) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>
   }
 
   if (submitted) {
@@ -246,9 +286,11 @@ export default function ListPropertyPage() {
               return (
                 <div key={label} className="flex items-center flex-1">
                   <div className="flex flex-col items-center">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                      step >= n ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
-                    }`}>
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                        step >= n ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
+                      }`}
+                    >
                       {n}
                     </div>
                     <p className="text-[10px] text-center text-muted-foreground mt-1 whitespace-nowrap hidden sm:block">{label}</p>
@@ -399,9 +441,9 @@ export default function ListPropertyPage() {
                 </p>
                 {ownershipDoc ? (
                   <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
-                    <a href={ownershipDoc} target="_blank" rel="noreferrer" className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
                       <Check size={14} className="text-primary" /> {docName || 'Document uploaded'}
-                    </a>
+                    </span>
                     <button type="button" onClick={removeDoc} className="text-destructive text-sm font-semibold px-2">
                       Remove
                     </button>
@@ -413,7 +455,7 @@ export default function ListPropertyPage() {
                     ) : (
                       <span className="font-semibold text-foreground">Click to upload ownership document</span>
                     )}
-                    <input type="file" accept="image/*,application/pdf" onChange={handleDocUpload} className="hidden" />
+                    <input type="file" accept={OWNERSHIP_ACCEPT} onChange={handleDocUpload} className="hidden" />
                   </label>
                 )}
               </div>
