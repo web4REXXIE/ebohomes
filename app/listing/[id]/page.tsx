@@ -32,7 +32,7 @@ export default function ListingDetailPage() {
 
   useEffect(() => {
     const fetchListing = async () => {
-      const { data } = await supabase.from('listings').select('*').eq('id', id).single()
+      const { data } = await supabase.from('listings').select('*, properties(public_id)').eq('id', id).single()
 
       if (data && data.status !== 'approved') {
         setNotAvailable(true)
@@ -209,6 +209,11 @@ export default function ListingDetailPage() {
 
             <div className="flex items-start justify-between gap-4 mb-1">
               <h1 className="text-2xl font-bold text-foreground">{listing.title}</h1>
+{listing.properties?.public_id && (
+  <p className="mt-1 text-xs font-medium text-muted-foreground">
+    Property ID: {listing.properties.public_id}
+  </p>
+)}
             </div>
             <p className="flex items-center gap-1 text-muted-foreground text-sm mb-4">
               <MapPin size={14} /> {listing.location_text}
