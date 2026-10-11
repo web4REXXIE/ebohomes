@@ -65,7 +65,9 @@ export default function ListPropertyPage() {
     description: '',
     amenities: [] as string[],
     monthlyRent: '',
-    annualRent: '',
+annualRent: '',
+    serviceCharge: '',
+    cautionDeposit: '',
     location: '',
     lat: null as number | null,
     lng: null as number | null,
@@ -220,6 +222,8 @@ export default function ListPropertyPage() {
       ownership_doc_url: ownershipDoc || null,
       contact_info: formData.phoneNumber,
       availability_date: formData.availabilityDate || null,
+      service_charge: formData.serviceCharge ? Number(formData.serviceCharge) : null,
+      caution_deposit: formData.cautionDeposit ? Number(formData.cautionDeposit) : null,
       status: 'pending', // critical: must be set for search filtering + admin review queue
     })
 
@@ -586,7 +590,7 @@ export default function ListPropertyPage() {
                   type="number"
                   value={formData.annualRent}
                   onChange={(e) => setFormData((p) => ({ ...p, annualRent: e.target.value }))}
-                  placeholder="Auto-calculated as monthly × 12"
+                  readOnly placeholder="Auto-calculated as monthly × 12"
                   className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
@@ -602,7 +606,29 @@ export default function ListPropertyPage() {
                   className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
+<div>
+                <label className="block text-sm font-semibold text-foreground mb-2">Service Charge (₦, optional)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.serviceCharge}
+                  onChange={(e) => setFormData((p) => ({ ...p, serviceCharge: e.target.value }))}
+                  placeholder="e.g., 20000"
+                  className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
 
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">Caution / Deposit (₦, optional)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.cautionDeposit}
+                  onChange={(e) => setFormData((p) => ({ ...p, cautionDeposit: e.target.value }))}
+                  placeholder="e.g., 50000"
+                  className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Availability Date</label>
                 <input
