@@ -94,7 +94,6 @@ export default function EditListingPage() {
         property_type: formData.propertyType,
         bedrooms: Number(formData.bedrooms),
         price_monthly: Number(formData.monthlyRent),
-        price_yearly: Number(formData.monthlyRent) * 12,
         description: formData.description,
         contact_info: formData.phoneNumber,
         availability_date: formData.availabilityDate || null,

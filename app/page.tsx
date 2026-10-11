@@ -61,7 +61,7 @@ const CATEGORIES = [
 ]
 
 const WHY_CHOOSE = [
-  { title: 'Verified Landlords', desc: 'Every landlord is verified to ensure real, trusted people.', icon: ShieldCheck },
+  { title: 'Landlord Checks', desc: 'Landlords submit their details and documents for review before their listings go live.', icon: ShieldCheck },,
   { title: 'Secure & Safe', desc: 'Your safety is our priority with secure messaging.', icon: ScanFace },
   { title: 'Quality Listings', desc: 'We approve every listing to ensure genuine properties.', icon: BadgeCheck },
   { title: 'Easy Search', desc: 'Advanced filters help you find the perfect home fast.', icon: SearchCheck },
@@ -799,7 +799,7 @@ export default function HomePage() {
                 Find Verified Homes in <span className="text-emerald-300">Ebonyi State</span>
               </h1>
               <p className="mx-auto mt-4 max-w-xl text-pretty text-base text-white/90 md:text-lg">
-                The safest way to rent genuine properties from verified landlords. No scams. No stress.
+                A safer way to find and rent properties in Ebonyi State, with every listing reviewed before it goes live.
               </p>
             </div>
           </div>

@@ -209,7 +209,7 @@ export default function ListPropertyPage() {
       location_text: formData.location,
       lat: formData.lat,
       lng: formData.lng,
-      price_yearly: formData.annualRent ? Number(formData.annualRent) : null,
+  
       property_type: formData.propertyType,
       bedrooms: Number(formData.bedrooms),
       bathrooms: formData.bathrooms ? Number(formData.bathrooms) : null,
