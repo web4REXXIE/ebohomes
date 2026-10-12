@@ -8,7 +8,7 @@ import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import dynamic from 'next/dynamic'
-import { computeImageHash } from '@/lib/image-hash'
+import { computeImageHash, computeVideoHashes } from '@/lib/image-hash'
 import {
   OWNERSHIP_BUCKET,
   OWNERSHIP_ACCEPT,
@@ -84,6 +84,7 @@ export default function ListPropertyPage() {
   const [uploading, setUploading] = useState(false)
   const [ownershipDoc, setOwnershipDoc] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
+  const [videoHashes, setVideoHashes] = useState<string[]>([])
   const [videoUploading, setVideoUploading] = useState(false)
   const [videoError, setVideoError] = useState('')
   const [docUploading, setDocUploading] = useState(false)
@@ -210,6 +211,7 @@ export default function ListPropertyPage() {
     }
     const { data } = supabase.storage.from('listing-videos').getPublicUrl(path)
     setVideoUrl(data.publicUrl)
+    setVideoHashes(await computeVideoHashes(file))
     setVideoUploading(false)
   }
 
@@ -278,7 +280,8 @@ export default function ListPropertyPage() {
       contact_info: formData.phoneNumber,
       availability_date: formData.availabilityDate || null,
       listed_by_role: formData.listedByRole || null,
-      video_url: videoUrl || null,
+      video_url: videoUrl ? videoUrl : null,
+      video_hashes: videoHashes,
       service_charge: formData.serviceCharge ? Number(formData.serviceCharge) : null,
       caution_deposit: formData.cautionDeposit ? Number(formData.cautionDeposit) : null,
       status: 'pending', // critical: must be set for search filtering + admin review queue
@@ -582,7 +585,10 @@ if (needsOwner && newListing?.id) {
                 {videoUrl ? (
                   <div>
                     <video src={videoUrl} controls className="w-full rounded-lg max-h-64 bg-black" />
-                    <button type="button" onClick={() => setVideoUrl('')} className="mt-2 text-sm text-destructive font-semibold">
+                    <button type="button" onClick={() => {
+                        setVideoUrl('')
+                        setVideoHashes([])
+                      }} className="mt-2 text-sm text-destructive font-semibold">
                       Remove video
                     </button>
                   </div>
