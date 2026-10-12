@@ -32,6 +32,9 @@ export default function GetVerifiedPage() {
     business_name: '',
     business_address: '',
     cac_number: '',
+    account_type: 'individual',
+    representative_name: '',
+    representative_role: '',
     bank_name: '',
     bank_account_name: '',
     bank_account_number: '',
@@ -52,7 +55,7 @@ export default function GetVerifiedPage() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('business_name, business_address, cac_number, bank_name, bank_account_name, bank_account_number, ownership_doc_url, id_document_type, id_document_url, selfie_url, verification_status, verified, rejection_reason')
+        .select('account_type, representative_name, representative_role, business_name, business_address, cac_number, bank_name, bank_account_name, bank_account_number, ownership_doc_url, id_document_type, id_document_url, selfie_url, verification_status, verified, rejection_reason')
         .eq('id', user.id)
         .single()
 
@@ -61,6 +64,9 @@ export default function GetVerifiedPage() {
           business_name: data.business_name || '',
           business_address: data.business_address || '',
           cac_number: data.cac_number || '',
+          account_type: data.account_type || 'individual',
+          representative_name: data.representative_name || '',
+          representative_role: data.representative_role || '',
           bank_name: data.bank_name || '',
           bank_account_name: data.bank_account_name || '',
           bank_account_number: data.bank_account_number || '',
@@ -70,7 +76,6 @@ export default function GetVerifiedPage() {
           selfie_url: data.selfie_url || '',
         })
         setStatus(data.verified ? 'verified' : (data.verification_status || null))
-
         setRejectionReason(data.rejection_reason || null)
 
         // if a doc path already exists, validate it and generate a signed preview link
@@ -179,7 +184,14 @@ export default function GetVerifiedPage() {
     input.value = ''
   }
 
+  const companyOk =
+    formData.account_type !== 'company' ||
+    (formData.cac_number.trim() !== '' &&
+      formData.representative_name.trim() !== '' &&
+      formData.representative_role.trim() !== '')
+
   const canSubmit =
+    companyOk &&
     formData.business_name &&
     formData.business_address &&
     formData.bank_name &&
@@ -214,6 +226,9 @@ export default function GetVerifiedPage() {
         business_name: formData.business_name,
         business_address: formData.business_address,
         cac_number: formData.cac_number || null,
+        account_type: formData.account_type,
+        representative_name: formData.account_type === 'company' ? formData.representative_name.trim() : null,
+        representative_role: formData.account_type === 'company' ? formData.representative_role.trim() : null,
         bank_name: formData.bank_name,
         bank_account_name: formData.bank_account_name,
         bank_account_number: formData.bank_account_number,
@@ -244,7 +259,7 @@ export default function GetVerifiedPage() {
       <div className="max-w-2xl mx-auto px-4 py-10">
         <div className="bg-card border border-emerald-200 rounded-2xl p-8 text-center">
           <ShieldCheck size={40} className="mx-auto text-emerald-600 mb-4" />
-          <h1 className="text-xl font-bold text-foreground mb-1">You're Verified</h1>
+          <h1 className="text-xl font-bold text-foreground mb-1">You&apos;re Verified</h1>
           <p className="text-sm text-muted-foreground">Your landlord account has been verified on EboHomes.</p>
         </div>
       </div>
@@ -257,7 +272,7 @@ export default function GetVerifiedPage() {
         <div className="bg-card border border-amber-200 rounded-2xl p-8 text-center">
           <Clock size={40} className="mx-auto text-amber-600 mb-4" />
           <h1 className="text-xl font-bold text-foreground mb-1">Verification Pending</h1>
-          <p className="text-sm text-muted-foreground">We've received your details. Our team will review them shortly.</p>
+          <p className="text-sm text-muted-foreground">We&apos;ve received your details. Our team will review them shortly.</p>
         </div>
       </div>
     )
@@ -268,7 +283,7 @@ export default function GetVerifiedPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground mb-1">Get Verified</h1>
         <p className="text-sm text-muted-foreground">
-          Verified landlords get a trust badge and more tenant enquiries. Provide accurate details — this is reviewed by our team.
+          Verified landlords get a trust badge. Provide accurate details — this is reviewed by our team.
         </p>
       </div>
 
@@ -287,6 +302,43 @@ export default function GetVerifiedPage() {
       )}
 
       <form onSubmit={handleSubmit} className="bg-card border border-border rounded-2xl p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-semibold text-foreground mb-2">Registering as *</label>
+          <select
+            value={formData.account_type}
+            onChange={(e) => setFormData((p) => ({ ...p, account_type: e.target.value }))}
+            className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="individual">An individual</option>
+            <option value="company">A company</option>
+          </select>
+        </div>
+
+        {formData.account_type === 'company' && (
+          <div className="space-y-4 rounded-lg border border-border p-4">
+            <p className="text-sm text-muted-foreground">
+              A CAC number shows the company exists. It does not prove the company owns this property, so upload the property document below as well.
+            </p>
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-2">Authorised representative&apos;s full name *</label>
+              <input
+                value={formData.representative_name}
+                onChange={(e) => setFormData((p) => ({ ...p, representative_name: e.target.value }))}
+                className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-2">Their role in the company *</label>
+              <input
+                value={formData.representative_role}
+                onChange={(e) => setFormData((p) => ({ ...p, representative_role: e.target.value }))}
+                placeholder="e.g. Director"
+                className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+        )}
+
         <div>
           <label className="block text-sm font-semibold text-foreground mb-2">Business Name *</label>
           <input
@@ -310,7 +362,9 @@ export default function GetVerifiedPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-foreground mb-2">CAC Number (optional)</label>
+          <label className="block text-sm font-semibold text-foreground mb-2">
+            CAC Number {formData.account_type === 'company' ? '*' : '(optional)'}
+          </label>
           <input
             value={formData.cac_number}
             onChange={(e) => setFormData((p) => ({ ...p, cac_number: e.target.value }))}
