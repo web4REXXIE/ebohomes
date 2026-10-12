@@ -8,6 +8,7 @@ import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import dynamic from 'next/dynamic'
+import { computeImageHash } from '@/lib/image-hash'
 import {
   OWNERSHIP_BUCKET,
   OWNERSHIP_ACCEPT,
@@ -53,6 +54,7 @@ export default function ListPropertyPage() {
   const [step, setStep] = useState(1)
   const [submitted, setSubmitted] = useState(false)
   const [photos, setPhotos] = useState<string[]>([])
+  const [photoHashes, setPhotoHashes] = useState<string[]>([])
 
   const [formData, setFormData] = useState({
     listingType: 'rent',
@@ -150,6 +152,7 @@ export default function ListPropertyPage() {
     setUploading(true)
     const filesToUpload = Array.from(files).slice(0, 10 - photos.length)
     const uploadedUrls: string[] = []
+    const uploadedHashes: string[] = []
 
     for (const file of filesToUpload) {
       const data = new FormData()
@@ -160,14 +163,21 @@ export default function ListPropertyPage() {
         { method: 'POST', body: data }
       )
       const json = await res.json()
-      if (json.secure_url) uploadedUrls.push(json.secure_url)
+      if (json.secure_url) {
+        uploadedUrls.push(json.secure_url)
+        uploadedHashes.push(await computeImageHash(file))
+      }
     }
 
     setPhotos([...photos, ...uploadedUrls])
+    setPhotoHashes([...photoHashes, ...uploadedHashes])
     setUploading(false)
   }
 
-  const removePhoto = (index: number) => setPhotos(photos.filter((_, i) => i !== index))
+  const removePhoto = (index: number) => {
+    setPhotos(photos.filter((_, i) => i !== index))
+    setPhotoHashes(photoHashes.filter((_, i) => i !== index))
+  }
 
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -263,6 +273,7 @@ export default function ListPropertyPage() {
       furnished: formData.furnished === 'yes',
       amenities: formData.amenities,
       photos: photos,
+      photo_hashes: photoHashes.filter((h) => h.length === 16),
       ownership_doc_url: ownershipDoc || null,
       contact_info: formData.phoneNumber,
       availability_date: formData.availabilityDate || null,
