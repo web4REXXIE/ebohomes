@@ -20,6 +20,9 @@ type Landlord = {
   bank_account_name: string | null
   bank_account_number: string | null
   ownership_doc_url: string | null
+  id_document_type: string | null
+  id_document_url: string | null
+  selfie_url: string | null
   verification_status: string | null
   verified: boolean | null
   badge: string | null
@@ -39,6 +42,8 @@ export default function VerifyLandlordsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   const [docUrl, setDocUrl] = useState('')
+  const [idUrl, setIdUrl] = useState('')
+  const [selfieSignedUrl, setSelfieSignedUrl] = useState('')
   const [rejectReason, setRejectReason] = useState('')
 
   const fetchLandlords = useCallback(async () => {
@@ -93,6 +98,24 @@ export default function VerifyLandlordsPage() {
       if (signedUrl) setDocUrl(signedUrl)
     }
     loadDocUrl()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id])
+
+  useEffect(() => {
+    const loadIdUrls = async () => {
+      setIdUrl('')
+      setSelfieSignedUrl('')
+      if (!selected) return
+      if (selected.id_document_url) {
+        const u = await getOwnershipSignedUrl(selected.id_document_url, selected.id)
+        if (u) setIdUrl(u)
+      }
+      if (selected.selfie_url) {
+        const u = await getOwnershipSignedUrl(selected.selfie_url, selected.id)
+        if (u) setSelfieSignedUrl(u)
+      }
+    }
+    loadIdUrls()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id])
 
@@ -329,24 +352,36 @@ export default function VerifyLandlordsPage() {
               )}
 
               <div className="bg-card border border-border rounded-lg p-5">
-                <h3 className="font-semibold text-foreground mb-3">Documents</h3>
-                {selected.ownership_doc_url ? (
-                  docUrl ? (
-                    <a
-                      href={docUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-2 text-sm text-primary font-medium hover:underline border border-border rounded-lg px-3 py-2"
-                    >
-                      <FileText size={15} /> View submitted document
-                    </a>
-                  ) : (
-                    <p className="text-sm text-destructive">Document unavailable: invalid path.</p>
-                  )
-                ) : (
-                  <p className="text-sm text-muted-foreground">No document uploaded yet.</p>
-                )}
-              </div>
+               <h3 className="font-semibold text-foreground mb-3">Documents</h3>
+                <div className="mb-4 space-y-2 text-sm">
+                  <p>
+                    <span className="text-muted-foreground block text-xs">ID type</span>
+                    {selected.id_document_type ?? '—'}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {idUrl ? (
+                      <a href={idUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-primary font-medium hover:underline border border-border rounded-lg px-3 py-2">
+                        <FileText size={15} /> View government ID
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">No ID uploaded</span>
+                    )}
+                    {selfieSignedUrl ? (
+                      <a href={selfieSignedUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-primary font-medium hover:underline border border-border rounded-lg px-3 py-2">
+                        <FileText size={15} /> View selfie
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">No selfie uploaded</span>
+                    )}
+                  </div>
+                  {selected.bank_account_name &&
+                    selected.full_name &&
+                    selected.bank_account_name.toLowerCase().trim() !== selected.full_name.toLowerCase().trim() && (
+                      <p className="text-xs text-destructive">
+                        Warning: the bank account name differs from the profile name. Check before approving.
+                      </p>
+                    )}
+                </div>
 
               {statusOf(selected) === 'pending' && (
                 <div className="bg-card border border-border rounded-lg p-5 space-y-3">
