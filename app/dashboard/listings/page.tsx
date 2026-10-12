@@ -196,7 +196,7 @@ export default function MyListingsPage() {
 
                   <button
                     onClick={() => handleTogglePause(listing)}
-                    disabled={actioningId === listing.id || listing.status === 'pending' || listing.status === 'rejected'}
+                   disabled={actioningId === listing.id || (listing.status !== 'approved' && listing.status !== 'paused')}
                     className="flex items-center gap-1 text-xs font-semibold text-foreground border border-border rounded-full px-3 py-1.5 hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {listing.status === 'paused' ? <Play size={12} /> : <Pause size={12} />}
