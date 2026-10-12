@@ -73,6 +73,7 @@ export default function ListPropertyPage() {
     lng: null as number | null,
     phoneNumber: '',
     availabilityDate: '',
+    listedByRole: '',
   })
 
   const [showMapModal, setShowMapModal] = useState(false)
@@ -221,7 +222,7 @@ export default function ListPropertyPage() {
   const canContinueStep1 = formData.propertyType && formData.bedrooms
   const canContinueStep2 = photos.length > 0
   const canContinueStep3 = formData.location
-  const canContinueStep4 = formData.monthlyRent && formData.phoneNumber
+  const canContinueStep4 = formData.monthlyRent && formData.phoneNumber && formData.listedByRole
 
   const handleSubmit = async () => {
     setSubmitting(true)
@@ -258,6 +259,7 @@ export default function ListPropertyPage() {
       ownership_doc_url: ownershipDoc || null,
       contact_info: formData.phoneNumber,
       availability_date: formData.availabilityDate || null,
+      listed_by_role: formData.listedByRole || null,
       video_url: videoUrl || null,
       service_charge: formData.serviceCharge ? Number(formData.serviceCharge) : null,
       caution_deposit: formData.cautionDeposit ? Number(formData.cautionDeposit) : null,
@@ -657,6 +659,22 @@ export default function ListPropertyPage() {
               </div>
 
               <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">Your relationship to this property *</label>
+                <select
+                  required
+                  value={formData.listedByRole}
+                  onChange={(e) => setFormData((p) => ({ ...p, listedByRole: e.target.value }))}
+                  className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Select one</option>
+                  <option value="owner">I am the owner</option>
+                  <option value="agent">I am an authorised agent</option>
+                  <option value="manager">I manage the property for the owner</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Phone Number (Nigerian) *</label>
                 <input
                   type="tel"
@@ -734,6 +752,20 @@ export default function ListPropertyPage() {
                 <div><p className="text-muted-foreground">Monthly Rent</p><p className="font-semibold text-primary">₦{Number(formData.monthlyRent).toLocaleString()}</p></div>
                 <div><p className="text-muted-foreground">Photos</p><p className="font-semibold text-foreground">{photos.length} uploaded</p></div>
                 <div><p className="text-muted-foreground">Ownership Doc</p><p className="font-semibold text-foreground">{ownershipDoc ? 'Uploaded' : 'Missing'}</p></div>
+                <div>
+                  <p className="text-muted-foreground">Listed by</p>
+                  <p className="font-semibold text-foreground">
+                    {formData.listedByRole === 'owner'
+                      ? 'Owner'
+                      : formData.listedByRole === 'agent'
+                      ? 'Authorised agent'
+                      : formData.listedByRole === 'manager'
+                      ? 'Property manager'
+                      : formData.listedByRole === 'other'
+                      ? 'Other'
+                      : '—'}
+                  </p>
+                </div>
               </div>
 
               <div className="bg-secondary border border-border rounded-lg p-4">

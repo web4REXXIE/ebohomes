@@ -16,6 +16,13 @@ const MapPlaceholder = dynamic(
   { ssr: false }
 )
 
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  agent: 'Agent',
+  manager: 'Property manager',
+  other: 'Other',
+}
+
 export default function ListingDetailPage() {
   const { id } = useParams()
   const router = useRouter()
@@ -139,6 +146,10 @@ export default function ListingDetailPage() {
   const whatsappMessage = `Hi, I found your listing on EboHomes: ${listing.title} in ${listing.location_text}. Is it still available?`
   const ebohomesMessage = `Hello EboHomes, I'm interested in property ${listing.properties?.public_id ?? listing.title}. Listing: ${listing.title}, ${listing.location_text}.`
 
+  const listedByLabel: string | null = listing.listed_by_role
+    ? ROLE_LABELS[listing.listed_by_role] ?? 'Other'
+    : null
+
   const inspectionFields = inspection
     ? [
         { key: 'road_condition', label: 'Road', icon: Route, value: inspection.road_condition, match: inspection.road_matches },
@@ -211,9 +222,11 @@ export default function ListingDetailPage() {
 
             <div className="flex items-start justify-between gap-4 mb-1">
               <h1 className="text-2xl font-bold text-foreground">{listing.title}</h1>
-              {listing.properties?.public_id && (
-                <p className="mt-1 text-xs font-medium text-muted-foreground">
-                  Property ID: {listing.properties.public_id}
+              {(listing.properties?.public_id || listedByLabel) && (
+                <p className="mt-1 text-xs font-medium text-muted-foreground text-right">
+                  {listing.properties?.public_id && <>Property ID: {listing.properties.public_id}</>}
+                  {listing.properties?.public_id && listedByLabel && ' · '}
+                  {listedByLabel && <>Listed by {listedByLabel}</>}
                 </p>
               )}
             </div>
@@ -455,9 +468,8 @@ export default function ListingDetailPage() {
                     <MessageCircle size={16} /> Chat with EboHomes
                   </Button>
 
-                  <p className="text-sm font-semibold text-foreground mb-3">intrested?</p>
+                  <p className="text-sm font-semibold text-foreground mb-3">Interested?</p>
 
-                  
                   <Button
                     onClick={() => router.push(`/apply/${listing.id}`)}
                     disabled={listing.status !== 'approved'}
