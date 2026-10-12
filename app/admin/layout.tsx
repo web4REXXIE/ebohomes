@@ -19,6 +19,9 @@ const NAV_ITEMS = [
   { href: '/admin/messages', label: 'Messages', icon: MessageSquare },
   { href: '/admin/audit-log', label: 'Audit Log', icon: ClipboardList },
   { href: '/admin/staff-roles', label: 'Staff Roles', icon: ShieldCheck },
+  { href: '/admin/contact-messages', label: 'Contact Messages', icon: MessageSquare },
+  { href: '/admin/disputes', label: 'Disputes', icon: ShieldCheck },
+  { href: '/admin/trust', label: 'Landlord Trust', icon: BarChart3 },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
