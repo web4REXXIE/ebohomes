@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import dynamic from 'next/dynamic'
 import { ReportListingModal } from '@/components/report-listing-modal'
+import { EBOHOMES_WHATSAPP } from '@/lib/contact'
 
 const MapPlaceholder = dynamic(
   () => import('@/components/map-placeholder').then((mod) => ({ default: mod.MapPlaceholder })),
@@ -136,6 +137,7 @@ export default function ListingDetailPage() {
 
   const photos: string[] = listing.photos || []
   const whatsappMessage = `Hi, I found your listing on EboHomes: ${listing.title} in ${listing.location_text}. Is it still available?`
+  const ebohomesMessage = `Hello EboHomes, I'm interested in property ${listing.properties?.public_id ?? listing.title}. Listing: ${listing.title}, ${listing.location_text}.`
 
   const inspectionFields = inspection
     ? [
@@ -441,6 +443,18 @@ export default function ListingDetailPage() {
                 )}
 
                 <div>
+                  <Button
+                    onClick={() =>
+                      window.open(
+                        `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(ebohomesMessage)}`,
+                        '_blank'
+                      )
+                    }
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold mb-4 flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle size={16} /> Chat with EboHomes
+                  </Button>
+
                   <p className="text-sm font-semibold text-foreground mb-3">Contact Landlord</p>
 
                   <Button
