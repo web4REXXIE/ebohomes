@@ -62,7 +62,7 @@ export default function ListingDetailPage() {
 
       if (data?.id) {
         const { data: inspectionData } = await supabase
-          .from('property_inspections')
+          .from('public_listing_inspections')
           .select('inspected_at, road_condition, road_matches, water_source, water_matches, electricity_notes, electricity_matches, network_notes, network_matches, security_notes, security_matches, neighborhood_type, nearby_landmarks, environment_notes, environment_matches, condition_notes, condition_matches, overall_notes')
           .eq('listing_id', data.id)
           .order('inspected_at', { ascending: false })
@@ -293,19 +293,19 @@ export default function ListingDetailPage() {
               </div>
             )}
 
-            {trust && (trust.identity_checked || trust.documents_reviewed || trust.inspected) && (
+            {(trust?.identity_checked || trust?.documents_reviewed || inspection) && (
               <div className="mb-6 flex flex-wrap gap-2">
-                {trust.identity_checked && (
+                {trust?.identity_checked && (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
                     <ShieldCheck size={14} /> Identity checked
                   </span>
                 )}
-                {trust.documents_reviewed && (
+                {trust?.documents_reviewed && (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
                     <FileText size={14} /> Documents reviewed
                   </span>
                 )}
-                {trust.inspected && (
+                {inspection && (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
                     <CheckCircle2 size={14} /> EboHomes inspected
                   </span>

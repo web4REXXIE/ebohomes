@@ -18,13 +18,14 @@ const CHECKLIST = [
 export default function PropertyReviewPage() {
   const [listings, setListings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'pending' | 'approved' | 'rejected'>('pending')
+  const [tab, setTab] = useState<'pending' | 'inspection_required' | 'approved' | 'suspended' | 'rejected'>('pending')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [ownershipDocUrl, setOwnershipDocUrl] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [updating, setUpdating] = useState(false)
   const [flags, setFlags] = useState<any[]>([])
   const [risk, setRisk] = useState<any>(null)
+  const [suspendReason, setSuspendReason] = useState('')
 
   useEffect(() => {
     fetchListings()
@@ -164,6 +165,42 @@ export default function PropertyReviewPage() {
     setUpdating(false)
   }
 
+  const handleSuspend = async (id: string) => {
+    if (!suspendReason.trim()) {
+      alert('Enter the reason for suspending this listing.')
+      return
+    }
+    setUpdating(true)
+    const nowIso = new Date().toISOString()
+    const reason = suspendReason.trim()
+    const { error } = await supabase
+      .from('listings')
+      .update({ status: 'suspended', suspension_reason: reason, suspended_at: nowIso })
+      .eq('id', id)
+    if (!error) {
+      setListings((prev) => prev.map((l) => (l.id === id ? { ...l, status: 'suspended', suspension_reason: reason } : l)))
+      setSuspendReason('')
+    } else {
+      alert('Failed to suspend: ' + error.message)
+    }
+    setUpdating(false)
+  }
+
+  const handleReinstate = async (id: string) => {
+    if (!window.confirm('Reinstate this listing and put it back in review?')) return
+    setUpdating(true)
+    const { error } = await supabase
+      .from('listings')
+      .update({ status: 'pending', suspension_reason: null, suspended_at: null })
+      .eq('id', id)
+    if (!error) {
+      setListings((prev) => prev.map((l) => (l.id === id ? { ...l, status: 'pending', suspension_reason: null } : l)))
+    } else {
+      alert('Failed to reinstate: ' + error.message)
+    }
+    setUpdating(false)
+  }
+
   const handleToggleVerified = async (id: string, current: boolean) => {
     const confirmMsg = current
       ? 'Remove the EboHomes Verified badge from this property?'
@@ -197,6 +234,8 @@ export default function PropertyReviewPage() {
     pending: listings.filter((l) => (l.status ?? 'pending') === 'pending').length,
     approved: listings.filter((l) => l.status === 'approved').length,
     rejected: listings.filter((l) => l.status === 'rejected').length,
+    inspection_required: listings.filter((l) => l.status === 'inspection_required').length,
+    suspended: listings.filter((l) => l.status === 'suspended').length,
   }
 
   return (
@@ -205,7 +244,7 @@ export default function PropertyReviewPage() {
       <p className="text-sm text-muted-foreground mb-6">Review property details and approve or reject listings.</p>
 
       <div className="flex gap-2 mb-6">
-        {(['pending', 'approved', 'rejected'] as const).map((t) => (
+        {(['pending', 'inspection_required', 'approved', 'suspended', 'rejected'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -213,7 +252,7 @@ export default function PropertyReviewPage() {
               tab === t ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:bg-secondary'
             }`}
           >
-            {t} ({counts[t]})
+            {t.replace('_', ' ')} ({counts[t]})
           </button>
         ))}
       </div>
@@ -222,7 +261,7 @@ export default function PropertyReviewPage() {
         <p className="text-muted-foreground">Loading...</p>
       ) : filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-lg p-12 text-center text-muted-foreground">
-          No {tab} listings.
+          No {tab.replace('_', ' ')} listings.
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -460,6 +499,42 @@ export default function PropertyReviewPage() {
                 </div>
               </div>
 
+              {/* Suspend / reinstate (listing freeze) */}
+              <div className="bg-card border border-border rounded-lg p-5">
+                <h3 className="font-semibold text-foreground mb-1">Listing freeze</h3>
+                {selected.status === 'suspended' ? (
+                  <>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Suspended{selected.suspension_reason ? `: ${selected.suspension_reason}` : ''}. It is hidden from tenants and cannot be applied to.
+                    </p>
+                    <Button onClick={() => handleReinstate(selected.id)} disabled={updating} variant="outline" className="w-full font-semibold">
+                      Reinstate and send back to review
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Use when a serious risk is found. The listing disappears from the public site straight away.
+                    </p>
+                    <textarea
+                      value={suspendReason}
+                      onChange={(e) => setSuspendReason(e.target.value)}
+                      rows={2}
+                      placeholder="Reason (required)"
+                      className="mb-3 w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                    />
+                    <Button
+                      onClick={() => handleSuspend(selected.id)}
+                      disabled={updating || !suspendReason.trim()}
+                      variant="outline"
+                      className="w-full border-destructive text-destructive hover:bg-destructive/10 font-semibold"
+                    >
+                      Suspend listing
+                    </Button>
+                  </>
+                )}
+              </div>
+
               {/* Verification — separate from approval */}
               <div className="bg-card border border-border rounded-lg p-5">
                 <h3 className="font-semibold text-foreground mb-1">EboHomes Verification</h3>
@@ -483,13 +558,13 @@ export default function PropertyReviewPage() {
               <div className="bg-card border border-border rounded-lg p-5">
                 <h3 className="font-semibold text-foreground mb-1">Property Inspection</h3>
                 <p className="text-xs text-muted-foreground mb-4">
-                  Record what you actually found on a visit — road, water, security, and more.
+                  Inspectors submit evidence, and a different reviewer approves it. Manage requests on the Inspections page.
                 </p>
                 <Link
-                  href={`/admin/inspections?listing=${selected.id}`}
+                  href="/admin/inspections"
                   className="w-full inline-flex items-center justify-center gap-2 font-semibold border border-border rounded-lg px-4 py-2.5 text-sm hover:bg-secondary transition-colors"
                 >
-                  <ClipboardCheck size={16} /> Inspect this property
+                  <ClipboardCheck size={16} /> Request or review inspections
                 </Link>
               </div>
             </div>

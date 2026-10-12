@@ -15,6 +15,11 @@ type ApplicationRow = {
   tenant_id: string
   landlord_id: string
   application_data: any
+  info_request: string | null
+  tenant_reply: string | null
+  decision_note: string | null
+  tenant_interest_at: string | null
+  tenant_inspected: boolean | null
   listing?: { title: string; location_text: string; price_monthly: number; photos: string[] }
   tenant?: { full_name: string; phone: string }
 }
@@ -28,7 +33,8 @@ type TenancyRow = {
   start_date: string
 }
 
-const TABS = ['pending', 'approved', 'rejected'] as const
+const TABS = ['pending', 'info_requested', 'approved', 'rejected'] as const
+const TAB_LABELS: Record<string, string> = { pending: 'Pending', info_requested: 'Waiting for tenant', approved: 'Accepted', rejected: 'Declined' }
 
 export default function LandlordApplicationsPage() {
   const router = useRouter()
@@ -38,6 +44,10 @@ export default function LandlordApplicationsPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [tenanciesByApp, setTenanciesByApp] = useState<Record<string, TenancyRow>>({})
   const [tenancyModalApp, setTenancyModalApp] = useState<ApplicationRow | null>(null)
+  const [infoOpenId, setInfoOpenId] = useState<string | null>(null)
+  const [infoText, setInfoText] = useState('')
+  const [declineNote, setDeclineNote] = useState('')
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     load()
@@ -56,7 +66,7 @@ export default function LandlordApplicationsPage() {
 
     const { data: apps } = await supabase
       .from('applications')
-      .select('id, status, message, created_at, listing_id, tenant_id, landlord_id, application_data')
+      .select('id, status, message, created_at, listing_id, tenant_id, landlord_id, application_data, info_request, tenant_reply, decision_note, tenant_interest_at, tenant_inspected')
       .eq('landlord_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -99,15 +109,23 @@ export default function LandlordApplicationsPage() {
     setLoading(false)
   }
 
-  const handleDecision = async (id: string, newStatus: 'approved' | 'rejected') => {
+  const handleDecision = async (
+    id: string,
+    newStatus: 'approved' | 'rejected' | 'info_requested',
+    extra: Record<string, any> = {}
+  ) => {
     setBusyId(id)
-    const { error } = await supabase
-      .from('applications')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', id)
+    setActionError('')
+    const patch = { status: newStatus, updated_at: new Date().toISOString(), ...extra }
+    const { error } = await supabase.from('applications').update(patch).eq('id', id)
 
-    if (!error) {
-      setApplications((prev) => prev.map((a) => (a.id === id ? { ...a, status: newStatus } : a)))
+    if (error) {
+      setActionError(error.message)
+    } else {
+      setApplications((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)))
+      setInfoOpenId(null)
+      setInfoText('')
+      setDeclineNote('')
     }
     setBusyId(null)
   }
@@ -126,6 +144,12 @@ export default function LandlordApplicationsPage() {
       return (
         <span className="flex items-center gap-1 text-xs font-medium text-destructive bg-destructive/10 px-2 py-1 rounded-full">
           <XCircle size={12} /> Rejected
+        </span>
+      )
+    if (status === 'info_requested')
+      return (
+        <span className="flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
+          <Clock size={12} /> Waiting for tenant
         </span>
       )
     return (
@@ -151,7 +175,7 @@ export default function LandlordApplicationsPage() {
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            {tab}
+            {TAB_LABELS[tab]}
             {tab === 'pending' && pendingCount > 0 && <span className="ml-1 text-xs">({pendingCount})</span>}
           </button>
         ))}
@@ -165,7 +189,7 @@ export default function LandlordApplicationsPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 border border-dashed border-border rounded-lg">
           <FileText size={32} className="text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground text-sm">No {activeTab} applications.</p>
+          <p className="text-muted-foreground text-sm">No {TAB_LABELS[activeTab].toLowerCase()} applications.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -205,24 +229,76 @@ export default function LandlordApplicationsPage() {
                     Applied {new Date(app.created_at).toLocaleDateString()}
                   </p>
 
-                  {app.status === 'pending' && (
-                    <div className="flex gap-2 mt-3">
-                      <button
-                        onClick={() => handleDecision(app.id, 'approved')}
-                        disabled={busyId === app.id}
-                        className="flex items-center gap-1 text-sm font-semibold text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 rounded-md px-3 py-1.5"
-                      >
-                        {busyId === app.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleDecision(app.id, 'rejected')}
-                        disabled={busyId === app.id}
-                        className="flex items-center gap-1 text-sm font-semibold text-destructive border border-destructive hover:bg-destructive hover:text-white disabled:opacity-50 rounded-md px-3 py-1.5"
-                      >
-                        <XCircle size={14} /> Reject
-                      </button>
+                  {app.tenant_reply && (
+                    <p className="text-sm mt-2 bg-primary/5 border border-primary/20 rounded-md p-2">
+                      <span className="font-medium">Tenant replied:</span> {app.tenant_reply}
+                    </p>
+                  )}
+
+                  {app.status === 'info_requested' && app.info_request && (
+                    <p className="text-sm mt-2 bg-amber-50 border border-amber-300 rounded-md p-2">
+                      <span className="font-medium">You asked:</span> {app.info_request}
+                    </p>
+                  )}
+
+                  {(app.status === 'pending' || app.status === 'info_requested') && (
+                    <div className="mt-3 space-y-2">
+                      {infoOpenId === app.id && (
+                        <div className="space-y-2">
+                          <textarea
+                            rows={2}
+                            value={infoText}
+                            onChange={(e) => setInfoText(e.target.value)}
+                            placeholder="What do you need to know? e.g. Where do you work? How many people will live here?"
+                            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                          />
+                          <button
+                            disabled={busyId === app.id || !infoText.trim()}
+                            onClick={() => handleDecision(app.id, 'info_requested', { info_request: infoText.trim(), tenant_reply: null })}
+                            className="text-sm font-semibold text-primary-foreground bg-primary rounded-md px-3 py-1.5 disabled:opacity-50"
+                          >
+                            Send question
+                          </button>
+                        </div>
+                      )}
+                      <input
+                        value={declineNote}
+                        onChange={(e) => setDeclineNote(e.target.value)}
+                        placeholder="Optional note to the tenant if you decline"
+                        className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-xs"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleDecision(app.id, 'approved')}
+                          disabled={busyId === app.id}
+                          className="flex items-center gap-1 text-sm font-semibold text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 rounded-md px-3 py-1.5"
+                        >
+                          {busyId === app.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                          Accept
+                        </button>
+                        <button
+                          onClick={() => setInfoOpenId(infoOpenId === app.id ? null : app.id)}
+                          disabled={busyId === app.id}
+                          className="text-sm font-semibold border border-border hover:bg-secondary rounded-md px-3 py-1.5"
+                        >
+                          Request more info
+                        </button>
+                        <button
+                          onClick={() => handleDecision(app.id, 'rejected', { decision_note: declineNote.trim() || null })}
+                          disabled={busyId === app.id}
+                          className="flex items-center gap-1 text-sm font-semibold text-destructive border border-destructive hover:bg-destructive hover:text-white disabled:opacity-50 rounded-md px-3 py-1.5"
+                        >
+                          <XCircle size={14} /> Decline
+                        </button>
+                      </div>
+                      {actionError && <p className="text-xs text-destructive">{actionError}</p>}
                     </div>
+                  )}
+
+                  {app.status === 'approved' && app.tenant_interest_at && (
+                    <p className="mt-2 text-xs font-medium text-primary">
+                      Tenant has inspected the property and wants to proceed ({new Date(app.tenant_interest_at).toLocaleDateString()}).
+                    </p>
                   )}
 
                   {app.status === 'approved' && (
