@@ -6,10 +6,14 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 
 const REASONS = [
-  'Misleading photos',
-  'Scam or fraud',
-  'Listing no longer available',
+  'Fake property',
+  'Suspicious landlord',
   'Incorrect price',
+  'Duplicate listing',
+  'Listing no longer available',
+  'Misleading photos',
+  'Fake agent',
+  'Payment request outside agreed process',
   'Other',
 ]
 

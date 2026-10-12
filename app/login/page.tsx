@@ -12,6 +12,7 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { getSiteUrl } from '@/lib/site-url'
+import { EBOHOMES_WHATSAPP } from '@/lib/contact'
 import { VerifyEmail } from '@/components/auth/verify-email'
 
 export default function LoginPage() {
@@ -204,7 +205,7 @@ export default function LoginPage() {
           <p className="text-muted-foreground text-lg mb-10 max-w-md">
             {isSignup
               ? "Whether you're looking for a home or listing your property, we've got you covered."
-              : 'Access your account to discover, rent, and manage verified properties in Ebonyi State.'
+              : 'Access your account to discover, rent, and manage properties in Ebonyi State.'
             }
             </p>
 
@@ -254,7 +255,7 @@ export default function LoginPage() {
             <div>
               <p className="text-sm font-medium text-foreground">Need help {isSignup ? 'signing up' : ''}?</p>
               <p className="text-xs text-muted-foreground mb-1">Chat with our support team on WhatsApp.</p>
-              <a href="#" className="text-xs text-primary font-semibold hover:underline">Chat on WhatsApp →</a>
+              <a href={`https://wa.me/${EBOHOMES_WHATSAPP}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary font-semibold hover:underline">Chat on WhatsApp →</a>
             </div>
           </div>
         </div>
@@ -574,7 +575,7 @@ export default function LoginPage() {
                   <div>
                     <p className="text-sm font-medium text-foreground">Need help?</p>
                     <p className="text-xs text-muted-foreground mb-1">Chat with our support team on WhatsApp.</p>
-                    <a href="#" className="text-xs text-primary font-semibold hover:underline">Chat on WhatsApp →</a>
+                    <a href="https://wa.me/2349169069445" target="_blank" rel="noopener noreferrer" className="text-xs text-primary font-semibold hover:underline">Chat on WhatsApp →</a>
                   </div>
                 </div>
               </>

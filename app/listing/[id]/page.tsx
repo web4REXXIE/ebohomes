@@ -510,6 +510,10 @@ export default function ListingDetailPage() {
                   >
                     <MessageSquare size={16} /> Message Landlord
                   </Button>
+
+                  <p className="mt-3 text-[11px] text-muted-foreground leading-snug">
+                    You can keep talking to the landlord, but EboHomes cannot provide transaction protection for any payment made outside EboHomes. Inspect the property yourself before you pay.
+                  </p>
                 </div>
               </div>
             </div>
