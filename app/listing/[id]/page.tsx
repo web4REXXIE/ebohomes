@@ -29,6 +29,7 @@ export default function ListingDetailPage() {
   const [listing, setListing] = useState<any>(null)
   const [landlord, setLandlord] = useState<any>(null)
   const [inspection, setInspection] = useState<any>(null)
+  const [trust, setTrust] = useState<any>(null)
   const [inspectionExpanded, setInspectionExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [currentPhoto, setCurrentPhoto] = useState(0)
@@ -68,6 +69,9 @@ export default function ListingDetailPage() {
           .limit(1)
           .maybeSingle()
         setInspection(inspectionData)
+
+        const { data: trustRows } = await supabase.rpc('listing_trust', { p_listing: data.id })
+        setTrust(Array.isArray(trustRows) ? trustRows[0] ?? null : null)
       }
 
       const { data: userData } = await supabase.auth.getUser()
@@ -289,7 +293,28 @@ export default function ListingDetailPage() {
               </div>
             )}
 
+            {trust && (trust.identity_checked || trust.documents_reviewed || trust.inspected) && (
+              <div className="mb-6 flex flex-wrap gap-2">
+                {trust.identity_checked && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                    <ShieldCheck size={14} /> Identity checked
+                  </span>
+                )}
+                {trust.documents_reviewed && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                    <FileText size={14} /> Documents reviewed
+                  </span>
+                )}
+                {trust.inspected && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                    <CheckCircle2 size={14} /> EboHomes inspected
+                  </span>
+                )}
+              </div>
+            )}
+
             {inspection && (
+
               <div className="mb-6 rounded-xl border-2 border-emerald-300 bg-emerald-50 overflow-hidden">
                 <button
                   type="button"
