@@ -255,7 +255,7 @@ export default function VerifyLandlordsPage() {
                 }`}
               >
                 {l.avatar_url ? (
-                  <img src={l.avatar_url} className="w-12 h-12 rounded-full object-cover bg-secondary shrink-0" />
+                  <img src={l.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover bg-secondary shrink-0" />
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
                     {l.full_name?.[0]?.toUpperCase() ?? '?'}
@@ -278,7 +278,7 @@ export default function VerifyLandlordsPage() {
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     {selected.avatar_url ? (
-                      <img src={selected.avatar_url} className="w-14 h-14 rounded-full object-cover" />
+                      <img src={selected.avatar_url} alt="" className="w-14 h-14 rounded-full object-cover" />
                     ) : (
                       <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
                         {selected.full_name?.[0]?.toUpperCase() ?? '?'}
@@ -388,9 +388,7 @@ export default function VerifyLandlordsPage() {
                     <FileText size={15} /> View ownership document
                   </a>
                 ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {selected.ownership_doc_url ? 'Loading document…' : 'No ownership document uploaded'}
-                  </p>
+                  <p className="text-sm text-muted-foreground">No ownership document uploaded</p>
                 )}
               </div>
 
