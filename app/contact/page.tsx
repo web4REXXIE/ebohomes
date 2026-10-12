@@ -5,12 +5,12 @@ import { supabase } from '@/lib/supabase'
 import { MessageCircle, Phone, Mail, MapPin, Clock, ShieldAlert, ChevronDown, Send, ShieldCheck, Lock, Users, Headphones, Home } from 'lucide-react'
 
 const faqs = [
-  { q: 'How do I contact a landlord?', a: 'Once you find a property you like, open the listing and send your enquiry through EboHomes. Our team handles all communication between tenants and landlords, so you never have to chase anyone directly.' },
+  { q: 'How do I contact a landlord?', a: 'EboHomes handles communication for you. Open the listing and tap "Chat with EboHomes". Once your interest is approved and an inspection is arranged, we coordinate the next steps with the landlord..' },
   { q: 'How do I list my property?', a: 'Sign up as a landlord, click "List Your Property," and follow the guided form — photos, price, location, and proof of ownership.' },
   { q: 'Is EboHomes free to use?', a: 'Browsing and searching is free for tenants. Landlords pay a small listing fee to publish and manage properties.' },
-  { q: 'How long does verification take?', a: 'Landlord document verification typically takes 24–48 hours once all documents are submitted.' },
+  { q: 'How long does verification take?', a: 'We review documents as quickly as we can. You can see your status in your dashboard.' },
   { q: 'What if I see a scam listing?', a: 'Use the "Report a Scam Listing" button below or on any listing page — our team reviews reports within 24 hours.' },
-  { q: 'How do payments work?', a: 'For now, payments are made directly via bank transfer with confirmation handled by our team. Card payments are coming soon.' },
+  { q: 'How do payments work?', a: 'EboHomes does not collect rent online yet. Our team will guide you on WhatsApp. We cannot protect payments made outside EboHomes..' },
 ]
 
 export default function ContactPage() {

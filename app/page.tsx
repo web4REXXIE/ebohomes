@@ -305,7 +305,7 @@ function CountUp({ to }: { to: number }) {
 // ---------- How it works: timeline (vertical on phone, horizontal on desktop) ----------
 const STEPS = [
   { icon: Search, title: 'Search', desc: 'Find properties that fit your needs.' },
-  { icon: MessageCircle, title: 'Contact', desc: 'Message or call landlords directly.' },
+  { icon: MessageCircle, title: 'Contact', desc: 'Chat with EboHomes to arrange viewings.' },
   { icon: ClipboardCheck, title: 'Inspect', desc: 'Schedule a viewing and see it yourself.' },
   { icon: Key, title: 'Move in', desc: 'Sign the agreement and get your keys.' },
 ]
@@ -766,13 +766,13 @@ export default function HomePage() {
 
   const steps = [
     { n: 1, icon: Search, title: 'Search', desc: 'Find properties that fit your needs' },
-    { n: 2, icon: MessageCircle, title: 'Contact', desc: 'Message or call landlords directly' },
+    { n: 2, icon: MessageCircle, title: 'Contact', desc: 'Chat with EboHomes to arrange viewings.' },
     { n: 3, icon: ClipboardCheck, title: 'Inspect', desc: 'Schedule viewing and inspect' },
     { n: 4, icon: Key, title: 'Move In', desc: 'Sign agreement and move in' },
   ]
 
   const TRUST_MINI = [
-    { icon: ShieldCheck, label: 'Verified Landlords' },
+    { icon: ShieldCheck, label: 'Reviewed Listings' },
     { icon: MessageCircle, label: 'Secure Messaging' },
     { icon: BadgeCheck, label: 'Trusted Platform' },
     { icon: Headphones, label: '24/7 Support' },
@@ -793,7 +793,7 @@ export default function HomePage() {
             <div className="relative z-10 mx-auto max-w-3xl px-4 pb-32 pt-14 text-center sm:px-6 md:pb-40 md:pt-24 lg:px-8">
               <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/25 bg-black/20 px-4 py-1.5 text-sm font-medium text-white">
                 <ShieldCheck size={16} className="text-emerald-300" />
-                Verified Rentals. Trusted People.
+                Reviewed Rentals. Real People.
               </span>
               <h1 className="text-balance text-4xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-5xl lg:text-6xl">
                 Find Verified Homes in <span className="text-emerald-300">Ebonyi State</span>
@@ -933,7 +933,7 @@ export default function HomePage() {
               Premium Listings
             </span>
           </div>
-          <p className="text-muted-foreground text-sm mb-5">Handpicked premium properties from verified landlords</p>
+          <p className="text-muted-foreground text-sm mb-5">Featured properties, reviewed before they go live</p>
 
           {loading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -972,7 +972,7 @@ export default function HomePage() {
                 <h3 className="text-lg md:text-xl font-extrabold text-foreground uppercase tracking-wide">
                   See More Properties
                 </h3>
-                <p className="text-muted-foreground text-sm">Browse hundreds of verified properties across Ebonyi State</p>
+                <p className="text-muted-foreground text-sm">Browse verified properties across Ebonyi State</p>
               </div>
             </div>
             <Button
