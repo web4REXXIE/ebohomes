@@ -46,7 +46,7 @@ export default function ListingDetailPage() {
       if (data?.landlord_id) {
         const { data: profile } = await supabase
           .from('profiles_public')
-          .select('full_name, phone, verified')
+          .select('full_name, verified')
           .eq('id', data.landlord_id)
           .maybeSingle()
         setLandlord(profile)
@@ -455,26 +455,9 @@ export default function ListingDetailPage() {
                     <MessageCircle size={16} /> Chat with EboHomes
                   </Button>
 
-                  <p className="text-sm font-semibold text-foreground mb-3">Contact Landlord</p>
+                  <p className="text-sm font-semibold text-foreground mb-3">intrested?</p>
 
-                  <Button
-                    onClick={() =>
-                      window.open(
-                        `https://wa.me/${listing.contact_info?.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMessage)}`,
-                        '_blank'
-                      )
-                    }
-                    className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-semibold mb-2 flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle size={16} /> Chat on WhatsApp
-                  </Button>
-
-                  <a href={`tel:${listing.contact_info}`}>
-                    <Button variant="outline" className="w-full font-semibold flex items-center justify-center gap-2">
-                      <Phone size={16} /> Call Landlord
-                    </Button>
-                  </a>
-
+                  
                   <Button
                     onClick={() => router.push(`/apply/${listing.id}`)}
                     disabled={listing.status !== 'approved'}

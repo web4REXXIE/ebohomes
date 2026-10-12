@@ -53,6 +53,12 @@ export default function EditListingPage() {
         .eq('landlord_id', user.id)
         .single();
 
+      const { data: contactRow } = await supabase
+        .from('listing_contacts')
+        .select('contact_info')
+        .eq('listing_id', id)
+        .maybeSingle();
+
       if (error || !data) {
         setMessage('Could not load this listing.');
         setLoading(false);
