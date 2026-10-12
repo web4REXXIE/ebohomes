@@ -205,7 +205,8 @@ export default function LoginPage() {
             {isSignup
               ? "Whether you're looking for a home or listing your property, we've got you covered."
               : 'Access your account to discover, rent, and manage verified properties in Ebonyi State.'
-          </p>
+            }
+            </p>
 
           <div className="space-y-5 mb-8">
             {isSignup ? (
