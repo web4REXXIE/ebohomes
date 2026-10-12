@@ -19,14 +19,15 @@ import {
   Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
 const BENEFITS = [
   { icon: Home, title: 'Homepage Placement', desc: 'Appear on the homepage for maximum exposure' },
   { icon: Search, title: 'Top Search Ranking', desc: 'Show at the top of search results' },
   { icon: Award, title: 'Gold Featured Badge', desc: 'Stand out with a premium gold badge' },
-  { icon: TrendingUp, title: 'More Views & Enquiries', desc: 'Get up to 5× more views & calls' },
+  { icon: TrendingUp, title: 'More Views & Enquiries', desc: 'Get more visibility for your listing' },
 ]
 
 const PLANS = [
@@ -39,21 +40,62 @@ export default function FeatureYourPropertyPage() {
   const router = useRouter()
   const [selectedPlan, setSelectedPlan] = useState(30)
 
-  const property = {
-    title: '3 Bedroom Apartment',
-    location: 'Presco Junction, Abakaliki, Ebonyi State',
-    price: 180000,
-    beds: 3,
-    baths: 3,
-    type: 'Apartment',
-    image: '/hero.jpg',
-  }
+  const params = useParams()
+  const listingId = String(params.id)
+  const [loaded, setLoaded] = useState(false)
+  const [property, setProperty] = useState({
+    title: '',
+    location: '',
+    price: 0,
+    beds: 0,
+    baths: 0,
+    type: '',
+    image: '/placeholder.jpg',
+    publicId: '',
+  })
+
+  useEffect(() => {
+    const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.push('/login')
+        return
+      }
+      const { data } = await supabase
+        .from('listings')
+        .select('title, location_text, price_monthly, bedrooms, bathrooms, property_type, photos, properties(public_id)')
+        .eq('id', listingId)
+        .eq('landlord_id', user.id)
+        .maybeSingle()
+      if (!data) {
+        router.push('/dashboard/listings')
+        return
+      }
+      const row: any = data
+      setProperty({
+        title: row.title ?? 'Your property',
+        location: row.location_text ?? '',
+        price: Number(row.price_monthly ?? 0),
+        beds: Number(row.bedrooms ?? 0),
+        baths: Number(row.bathrooms ?? 0),
+        type: row.property_type ?? '',
+        image: Array.isArray(row.photos) && row.photos.length > 0 ? row.photos[0] : '/placeholder.jpg',
+        publicId: row.properties?.public_id ?? '',
+      })
+      setLoaded(true)
+    }
+    load()
+  }, [listingId, router])
 
   const plan = PLANS.find((p) => p.days === selectedPlan)!
 
   const whatsappMessage = encodeURIComponent(
-    `Hi EboHomes, I'd like to feature my listing "${property.title}" for ${plan.days} days (₦${plan.price.toLocaleString()}). Please guide me on payment.`
+    `Hi EboHomes, I'd like to feature my listing "${property.title}"${property.publicId ? ` (${property.publicId})` : ''} for ${plan.days} days (₦${plan.price.toLocaleString()}). Please guide me on payment.`
   )
+
+  if (!loaded) {
+    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading...</div>
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -77,7 +119,7 @@ export default function FeatureYourPropertyPage() {
           </h1>
           <p className="text-muted-foreground text-sm md:text-base max-w-2xl">
             Featured properties appear on the homepage, at the top of search results, and receive
-            significantly more enquiries from verified tenants.
+            more visibility with people searching for a home.
           </p>
         </div>
 
@@ -131,7 +173,7 @@ export default function FeatureYourPropertyPage() {
             <div className="flex items-start gap-3 bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3.5 mt-4">
               <Eye size={16} className="text-primary shrink-0 mt-0.5" />
               <p className="text-xs text-foreground/80 leading-relaxed">
-                Featured properties get up to <span className="font-bold text-primary">5× more views</span> and higher enquiry rates.
+                Featured properties get <span className="font-bold text-primary">more visibility</span> in premium placements.
               </p>
             </div>
           </div>
@@ -192,7 +234,7 @@ export default function FeatureYourPropertyPage() {
 
           <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground mt-6">
             <ShieldCheck size={14} className="text-primary" />
-            All featured listings are reviewed and remain verified for your safety and the trust of our tenants.
+            All featured requests are reviewed by the EboHomes team before they go live.
           </p>
         </div>
 
@@ -215,7 +257,7 @@ export default function FeatureYourPropertyPage() {
               <Lock size={13} className="text-primary" /> Secure Process
             </span>
             <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-              <UserCheck size={13} className="text-primary" /> Manual Verification
+              <UserCheck size={13} className="text-primary" /> Manual Review
             </span>
           </div>
 
