@@ -23,6 +23,7 @@ export default function PropertyReviewPage() {
   const [ownershipDocUrl, setOwnershipDocUrl] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [updating, setUpdating] = useState(false)
+  const [flags, setFlags] = useState<any[]>([])
 
   useEffect(() => {
     fetchListings()
@@ -64,6 +65,31 @@ export default function PropertyReviewPage() {
       if (signedUrl) setOwnershipDocUrl(signedUrl)
     }
     loadDocUrl()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id])
+
+  const loadFlags = async (listingId: string) => {
+    const { data } = await supabase
+      .from('risk_flags')
+      .select('id, flag_type, severity, detail, status, related:listings!risk_flags_related_listing_id_fkey(id, title, location_text, status)')
+      .eq('listing_id', listingId)
+      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+    setFlags(data ?? [])
+  }
+
+  const resolveFlag = async (flagId: string, status: 'dismissed' | 'confirmed') => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error } = await supabase
+      .from('risk_flags')
+      .update({ status, reviewed_by: user?.id ?? null, reviewed_at: new Date().toISOString() })
+      .eq('id', flagId)
+    if (!error) setFlags((prev) => prev.filter((f) => f.id !== flagId))
+  }
+
+  useEffect(() => {
+    setFlags([])
+    if (selected?.id) loadFlags(selected.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id])
 
@@ -326,6 +352,37 @@ export default function PropertyReviewPage() {
                   )
                 )}
               </div>
+
+              {flags.length > 0 && (
+                <div className="bg-card border-2 border-destructive/40 rounded-lg p-5">
+                  <h3 className="font-semibold text-destructive mb-1">⚠ Possible duplicate or conflict</h3>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    This is a warning, not proof of fraud. Check it before approving.
+                  </p>
+                  <div className="space-y-3">
+                    {flags.map((f) => (
+                      <div key={f.id} className="rounded-lg border border-border p-3 text-sm">
+                        <p className="font-medium text-foreground">
+                          {f.detail} <span className="text-xs text-muted-foreground">({f.severity})</span>
+                        </p>
+                        {f.related && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Other listing: {f.related.title ?? 'Untitled'} · {f.related.location_text} · {f.related.status}
+                          </p>
+                        )}
+                        <div className="flex gap-2 mt-2">
+                          <Button size="sm" variant="outline" onClick={() => resolveFlag(f.id, 'dismissed')}>
+                            Not a problem
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => resolveFlag(f.id, 'confirmed')}>
+                            Confirmed conflict
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Review checklist + actions */}
               <div className="bg-card border border-border rounded-lg p-5">
