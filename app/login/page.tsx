@@ -108,7 +108,7 @@ export default function LoginPage() {
       .single()
 
     if (profile?.role === 'landlord') {
-      router.push(profile.verification_status === 'approved' ? '/dashboard' : '/dashboard/verify')
+      router.push(['verified', 'approved'].includes(profile.verification_status ?? '') ? '/dashboard' : '/dashboard/verify')
     } else {
       router.push('/')
     }
@@ -204,15 +204,15 @@ export default function LoginPage() {
           <p className="text-muted-foreground text-lg mb-10 max-w-md">
             {isSignup
               ? "Whether you're looking for a home or listing your property, we've got you covered."
-              : 'Access your account to discover, rent, and manage verified properties in Ebonyi State.'}
+              : 'Access your account to discover, rent, and manage verified properties in Ebonyi State.'
           </p>
 
           <div className="space-y-5 mb-8">
             {isSignup ? (
               <>
                 {[
-                  { icon: ShieldCheck, title: 'Verified & Secure', desc: 'Every landlord is verified. Your data is protected.' },
-                  { icon: HomeIcon, title: 'Quality Homes', desc: 'Browse thousands of verified rentals in Ebonyi State.' },
+                  { icon: ShieldCheck, title: 'Reviewed Listings', desc: 'Every listing is reviewed before it goes live.' },
+                  { icon: HomeIcon, title: 'Quality Homes', desc: 'Browse rentals across Ebonyi State.' },
                   { icon: Headphones, title: '24/7 Support', desc: 'Our support team is always here to help you.' },
                   { icon: LockIcon, title: 'Safe Platform', desc: 'We are committed to keeping renting safe and transparent.' },
                 ].map((item) => (
@@ -230,8 +230,8 @@ export default function LoginPage() {
             ) : (
               <>
                 {[
-                  { icon: ShieldCheck, title: 'Secure & Encrypted', desc: 'Your data is protected with 256-bit encryption.' },
-                  { icon: User, title: 'Verified Platform', desc: 'Every landlord is verified to keep you safe from scams.' },
+                  { icon: ShieldCheck, title: 'Secure & Encrypted', desc: 'Your data is stored securely.' },
+                  { icon: User, title: 'Safer Renting', desc: 'We review listings and landlord details to help you rent with confidence.' },
                   { icon: LockIcon, title: 'Protected Account', desc: 'We never share your information with third parties.' },
                 ].map((item) => (
                   <div key={item.title} className="flex items-center gap-3">
