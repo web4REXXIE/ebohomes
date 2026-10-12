@@ -196,8 +196,8 @@ export default function PrivacyPolicyPage() {
         <p>
           To ask a question about this Policy or exercise your data
           protection rights, contact us via WhatsApp at{' '}
-          <a href="https://wa.me/2349048569619" className="text-[#0A2E1A] underline underline-offset-2">
-            +234 904 856 9619
+          <a href="https://wa.me/2349169069445" className="text-[#0A2E1A] underline underline-offset-2">
+            +234 916 906 9445
           </a>{' '}
           or through our <a href="/contact" className="text-[#0A2E1A] underline underline-offset-2">Contact page</a>.
         </p>

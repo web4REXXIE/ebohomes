@@ -76,8 +76,8 @@ export default function CookiePolicyPage() {
       <LegalSection id="contact" number="7" title="Contact Us">
         <p>
           Questions about this Cookie Policy can be sent via WhatsApp at{' '}
-          <a href="https://wa.me/2349048569619" className="text-[#0A2E1A] underline underline-offset-2">
-            +234 904 856 9619
+          <a href="https://wa.me/2349169069445" className="text-[#0A2E1A] underline underline-offset-2">
+            +234 916 906 9445
           </a>.
         </p>
       </LegalSection>

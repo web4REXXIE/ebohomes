@@ -220,7 +220,7 @@ export default function FeatureYourPropertyPage() {
           </div>
 
           <a
-            href={`https://wa.me/2349048569619?text=${whatsappMessage}`}
+            href={`https://wa.me/2349169069445?text=${whatsappMessage}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block"

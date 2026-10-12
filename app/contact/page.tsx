@@ -129,13 +129,13 @@ export default function ContactPage() {
         <div className="lg:col-span-1">
           <h2 className="font-semibold text-lg text-foreground mb-5">Other ways to reach us</h2>
           <div className="grid grid-cols-2 gap-4">
-            <a href="https://wa.me/2348012345678" target="_blank" rel="noopener noreferrer" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href="https://wa.me/2349169069445" target="_blank" rel="noopener noreferrer" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><MessageCircle size={18} /></span>
               <p className="font-medium text-sm text-foreground">WhatsApp Support</p>
               <p className="text-xs text-muted-foreground mb-1">Chat with us instantly</p>
               <span className="text-xs text-primary font-medium">Chat now →</span>
             </a>
-            <a href="tel:+2348012345678" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href="tel:+2349169069445" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Phone size={18} /></span>
               <p className="font-medium text-sm text-foreground">Call Support</p>
               <p className="text-xs text-muted-foreground mb-1">Speak with our team</p>

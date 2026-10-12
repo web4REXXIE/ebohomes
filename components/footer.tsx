@@ -58,7 +58,7 @@ const NAV_GROUPS = [
     links: [
       { href: '/contact', label: 'Contact' },
       { href: '/report-listing', label: 'Report a Listing' },
-      { href: 'https://wa.me/2348012345678', label: 'WhatsApp Support', external: true },
+      { href: 'https://wa.me/2349169069445', label: 'WhatsApp Support', external: true },
     ],
   },
 ]
@@ -135,7 +135,7 @@ function SocialRow() {
     <div className="flex items-center gap-3">
       <SocialIcon href="#" label="Facebook"><FacebookIcon /></SocialIcon>
       <SocialIcon href="#" label="Instagram"><InstagramIcon /></SocialIcon>
-      <SocialIcon href="https://wa.me/2348012345678" label="WhatsApp"><MessageCircle size={16} /></SocialIcon>
+      <SocialIcon href="https://wa.me/2349169069445" label="WhatsApp"><MessageCircle size={16} /></SocialIcon>
       <SocialIcon href="#" label="X"><XIcon /></SocialIcon>
   
     </div>
