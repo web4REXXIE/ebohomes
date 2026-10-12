@@ -9,6 +9,7 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import dynamic from 'next/dynamic'
 import { computeImageHash, computeVideoHashes } from '@/lib/image-hash'
+import { getDeviceId } from '@/lib/device-id'
 import {
   OWNERSHIP_BUCKET,
   OWNERSHIP_ACCEPT,
@@ -282,6 +283,7 @@ export default function ListPropertyPage() {
       listed_by_role: formData.listedByRole || null,
       video_url: videoUrl ? videoUrl : null,
       video_hashes: videoHashes,
+      device_id: getDeviceId() ? getDeviceId() : null,
       service_charge: formData.serviceCharge ? Number(formData.serviceCharge) : null,
       caution_deposit: formData.cautionDeposit ? Number(formData.cautionDeposit) : null,
       status: 'pending', // critical: must be set for search filtering + admin review queue
