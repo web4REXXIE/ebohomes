@@ -352,7 +352,7 @@ export default function VerifyLandlordsPage() {
               )}
 
               <div className="bg-card border border-border rounded-lg p-5">
-               <h3 className="font-semibold text-foreground mb-3">Documents</h3>
+                <h3 className="font-semibold text-foreground mb-3">Documents</h3>
                 <div className="mb-4 space-y-2 text-sm">
                   <p>
                     <span className="text-muted-foreground block text-xs">ID type</span>
@@ -382,6 +382,17 @@ export default function VerifyLandlordsPage() {
                       </p>
                     )}
                 </div>
+
+                {docUrl ? (
+                  <a href={docUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-primary font-medium hover:underline border border-border rounded-lg px-3 py-2">
+                    <FileText size={15} /> View ownership document
+                  </a>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {selected.ownership_doc_url ? 'Loading document…' : 'No ownership document uploaded'}
+                  </p>
+                )}
+              </div>
 
               {statusOf(selected) === 'pending' && (
                 <div className="bg-card border border-border rounded-lg p-5 space-y-3">
