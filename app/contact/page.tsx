@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
 import { MessageCircle, Phone, Mail, MapPin, Clock, ShieldAlert, ChevronDown, Send, ShieldCheck, Lock, Users, Headphones, Home } from 'lucide-react'
 
 const faqs = [
-  { q: 'How do I contact a landlord?', a: 'Once you find a property you like, open the listing and use the Call or WhatsApp Landlord buttons to reach them directly.' },
+  { q: 'How do I contact a landlord?', a: 'Once you find a property you like, open the listing and send your enquiry through EboHomes. Our team handles all communication between tenants and landlords, so you never have to chase anyone directly.' },
   { q: 'How do I list my property?', a: 'Sign up as a landlord, click "List Your Property," and follow the guided form — photos, price, location, and proof of ownership.' },
   { q: 'Is EboHomes free to use?', a: 'Browsing and searching is free for tenants. Landlords pay a small listing fee to publish and manage properties.' },
   { q: 'How long does verification take?', a: 'Landlord document verification typically takes 24–48 hours once all documents are submitted.' },
@@ -16,11 +17,25 @@ export default function ContactPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [form, setForm] = useState({ name: '', email: '', phone: '', subject: '', message: '' })
   const [sent, setSent] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: wire this to an actual email/notification service (e.g. Resend) later
-    console.log('Contact form submitted:', form)
+    setSending(true)
+    setError('')
+    const { error: insertError } = await supabase.from('contact_messages').insert({
+      name: form.name.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim() === '' ? null : form.phone.trim(),
+      subject: form.subject === '' ? null : form.subject,
+      message: form.message.trim(),
+    })
+    setSending(false)
+    if (insertError) {
+      setError('Sorry, your message could not be sent. Please try again or message us on WhatsApp.')
+      return
+    }
     setSent(true)
   }
 
@@ -112,11 +127,13 @@ export default function ContactPage() {
                   className="w-full border border-border rounded-xl px-4 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                 />
               </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
               <button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-semibold py-3 rounded-xl hover:bg-primary/90 transition-colors"
+                disabled={sending}
+                className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-semibold py-3 rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                Send Message <Send size={16} />
+                {sending ? 'Sending...' : 'Send Message'} <Send size={16} />
               </button>
               <p className="text-xs text-muted-foreground flex items-center gap-1.5 justify-center">
                 <Lock size={12} /> Your information is safe with us. We never share your data.
@@ -129,23 +146,23 @@ export default function ContactPage() {
         <div className="lg:col-span-1">
           <h2 className="font-semibold text-lg text-foreground mb-5">Other ways to reach us</h2>
           <div className="grid grid-cols-2 gap-4">
-            <a href="https://wa.me/2349169069445" target="_blank" rel="noopener noreferrer" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href="https://wa.me/2348012345678" target="_blank" rel="noopener noreferrer" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><MessageCircle size={18} /></span>
               <p className="font-medium text-sm text-foreground">WhatsApp Support</p>
               <p className="text-xs text-muted-foreground mb-1">Chat with us instantly</p>
               <span className="text-xs text-primary font-medium">Chat now →</span>
             </a>
-            <a href="tel:+2349169069445" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href="tel:+2348012345678" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Phone size={18} /></span>
               <p className="font-medium text-sm text-foreground">Call Support</p>
               <p className="text-xs text-muted-foreground mb-1">Speak with our team</p>
               <span className="text-xs text-primary font-medium">+234 801 234 5678</span>
             </a>
-            <a href="mailto:ebohomesng@gmail.com" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href="mailto:support@ebohomes.com" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Mail size={18} /></span>
               <p className="font-medium text-sm text-foreground">Email Support</p>
               <p className="text-xs text-muted-foreground mb-1">We&apos;ll get back to you</p>
-              <span className="text-xs text-primary font-medium">ebohomesng@gmail.com</span>
+              <span className="text-xs text-primary font-medium">support@ebohomes.com</span>
             </a>
             <div className="bg-card border border-border rounded-2xl p-4">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Headphones size={18} /></span>
@@ -221,7 +238,7 @@ export default function ContactPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 gap-6">
           {[
             { icon: Home, title: 'Verified Listings', desc: 'Every property is checked' },
-            { icon: ShieldCheck, title: 'Secure Platform', desc: "Your data is protected" },
+            { icon: ShieldCheck, title: 'Secure Platform', desc: 'Your data is protected' },
             { icon: Users, title: 'Trusted Community', desc: 'Thousands of happy users' },
             { icon: Headphones, title: '24/7 Support', desc: "We're always here to help" },
           ].map((b, i) => (
