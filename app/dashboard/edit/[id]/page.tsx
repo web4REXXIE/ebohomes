@@ -71,7 +71,7 @@ export default function EditListingPage() {
         bedrooms: data.bedrooms ? String(data.bedrooms) : '',
         monthlyRent: data.price_monthly ? String(data.price_monthly) : '',
         description: data.description || '',
-        phoneNumber: data.contact_info || '',
+        phoneNumber: contactRow?.contact_info ?? '',
         availabilityDate: data.availability_date || '',
       });
       setLoading(false);
