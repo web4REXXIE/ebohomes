@@ -209,11 +209,11 @@ export default function ListingDetailPage() {
 
             <div className="flex items-start justify-between gap-4 mb-1">
               <h1 className="text-2xl font-bold text-foreground">{listing.title}</h1>
-{listing.properties?.public_id && (
-  <p className="mt-1 text-xs font-medium text-muted-foreground">
-    Property ID: {listing.properties.public_id}
-  </p>
-)}
+              {listing.properties?.public_id && (
+                <p className="mt-1 text-xs font-medium text-muted-foreground">
+                  Property ID: {listing.properties.public_id}
+                </p>
+              )}
             </div>
             <p className="flex items-center gap-1 text-muted-foreground text-sm mb-4">
               <MapPin size={14} /> {listing.location_text}
@@ -241,6 +241,18 @@ export default function ListingDetailPage() {
                 </span>
               )}
             </div>
+
+            {listing.video_url && (
+              <div className="mb-6">
+                <h3 className="font-semibold text-foreground mb-2">Property Walkthrough</h3>
+                <video
+                  src={listing.video_url}
+                  controls
+                  preload="metadata"
+                  className="w-full rounded-lg max-h-96 bg-black"
+                />
+              </div>
+            )}
 
             {listing.description && (
               <div className="mb-6">
@@ -369,6 +381,23 @@ export default function ListingDetailPage() {
               <div className="bg-card border border-border rounded-lg p-4 sm:p-5">
                 <p className="text-2xl font-bold text-primary">₦{listing.price_monthly?.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground mb-4">per month</p>
+
+                {(listing.service_charge > 0 || listing.caution_deposit > 0) && (
+                  <div className="mb-4 space-y-1 text-sm">
+                    {listing.service_charge > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Service charge</span>
+                        <span className="font-semibold text-foreground">₦{Number(listing.service_charge).toLocaleString()}</span>
+                      </div>
+                    )}
+                    {listing.caution_deposit > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Caution / deposit</span>
+                        <span className="font-semibold text-foreground">₦{Number(listing.caution_deposit).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {landlord && (
                   <div className="mb-4 pb-4 border-b border-border">
