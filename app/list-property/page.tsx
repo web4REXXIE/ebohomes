@@ -74,6 +74,8 @@ export default function ListPropertyPage() {
     phoneNumber: '',
     availabilityDate: '',
     listedByRole: '',
+    ownerName: '',
+    ownerPhone: '',
   })
 
   const [showMapModal, setShowMapModal] = useState(false)
@@ -222,7 +224,12 @@ export default function ListPropertyPage() {
   const canContinueStep1 = formData.propertyType && formData.bedrooms
   const canContinueStep2 = photos.length > 0
   const canContinueStep3 = formData.location
-  const canContinueStep4 = formData.monthlyRent && formData.phoneNumber && formData.listedByRole
+  const needsOwner = formData.listedByRole === 'agent' || formData.listedByRole === 'manager'
+  const canContinueStep4 =
+    formData.monthlyRent &&
+    formData.phoneNumber &&
+    formData.listedByRole &&
+    (!needsOwner || (formData.ownerName.trim() && formData.ownerPhone.trim()))
 
   const handleSubmit = async () => {
     setSubmitting(true)
@@ -240,7 +247,7 @@ export default function ListPropertyPage() {
       return
     }
 
-    const { error } = await supabase.from('listings').insert({
+    const { data: newListing, error } = await supabase.from('listings').insert({
       landlord_id: userData.user.id,
       title: formData.title || `${formData.bedrooms} bed ${formData.propertyType} in ${formData.location}`,
       description: formData.description,
@@ -272,6 +279,14 @@ export default function ListPropertyPage() {
       console.error('Listing error:', error)
       alert('Failed to submit listing: ' + error.message)
       return
+    }
+if (needsOwner && newListing?.id) {
+      const { error: ownerError } = await supabase.from('listing_owner_details').insert({
+        listing_id: newListing.id,
+        owner_name: formData.ownerName.trim(),
+        owner_phone: formData.ownerPhone.trim(),
+      })
+      if (ownerError) console.error('Owner details error:', ownerError)
     }
 
     setSubmitted(true)
@@ -673,6 +688,32 @@ export default function ListPropertyPage() {
                   <option value="other">Other</option>
                 </select>
               </div>
+              {(formData.listedByRole === 'agent' || formData.listedByRole === 'manager') && (
+                <div className="space-y-4 rounded-lg border border-border p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Tell us who owns this property. Upload the owner&apos;s signed authorization letter as the ownership document. EboHomes may contact the owner to confirm.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-semibold text-foreground mb-2">Owner&apos;s full name *</label>
+                    <input
+                      type="text"
+                      value={formData.ownerName}
+                      onChange={(e) => setFormData((p) => ({ ...p, ownerName: e.target.value }))}
+                      className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-foreground mb-2">Owner&apos;s phone number *</label>
+                    <input
+                      type="tel"
+                      value={formData.ownerPhone}
+                      onChange={(e) => setFormData((p) => ({ ...p, ownerPhone: e.target.value }))}
+                      placeholder="+234 801 234 5678"
+                      className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Phone Number (Nigerian) *</label>
