@@ -1,4 +1,4 @@
-'use client'
+\'use client'
 import { supabase } from '@/lib/supabase'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -65,7 +65,7 @@ export default function ListPropertyPage() {
     description: '',
     amenities: [] as string[],
     monthlyRent: '',
-annualRent: '',
+    annualRent: '',
     serviceCharge: '',
     cautionDeposit: '',
     location: '',
@@ -78,6 +78,9 @@ annualRent: '',
   const [showMapModal, setShowMapModal] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [ownershipDoc, setOwnershipDoc] = useState('')
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoUploading, setVideoUploading] = useState(false)
+  const [videoError, setVideoError] = useState('')
   const [docUploading, setDocUploading] = useState(false)
   const [docName, setDocName] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -163,6 +166,40 @@ annualRent: '',
 
   const removePhoto = (index: number) => setPhotos(photos.filter((_, i) => i !== index))
 
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setVideoError('')
+    const okTypes = ['video/mp4', 'video/webm', 'video/quicktime']
+    if (!okTypes.includes(file.type)) {
+      setVideoError('Please upload an MP4, MOV or WEBM video.')
+      return
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setVideoError('Video is too large (max 50MB). Try a shorter clip of 20 to 90 seconds.')
+      return
+    }
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData.user) {
+      setVideoError('Please log in again.')
+      return
+    }
+    setVideoUploading(true)
+    const ext = file.type === 'video/webm' ? 'webm' : file.type === 'video/quicktime' ? 'mov' : 'mp4'
+    const path = `${userData.user.id}/${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage
+      .from('listing-videos')
+      .upload(path, file, { contentType: file.type, upsert: false })
+    if (upErr) {
+      setVideoError('Video upload failed. Please try again.')
+      setVideoUploading(false)
+      return
+    }
+    const { data } = supabase.storage.from('listing-videos').getPublicUrl(path)
+    setVideoUrl(data.publicUrl)
+    setVideoUploading(false)
+  }
+
   const handleAmenityToggle = (amenityId: string) => {
     setFormData((prev) => ({
       ...prev,
@@ -211,7 +248,6 @@ annualRent: '',
       location_text: formData.location,
       lat: formData.lat,
       lng: formData.lng,
-  
       property_type: formData.propertyType,
       bedrooms: Number(formData.bedrooms),
       bathrooms: formData.bathrooms ? Number(formData.bathrooms) : null,
@@ -222,6 +258,7 @@ annualRent: '',
       ownership_doc_url: ownershipDoc || null,
       contact_info: formData.phoneNumber,
       availability_date: formData.availabilityDate || null,
+      video_url: videoUrl || null,
       service_charge: formData.serviceCharge ? Number(formData.serviceCharge) : null,
       caution_deposit: formData.cautionDeposit ? Number(formData.cautionDeposit) : null,
       status: 'pending', // critical: must be set for search filtering + admin review queue
@@ -509,6 +546,29 @@ annualRent: '',
 
               <p className="text-sm text-muted-foreground mb-6">{photos.length}/10 photos uploaded</p>
 
+              <div className="mb-6">
+                <h3 className="text-base font-bold text-foreground mb-1">Walkthrough Video (optional)</h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Show the real property in one go, 20 to 90 seconds. No heavy editing, please. Max 50MB.
+                </p>
+                {videoUrl ? (
+                  <div>
+                    <video src={videoUrl} controls className="w-full rounded-lg max-h-64 bg-black" />
+                    <button type="button" onClick={() => setVideoUrl('')} className="mt-2 text-sm text-destructive font-semibold">
+                      Remove video
+                    </button>
+                  </div>
+                ) : (
+                  <label className="block border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:bg-secondary transition-colors">
+                    <Upload size={28} className="mx-auto text-muted-foreground mb-2" />
+                    <p className="font-semibold text-foreground">Add Property Walkthrough Video</p>
+                    {videoUploading && <p className="text-sm text-primary mt-2">Uploading video... please wait</p>}
+                    <input type="file" accept="video/mp4,video/quicktime,video/webm" onChange={handleVideoUpload} className="hidden" />
+                  </label>
+                )}
+                {videoError && <p className="text-sm text-destructive mt-2">{videoError}</p>}
+              </div>
+
               <div className="flex gap-3">
                 <Button type="button" variant="outline" onClick={() => setStep(1)} className="flex-1 font-semibold py-3">
                   Back
@@ -590,7 +650,8 @@ annualRent: '',
                   type="number"
                   value={formData.annualRent}
                   onChange={(e) => setFormData((p) => ({ ...p, annualRent: e.target.value }))}
-                  readOnly placeholder="Auto-calculated as monthly × 12"
+                  readOnly
+                  placeholder="Auto-calculated as monthly × 12"
                   className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
@@ -606,7 +667,8 @@ annualRent: '',
                   className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
-<div>
+
+              <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Service Charge (₦, optional)</label>
                 <input
                   type="number"
@@ -629,6 +691,7 @@ annualRent: '',
                   className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Availability Date</label>
                 <input
