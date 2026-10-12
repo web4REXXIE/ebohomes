@@ -55,7 +55,7 @@ const NAV_GROUPS = [
     title: 'For Landlords',
     links: [
       { href: '/list-property', label: 'List Your Property' },
-      { href: '/dashboard/verification', label: 'Verification Guide' },
+      { href: '/dashboard/verify', label: 'Get Verified' },
       { href: '/dashboard', label: 'Landlord Dashboard' },
     ],
   },
