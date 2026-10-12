@@ -24,8 +24,8 @@ const NAV = [
   { label: 'Saved Homes', href: '/saved', icon: Heart },
   { label: 'Messages', href: '/messages', icon: MessageCircle, badgeKey: 'messages' },
   { label: 'Applications', href: '/applications', icon: FileText },
-  { label: 'Profile', href: '/profile', icon: User },
-  { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
+  
+  
   { label: 'Settings', href: '/settings', icon: Settings },
 ]
 
@@ -203,7 +203,7 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
             <Menu size={18} />
           </button>
           <span className="font-extrabold text-primary">EboHomes</span>
-          <Link href="/notifications" className="relative w-9 h-9 rounded-full bg-secondary flex items-center justify-center">
+          <Link href="/home" className="relative w-9 h-9 rounded-full bg-secondary flex items-center justify-center">
             <Bell size={16} />
             {unreadNotifs > 0 && (
               <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">

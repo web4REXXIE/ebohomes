@@ -46,8 +46,8 @@ const NAV_GROUPS = [
   {
     title: 'For You',
     links: [
-      { href: '/dashboard/saved', label: 'Saved Properties' },
-      { href: '/dashboard/applications', label: 'Rental Application' },
+      { href: '/saved', label: 'Saved Properties' },
+      { href: '/applications', label: 'Rental Application' },
       { href: '/contact', label: 'Help Center' },
     ],
   },

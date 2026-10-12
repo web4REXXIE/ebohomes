@@ -59,7 +59,7 @@ export function ProfileMenu({ email }: { email: string }) {
       ]
     : [
         { href: '/profile', label: 'My Profile', desc: 'View and edit your details', icon: User },
-        { href: '/bookings', label: 'My Bookings', desc: 'Upcoming & past rentals', icon: Calendar },
+       { href: '/applications', label: 'My Applications', desc: 'Track your rental applications', icon: Calendar },
         { href: '/saved', label: 'Saved Properties', desc: 'Your favourite homes', icon: Heart },
         { href: '/messages', label: 'Messages', desc: 'Chat with landlords', icon: MessageCircle },
         { href: '/settings', label: 'Settings', desc: 'App preferences', icon: Settings },

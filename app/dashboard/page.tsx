@@ -115,7 +115,7 @@ export default function DashboardOverview() {
         <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-foreground">Recent Activity</h2>
-            <button onClick={() => router.push('/dashboard/notifications')} className="text-xs font-semibold text-primary">
+            <button onClick={() => router.push('/dashboard/applications')} className="text-xs font-semibold text-primary">
               View All
             </button>
           </div>

@@ -148,7 +148,7 @@ export default function AdminDashboardPage() {
     { label: 'Total Users', value: stats.totalUsers, icon: Users, tint: 'text-primary bg-primary/10', href: '/admin/users' },
     { label: 'Active Listings', value: stats.totalListings, icon: Home, tint: 'text-emerald-600 bg-emerald-50', href: '/admin/property-review' },
     { label: 'Total Bookings', value: stats.totalBookings, icon: ClipboardCheck, tint: 'text-blue-600 bg-blue-50', href: '/admin/reports' },
-    { label: 'Total Revenue', value: `₦${stats.totalRevenue.toLocaleString()}`, icon: Wallet, tint: 'text-amber-600 bg-amber-50', href: '/admin/payments' },
+    { label: 'Total Revenue', value: `₦${stats.totalRevenue.toLocaleString()}`, icon: Wallet, tint: 'text-amber-600 bg-amber-50', href: '/admin' },
     { label: 'Pending Actions', value: pendingActionsTotal, icon: AlertTriangle, tint: 'text-purple-600 bg-purple-50', href: '/admin/property-review' },
   ]
 
@@ -163,7 +163,6 @@ export default function AdminDashboardPage() {
     { label: 'Verify Landlords', icon: ShieldCheck, href: '/admin/verify-landlords' },
     { label: 'Manage Users', icon: Users, href: '/admin/users' },
     { label: 'Reports', icon: FileWarning, href: '/admin/reports' },
-    { label: 'Payments', icon: Wallet, href: '/admin/payments' },
     { label: 'Messages', icon: MessageSquare, href: '/admin/messages' },
   ]
 

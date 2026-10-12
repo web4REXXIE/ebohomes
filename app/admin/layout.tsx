@@ -16,9 +16,7 @@ const NAV_ITEMS = [
   { href: '/admin/users', label: 'Manage Users', icon: Users },
   { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
-  { href: '/admin/payments', label: 'Payments', icon: CreditCard },
   { href: '/admin/messages', label: 'Messages', icon: MessageSquare },
-  { href: '/admin/settings', label: 'Settings', icon: Settings },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

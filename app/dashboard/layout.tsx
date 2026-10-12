@@ -31,7 +31,6 @@ const NAV = [
   { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badgeKey: 'messages' },
   { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
   { label: 'Payments', href: '/dashboard/payments', icon: CreditCard },
-  { label: 'Saved', href: '/dashboard/saved', icon: Heart },
   { label: 'Profile', href: '/dashboard/profile', icon: User },
   { label: 'Help & Support', href: '/dashboard/support', icon: HelpCircle },
 ]

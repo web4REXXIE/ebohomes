@@ -306,7 +306,7 @@ export default function TenantHomePage() {
           )}
         </Section>
 
-        <Section title="Notifications" href="/notifications" compact>
+       <Section title="Notifications" href="/home" compact>
           {notifications.length === 0 ? (
             <EmptyRow text="You're all caught up." />
           ) : (
