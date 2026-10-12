@@ -24,6 +24,7 @@ export default function PropertyReviewPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [updating, setUpdating] = useState(false)
   const [flags, setFlags] = useState<any[]>([])
+  const [risk, setRisk] = useState<any>(null)
 
   useEffect(() => {
     fetchListings()
@@ -76,6 +77,12 @@ export default function PropertyReviewPage() {
       .eq('status', 'open')
       .order('created_at', { ascending: false })
     setFlags(data ?? [])
+    const { data: riskRow } = await supabase
+      .from('listing_risk')
+      .select('score, level, reasons')
+      .eq('listing_id', listingId)
+      .maybeSingle()
+    setRisk(riskRow ?? null)
   }
 
   const resolveFlag = async (flagId: string, status: 'dismissed' | 'confirmed') => {
@@ -84,11 +91,12 @@ export default function PropertyReviewPage() {
       .from('risk_flags')
       .update({ status, reviewed_by: user?.id ?? null, reviewed_at: new Date().toISOString() })
       .eq('id', flagId)
-    if (!error) setFlags((prev) => prev.filter((f) => f.id !== flagId))
+    if (!error && selected?.id) loadFlags(selected.id)
   }
 
   useEffect(() => {
     setFlags([])
+    setRisk(null)
     if (selected?.id) loadFlags(selected.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id])
@@ -352,6 +360,22 @@ export default function PropertyReviewPage() {
                   )
                 )}
               </div>
+
+              {risk && (
+                <div className="bg-card border border-border rounded-lg p-5">
+                  <h3 className="font-semibold text-foreground mb-1">
+                    Risk score: {risk.score} ({risk.level})
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    A guide for the reviewer. It does not approve or reject anything.
+                  </p>
+                  <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1">
+                    {(risk.reasons ?? []).map((reason: string) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {flags.length > 0 && (
                 <div className="bg-card border-2 border-destructive/40 rounded-lg p-5">

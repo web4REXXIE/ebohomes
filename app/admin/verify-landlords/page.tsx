@@ -16,6 +16,9 @@ type Landlord = {
   business_name: string | null
   business_address: string | null
   cac_number: string | null
+  account_type: string | null
+  representative_name: string | null
+  representative_role: string | null
   bank_name: string | null
   bank_account_name: string | null
   bank_account_number: string | null
@@ -316,6 +319,14 @@ export default function VerifyLandlordsPage() {
                   {selected.business_address && (
                     <p className="flex items-center gap-2 text-muted-foreground sm:col-span-2">
                       <MapPin size={14} className="text-primary shrink-0" /> {selected.business_address}
+                    </p>
+                  )}
+                  {selected.account_type === 'company' && (
+                    <p className="sm:col-span-2">
+                      <span className="text-muted-foreground">Company. Representative:</span>{' '}
+                      <span className="font-medium text-foreground">
+                        {selected.representative_name ?? '—'} ({selected.representative_role ?? '—'})
+                      </span>
                     </p>
                   )}
                   {selected.cac_number && (
