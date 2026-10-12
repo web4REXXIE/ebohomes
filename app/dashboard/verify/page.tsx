@@ -23,6 +23,9 @@ export default function GetVerifiedPage() {
 
   const [docUploading, setDocUploading] = useState(false)
   const [docName, setDocName] = useState('')
+  const [idUploading, setIdUploading] = useState('')
+  const [idDocName, setIdDocName] = useState('')
+  const [selfieName, setSelfieName] = useState('')
   const [docPreviewUrl, setDocPreviewUrl] = useState('')
 
   const [formData, setFormData] = useState({
@@ -33,6 +36,9 @@ export default function GetVerifiedPage() {
     bank_account_name: '',
     bank_account_number: '',
     ownership_doc_url: '', // stores a storage PATH, not a public URL
+    id_document_type: '',
+    id_document_url: '',
+    selfie_url: '',
   })
 
   useEffect(() => {
@@ -46,7 +52,7 @@ export default function GetVerifiedPage() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('business_name, business_address, cac_number, bank_name, bank_account_name, bank_account_number, ownership_doc_url, verification_status, verified, rejection_reason')
+        .select('business_name, business_address, cac_number, bank_name, bank_account_name, bank_account_number, ownership_doc_url, id_document_type, id_document_url, selfie_url, verification_status, verified, rejection_reason')
         .eq('id', user.id)
         .single()
 
@@ -59,8 +65,12 @@ export default function GetVerifiedPage() {
           bank_account_name: data.bank_account_name || '',
           bank_account_number: data.bank_account_number || '',
           ownership_doc_url: data.ownership_doc_url || '',
+          id_document_type: data.id_document_type || '',
+          id_document_url: data.id_document_url || '',
+          selfie_url: data.selfie_url || '',
         })
         setStatus(data.verified ? 'verified' : (data.verification_status || null))
+
         setRejectionReason(data.rejection_reason || null)
 
         // if a doc path already exists, validate it and generate a signed preview link
@@ -131,12 +141,53 @@ export default function GetVerifiedPage() {
     setDocPreviewUrl('')
   }
 
+  const handleIdUpload = async (e: React.ChangeEvent<HTMLInputElement>, kind: 'id' | 'selfie') => {
+    const input = e.target
+    const file = input.files?.[0]
+    if (!file) return
+    const validationError = validateOwnershipFile(file)
+    if (validationError) {
+      alert(validationError)
+      input.value = ''
+      return
+    }
+    const { data: userData } = await supabase.auth.getUser()
+    const user = userData?.user
+    if (!user) {
+      alert('You must be logged in.')
+      return
+    }
+    setIdUploading(kind)
+    const filePath = buildOwnershipPath(user.id, kind === 'id' ? 'govid' : 'selfie', file)
+    const { error: uploadError } = await supabase.storage
+      .from(OWNERSHIP_BUCKET)
+      .upload(filePath, file, { contentType: file.type, upsert: false })
+    if (uploadError) {
+      alert('Upload failed: ' + uploadError.message)
+      setIdUploading('')
+      input.value = ''
+      return
+    }
+    if (kind === 'id') {
+      setFormData((p) => ({ ...p, id_document_url: filePath }))
+      setIdDocName(file.name)
+    } else {
+      setFormData((p) => ({ ...p, selfie_url: filePath }))
+      setSelfieName(file.name)
+    }
+    setIdUploading('')
+    input.value = ''
+  }
+
   const canSubmit =
     formData.business_name &&
     formData.business_address &&
     formData.bank_name &&
     formData.bank_account_name &&
     formData.bank_account_number &&
+    formData.id_document_type &&
+    formData.id_document_url &&
+    formData.selfie_url &&
     formData.ownership_doc_url
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -167,6 +218,9 @@ export default function GetVerifiedPage() {
         bank_account_name: formData.bank_account_name,
         bank_account_number: formData.bank_account_number,
         ownership_doc_url: formData.ownership_doc_url, // storage path
+        id_document_type: formData.id_document_type,
+        id_document_url: formData.id_document_url,
+        selfie_url: formData.selfie_url,
         verification_status: 'pending',
       })
       .eq('id', user.id)
@@ -293,9 +347,84 @@ export default function GetVerifiedPage() {
         </div>
 
         <div className="border-t border-border pt-4">
-          <label className="block text-sm font-semibold text-foreground mb-2">Verification Document *</label>
+          <label className="block text-sm font-semibold text-foreground mb-2">Government ID *</label>
           <p className="text-xs text-muted-foreground mb-3">
-            Upload a valid ID, CAC certificate, or business registration document.
+            Upload a clear photo of your NIN slip, driver&apos;s licence, voter&apos;s card or international passport.
+          </p>
+          <select
+            value={formData.id_document_type}
+            onChange={(e) => setFormData((p) => ({ ...p, id_document_type: e.target.value }))}
+            className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground mb-3 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Select ID type</option>
+            <option value="nin">NIN slip / card</option>
+            <option value="drivers_licence">Driver&apos;s licence</option>
+            <option value="voters_card">Voter&apos;s card</option>
+            <option value="intl_passport">International passport</option>
+          </select>
+          {formData.id_document_url ? (
+            <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
+              <span className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
+                <Check size={14} className="text-primary" /> {idDocName || 'ID uploaded'}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setFormData((p) => ({ ...p, id_document_url: '' })); setIdDocName('') }}
+                className="text-destructive text-sm font-semibold px-2"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <label className="block border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm">
+              {idUploading === 'id' ? (
+                <span className="text-primary">Uploading ID...</span>
+              ) : (
+                <span className="font-semibold text-foreground flex items-center justify-center gap-2">
+                  <FileText size={16} /> Click to upload your ID
+                </span>
+              )}
+              <input type="file" accept={OWNERSHIP_ACCEPT} onChange={(e) => handleIdUpload(e, 'id')} className="hidden" />
+            </label>
+          )}
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <label className="block text-sm font-semibold text-foreground mb-2">Selfie holding your ID *</label>
+          <p className="text-xs text-muted-foreground mb-3">
+            Take a clear photo of your face, holding the same ID next to it.
+          </p>
+          {formData.selfie_url ? (
+            <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
+              <span className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
+                <Check size={14} className="text-primary" /> {selfieName || 'Selfie uploaded'}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setFormData((p) => ({ ...p, selfie_url: '' })); setSelfieName('') }}
+                className="text-destructive text-sm font-semibold px-2"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <label className="block border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm">
+              {idUploading === 'selfie' ? (
+                <span className="text-primary">Uploading selfie...</span>
+              ) : (
+                <span className="font-semibold text-foreground flex items-center justify-center gap-2">
+                  <FileText size={16} /> Click to take or upload a selfie
+                </span>
+              )}
+              <input type="file" accept="image/jpeg,image/png,image/webp" capture="user" onChange={(e) => handleIdUpload(e, 'selfie')} className="hidden" />
+            </label>
+          )}
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <label className="block text-sm font-semibold text-foreground mb-2">Property Ownership / Authority Document *</label>
+          <p className="text-xs text-muted-foreground mb-3">
+            Upload a title document, deed, C of O, survey, tenancy paper, or proof that you are authorised to rent this property.
           </p>
           {formData.ownership_doc_url ? (
             <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
