@@ -122,7 +122,7 @@ export default function AboutPage() {
             <a href="tel:+2348001234567" className="flex items-center gap-2 border border-white/40 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors">
               <Phone size={16} /> Call Us
             </a>
-            <a href="mailto:support@ebohomes.com" className="flex items-center gap-2 border border-white/40 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors">
+            <a href="mailto:ebohomesng@gmail.com" className="flex items-center gap-2 border border-white/40 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors">
               <Mail size={16} /> Email Us
             </a>
           </div>

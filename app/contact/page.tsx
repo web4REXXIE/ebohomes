@@ -141,11 +141,11 @@ export default function ContactPage() {
               <p className="text-xs text-muted-foreground mb-1">Speak with our team</p>
               <span className="text-xs text-primary font-medium">+234 801 234 5678</span>
             </a>
-            <a href="mailto:support@ebohomes.com" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href="mailto:ebohomesng@gmail.com" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Mail size={18} /></span>
               <p className="font-medium text-sm text-foreground">Email Support</p>
               <p className="text-xs text-muted-foreground mb-1">We&apos;ll get back to you</p>
-              <span className="text-xs text-primary font-medium">support@ebohomes.com</span>
+              <span className="text-xs text-primary font-medium">ebohomesng@gmail.com</span>
             </a>
             <div className="bg-card border border-border rounded-2xl p-4">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Headphones size={18} /></span>
