@@ -32,7 +32,8 @@ const NAV = [
   { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
   { label: 'Payments', href: '/dashboard/payments', icon: CreditCard },
   { label: 'Profile', href: '/dashboard/profile', icon: User },
-  { label: 'Help & Support', href: '/dashboard/support', icon: HelpCircle },
+  { label: 'Help & Support', href: '/contact', icon: HelpCircle },
+  { label: 'Tenancies', href: '/dashboard/tenancies', icon: FileText },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
