@@ -93,7 +93,7 @@ export default function TenantHomePage() {
     // Recommended For You
     const { data: recs } = await supabase
       .from('listings')
-      .select('*')
+     .select('id, title, price_monthly, location_text, property_type, bedrooms, bathrooms, photos, landlord_id, created_at')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(4)

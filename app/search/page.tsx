@@ -80,7 +80,7 @@ export default function SearchPage() {
       setLoading(true)
       const { data } = await supabase
         .from('listings')
-        .select('*')
+       .select('id, landlord_id, title, photos, price_monthly, price_yearly, location_text, property_type, bedrooms, bathrooms, amenities, created_at, verified, featured')
         .eq('status', 'approved')
         .order('created_at', { ascending: false })
       setListings(data || [])

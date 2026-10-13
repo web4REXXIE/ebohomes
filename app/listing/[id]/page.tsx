@@ -41,8 +41,7 @@ export default function ListingDetailPage() {
 
   useEffect(() => {
     const fetchListing = async () => {
-      const { data } = await supabase.from('listings').select('*, properties(public_id)').eq('id', id).single()
-
+     const { data } = await supabase.from('listings').select('id, landlord_id, title, description, location_text, lat, lng, price_monthly, service_charge, caution_deposit, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, listed_by_role, status, properties(public_id)').eq('id', id).single()
       if (data && data.status !== 'approved') {
         setNotAvailable(true)
         setLoading(false)
