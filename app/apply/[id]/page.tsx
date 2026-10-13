@@ -25,6 +25,17 @@ export default function ApplyPage() {
   const [message, setMessage] = useState('')
   const [moveInDate, setMoveInDate] = useState('')
 
+  const findOpenApplication = async (userId: string) => {
+    const { data: open } = await supabase
+      .from('applications')
+      .select('id, status')
+      .eq('listing_id', id)
+      .eq('tenant_id', userId)
+      .in('status', OPEN_STATUSES)
+      .limit(1)
+    return open && open.length > 0 ? (open[0].status as string) : null
+  }
+
   useEffect(() => {
     const load = async () => {
       const {
@@ -62,23 +73,15 @@ export default function ApplyPage() {
 
       setListing(listingData)
 
-      // Only an open application blocks a new one. Declined or withdrawn ones do not.
-      const { data: open } = await supabase
-        .from('applications')
-        .select('id, status')
-        .eq('listing_id', id)
-        .eq('tenant_id', user.id)
-        .in('status', OPEN_STATUSES)
-        .limit(1)
-
-      if (open && open.length > 0) {
-        setExistingStatus(open[0].status)
-      }
+      // Only an open application blocks a new one. Rejected or withdrawn ones do not.
+      const status = await findOpenApplication(user.id)
+      if (status) setExistingStatus(status)
 
       setLoading(false)
     }
 
     if (id) load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, router])
 
   const handleSubmit = async () => {
@@ -91,6 +94,7 @@ export default function ApplyPage() {
     } = await supabase.auth.getUser()
 
     if (!user) {
+      setSubmitting(false)
       router.push(`/login?redirect=/apply/${id}`)
       return
     }
@@ -110,13 +114,19 @@ export default function ApplyPage() {
 
     if (insertError) {
       if (insertError.code === '23505') {
-        setExistingStatus('pending')
-      } else if (insertError.code === '42501' || /row-level security/i.test(insertError.message)) {
+        // Duplicate open application: show the real current status.
+        const status = await findOpenApplication(user.id)
+        if (status) {
+          setExistingStatus(status)
+        } else {
+          setSubmitError('You already have an open application for this property.')
+        }
+      } else if (/not active/i.test(insertError.message)) {
         setSubmitError(
-          /not active/i.test(insertError.message)
-            ? 'Your account is not active, so you cannot apply right now. Please contact EboHomes support.'
-            : 'You are not able to apply to this property. It may no longer be open for applications.'
+          'Your account is not active, so you cannot apply right now. Please contact EboHomes support.'
         )
+      } else if (insertError.code === '42501' || /row-level security/i.test(insertError.message)) {
+        setSubmitError('You are not able to apply to this property. It may no longer be open for applications.')
       } else {
         setSubmitError('Something went wrong submitting your application. Please try again.')
       }

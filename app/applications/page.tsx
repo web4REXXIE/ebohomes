@@ -81,7 +81,14 @@ export default function MyApplicationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const update = async (id: string, patch: Record<string, any>, successMessage: string) => {
+  // Returns true only if the change was actually saved.
+  const update = async (
+    id: string,
+    patch: Record<string, any>,
+    successMessage: string,
+    onlyWhenStatus: string[]
+  ): Promise<boolean> => {
+    if (busyId) return false
     setBusyId(id)
     setError('')
     setNotice('')
@@ -89,17 +96,21 @@ export default function MyApplicationsPage() {
       .from('applications')
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('id', id)
+      .in('status', onlyWhenStatus)
       .select('id')
 
+    let saved = false
     if (err) {
       setError(err.message)
     } else if (!data || data.length === 0) {
-      setError('That change could not be saved. Please refresh the page and try again.')
+      setError('That change could not be saved because the application has changed. The page has been refreshed.')
     } else {
       setNotice(successMessage)
+      saved = true
     }
     setBusyId(null)
     await load()
+    return saved
   }
 
   const whatsapp = (app: ApplicationRow) => {
@@ -153,6 +164,12 @@ export default function MyApplicationsPage() {
                     </span>
                   </div>
 
+                  {app.listing && !listingOpen && (app.status === 'pending' || app.status === 'info_requested' || app.status === 'approved') && (
+                    <p className="mt-3 text-xs text-muted-foreground bg-secondary rounded-md p-2">
+                      This property is not currently listed. Contact EboHomes if you need help.
+                    </p>
+                  )}
+
                   {app.status === 'info_requested' && (
                     <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
                       <p className="font-semibold text-amber-900">The landlord asked:</p>
@@ -166,13 +183,16 @@ export default function MyApplicationsPage() {
                       />
                       <button
                         disabled={busyId === app.id || !(replies[app.id] ?? '').trim()}
-                        onClick={() =>
-                          update(
+                        onClick={async () => {
+                          const saved = await update(
                             app.id,
                             { tenant_reply: (replies[app.id] ?? '').trim(), status: 'pending' },
-                            'Your answer was sent. The landlord will review your application again.'
-                          ).then(() => setReplies((p) => ({ ...p, [app.id]: '' })))
-                        }
+                            'Your answer was sent. The landlord will review your application again.',
+                            ['info_requested']
+                          )
+                          // Keep what the tenant typed if sending failed.
+                          if (saved) setReplies((p) => ({ ...p, [app.id]: '' }))
+                        }}
                         className="mt-2 text-sm font-semibold text-primary-foreground bg-primary rounded-md px-3 py-1.5 disabled:opacity-50"
                       >
                         Send answer
@@ -227,7 +247,8 @@ export default function MyApplicationsPage() {
                               update(
                                 app.id,
                                 { tenant_interest_at: new Date().toISOString() },
-                                'Thanks. Your interest is confirmed and EboHomes will guide you on the agreement and payment.'
+                                'Thanks. Your interest is confirmed and EboHomes will guide you on the agreement and payment.',
+                                ['approved']
                               )
                             }
                             className="text-sm font-semibold text-primary-foreground bg-primary rounded-md px-3 py-1.5 disabled:opacity-50"
@@ -244,7 +265,11 @@ export default function MyApplicationsPage() {
                       disabled={busyId === app.id}
                       onClick={() => {
                         if (window.confirm('Withdraw this application?')) {
-                          update(app.id, { status: 'withdrawn' }, 'Your application was withdrawn.')
+                          update(app.id, { status: 'withdrawn' }, 'Your application was withdrawn.', [
+                            'pending',
+                            'info_requested',
+                            'approved',
+                          ])
                         }
                       }}
                       className="mt-3 text-xs text-muted-foreground hover:text-destructive hover:underline"
