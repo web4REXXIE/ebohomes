@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, ShieldOff, Flag, Calendar, MessageSquare, FileText, Route, Droplet, Zap, Wifi, Lock, Building2, ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Leaf, Home } from 'lucide-react'
+import { Heart, Share2, MapPin, Phone, MessageCircle, ShieldCheck, ShieldOff, Flag, Calendar, FileText, Route, Droplet, Zap, Wifi, Lock, Building2, ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Leaf, Home } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
@@ -147,7 +147,7 @@ export default function ListingDetailPage() {
   }
 
   const photos: string[] = listing.photos || []
-  const whatsappMessage = `Hi, I found your listing on EboHomes: ${listing.title} in ${listing.location_text}. Is it still available?`
+  const viewingMessage = `Hello EboHomes, I'd like to request a viewing for property ${listing.properties?.public_id ?? listing.title}. Listing: ${listing.title}, ${listing.location_text}.`
   const ebohomesMessage = `Hello EboHomes, I'm interested in property ${listing.properties?.public_id ?? listing.title}. Listing: ${listing.title}, ${listing.location_text}.`
 
   const listedByLabel: string | null = listing.listed_by_role
@@ -504,15 +504,21 @@ export default function ListingDetailPage() {
                   </Button>
 
                   <Button
-                    onClick={() => router.push(`/messages?to=${listing.landlord_id}&listing=${listing.id}`)}
+                    onClick={() =>
+                      window.open(
+                        `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(viewingMessage)}`,
+                        '_blank',
+                        'noopener,noreferrer'
+                      )
+                    }
                     variant="outline"
                     className="w-full font-semibold mt-2 flex items-center justify-center gap-2"
                   >
-                    <MessageSquare size={16} /> Message Landlord
+                    <Calendar size={16} /> Request a Viewing
                   </Button>
 
                   <p className="mt-3 text-[11px] text-muted-foreground leading-snug">
-                    You can keep talking to the landlord, but EboHomes cannot provide transaction protection for any payment made outside EboHomes. Inspect the property yourself before you pay.
+                    EboHomes coordinates viewing requests and applications. Arrange viewings through EboHomes, because EboHomes cannot provide transaction protection for any payment made outside EboHomes. Inspect the property yourself before you pay.
                   </p>
                 </div>
               </div>

@@ -14,13 +14,16 @@ import {
   Ruler,
   MessageSquare,
   Phone,
+  Calendar,
 } from 'lucide-react'
 import { ShareButton } from './share-button'
 import { supabase } from '@/lib/supabase'
+import { EBOHOMES_WHATSAPP } from '@/lib/contact'
+import { getSiteUrl } from '@/lib/site-url'
 
 type ListingCardProps = {
   id: string
-  landlord_id: string
+  landlord_id?: string // no longer used by the card; callers may still pass it
   image: string
   price_monthly: number
   price_yearly: number
@@ -37,7 +40,6 @@ type ListingCardProps = {
 
 export function ListingCard({
   id,
-  landlord_id,
   image,
   price_monthly,
   price_yearly,
@@ -99,10 +101,15 @@ export function ListingCard({
     setBusy(false)
   }
 
-  function handleMessageClick(e: React.MouseEvent) {
+  function handleViewingClick(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    router.push(`/messages?to=${landlord_id}&listing=${id}`)
+    const text = `Hello EboHomes, I'd like to request a viewing for this property: ${property_type} in ${location}. ${getSiteUrl()}/listing/${id}`
+    window.open(
+      `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(text)}`,
+      '_blank',
+      'noopener,noreferrer'
+    )
   }
 
   const SaveButton = ({ small }: { small?: boolean }) => (
@@ -197,11 +204,11 @@ export function ListingCard({
                 Details
               </Link>
               <button
-                onClick={handleMessageClick}
+                onClick={handleViewingClick}
                 className="flex-1 flex items-center justify-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg px-2 py-2 text-xs font-semibold transition-colors"
               >
-                <MessageSquare size={13} />
-                Message
+                <Calendar size={13} />
+                Request viewing
               </button>
             </div>
           </div>
@@ -230,11 +237,11 @@ export function ListingCard({
         <p className="text-sm text-muted-foreground mb-1">{location}</p>
         <p className="text-xs text-muted-foreground">{property_type} · {bedrooms} Beds</p>
         <button
-          onClick={handleMessageClick}
+          onClick={handleViewingClick}
           className="mt-2 w-full flex items-center justify-center gap-1 border border-border rounded-lg px-2 py-2 text-xs font-semibold text-foreground hover:bg-secondary/50 transition-colors"
         >
-          <MessageSquare size={13} />
-          Message Landlord
+          <Calendar size={13} />
+          Request a Viewing
         </button>
       </div>
     </div>
