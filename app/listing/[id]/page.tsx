@@ -20,12 +20,16 @@ import {
   Building2,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   AlertTriangle,
   Leaf,
   Home,
   Copy,
   Check,
+  Send,
+  X,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
@@ -63,6 +67,8 @@ export default function ListingDetailPage() {
   const [inspectionExpanded, setInspectionExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [currentPhoto, setCurrentPhoto] = useState(0)
+  const [touchStartX, setTouchStartX] = useState<number | null>(null)
+  const [touchEndX, setTouchEndX] = useState<number | null>(null)
   const [saved, setSaved] = useState(false)
   const [savedBusy, setSavedBusy] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
@@ -71,6 +77,199 @@ export default function ListingDetailPage() {
   const [pageError, setPageError] = useState('')
   const [shareMessage, setShareMessage] = useState('')
   const [copied, setCopied] = useState(false)
+  const [showShareMenu, setShowShareMenu] = useState(false)
+  const [canNativeShare, setCanNativeShare] = useState(false)
+
+  // Derived early so gallery handlers and hooks below can use it
+  const photos: string[] = Array.isArray(listing?.photos)
+    ? listing.photos
+    : []
+
+  /* ---------------- Gallery ---------------- */
+
+  function showPreviousPhoto() {
+    if (photos.length < 2) return
+
+    setCurrentPhoto((current) =>
+      current === 0 ? photos.length - 1 : current - 1
+    )
+  }
+
+  function showNextPhoto() {
+    if (photos.length < 2) return
+
+    setCurrentPhoto((current) =>
+      current === photos.length - 1 ? 0 : current + 1
+    )
+  }
+
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    setTouchStartX(event.touches[0].clientX)
+    setTouchEndX(null)
+  }
+
+  function handleTouchMove(event: React.TouchEvent<HTMLDivElement>) {
+    setTouchEndX(event.touches[0].clientX)
+  }
+
+  function handleTouchEnd() {
+    if (touchStartX === null || touchEndX === null) {
+      setTouchStartX(null)
+      setTouchEndX(null)
+      return
+    }
+
+    const distance = touchStartX - touchEndX
+    const minimumSwipeDistance = 45
+
+    if (Math.abs(distance) >= minimumSwipeDistance) {
+      if (distance > 0) {
+        showNextPhoto()
+      } else {
+        showPreviousPhoto()
+      }
+    }
+
+    setTouchStartX(null)
+    setTouchEndX(null)
+  }
+
+  // Reset to first photo when the listing changes
+  useEffect(() => {
+    setCurrentPhoto(0)
+  }, [id])
+
+  // Keyboard navigation (left / right arrow keys)
+  useEffect(() => {
+    const count = photos.length
+    if (count < 2) return
+
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return
+      }
+
+      if (showShareMenu) return
+
+      if (event.key === 'ArrowLeft') {
+        setCurrentPhoto((current) =>
+          current === 0 ? count - 1 : current - 1
+        )
+      } else if (event.key === 'ArrowRight') {
+        setCurrentPhoto((current) =>
+          current === count - 1 ? 0 : current + 1
+        )
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [photos.length, showShareMenu])
+
+  /* ---------------- Share ---------------- */
+
+  // Detect native share support (phones) once on the client
+  useEffect(() => {
+    setCanNativeShare(
+      typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+    )
+  }, [])
+
+  // Close share sheet with Escape
+  useEffect(() => {
+    if (!showShareMenu) return
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setShowShareMenu(false)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showShareMenu])
+
+  // Called by the Share button: opens the share sheet
+  function handleShare() {
+    if (!listing) return
+    setShareMessage('')
+    setCopied(false)
+    setShowShareMenu(true)
+  }
+
+  function getShareDetails() {
+    const url = window.location.href
+    const text = `Check out this property on EboHomes: ${listing.title}`
+    return {
+      url,
+      text,
+      encodedUrl: encodeURIComponent(url),
+      encodedText: encodeURIComponent(text),
+    }
+  }
+
+  function openShareLink(
+    platform: 'whatsapp' | 'facebook' | 'x' | 'telegram'
+  ) {
+    if (!listing || typeof window === 'undefined') return
+
+    const { encodedUrl, encodedText } = getShareDetails()
+
+    const links = {
+      whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+      x: `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
+      telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
+    }
+
+    window.open(links[platform], '_blank', 'noopener,noreferrer')
+    setShowShareMenu(false)
+  }
+
+  async function handleCopyLink() {
+    if (!listing || typeof window === 'undefined') return
+
+    setShowShareMenu(false)
+
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopied(true)
+      setShareMessage('Property link copied. Paste it anywhere to share.')
+    } catch {
+      setCopied(false)
+      setShareMessage(
+        'Unable to copy automatically. Copy the link from your browser address bar.'
+      )
+    }
+  }
+
+  // Opens the phone's native share sheet (TikTok, Instagram, SMS, etc.)
+  async function handleNativeShare() {
+    if (!listing || typeof navigator === 'undefined' || !navigator.share) {
+      return
+    }
+
+    const { url, text } = getShareDetails()
+    setShowShareMenu(false)
+
+    try {
+      await navigator.share({
+        title: listing.title || 'Property on EboHomes',
+        text,
+        url,
+      })
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return
+      console.error('Native share failed:', error)
+    }
+  }
+
+  /* ---------------- Data loading ---------------- */
 
   useEffect(() => {
     let cancelled = false
@@ -283,41 +482,7 @@ export default function ListingDetailPage() {
     }
   }
 
-  async function handleShare() {
-    if (!listing || typeof window === 'undefined') return
-
-    const url = window.location.href
-    const title = listing.title || 'Property on EboHomes'
-    const text = `Check out this property on EboHomes: ${title}`
-
-    setShareMessage('')
-    setCopied(false)
-
-    try {
-      if (navigator.share) {
-        await navigator.share({ title, text, url })
-        return
-      }
-
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setShareMessage('Property link copied. You can now share it.')
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        return
-      }
-
-      try {
-        await navigator.clipboard.writeText(url)
-        setCopied(true)
-        setShareMessage('Property link copied. You can now share it.')
-      } catch {
-        setShareMessage(
-          'Unable to share automatically. Copy the property link from your browser address bar.'
-        )
-      }
-    }
-  }
+  /* ---------------- Early returns ---------------- */
 
   if (loading) {
     return (
@@ -398,9 +563,7 @@ export default function ListingDetailPage() {
     )
   }
 
-  const photos: string[] = Array.isArray(listing.photos)
-    ? listing.photos
-    : []
+  /* ---------------- Derived values ---------------- */
 
   const propertyCode = listing.properties?.public_id ?? listing.title
 
@@ -482,6 +645,8 @@ export default function ListingDetailPage() {
       ].filter((field) => field.value)
     : []
 
+  /* ---------------- Main render ---------------- */
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
@@ -505,17 +670,39 @@ export default function ListingDetailPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
-            <div className="relative rounded-lg overflow-hidden border border-border mb-2">
+            <div
+              className="relative mb-2 overflow-hidden rounded-xl border border-border bg-secondary"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              {/* Main property photo */}
+              {photos.length > 0 ? (
+                <img
+                  src={photos[currentPhoto]}
+                  alt={`${listing.title} — photo ${currentPhoto + 1}`}
+                  draggable={false}
+                  className="h-72 w-full select-none object-cover sm:h-96 lg:h-[460px]"
+                />
+              ) : (
+                <div className="flex h-72 w-full items-center justify-center text-muted-foreground sm:h-96">
+                  No Photos Available
+                </div>
+              )}
+
+              {/* Save property */}
               <button
                 type="button"
                 onClick={handleToggleSave}
                 disabled={savedBusy}
-                aria-label={saved ? 'Remove from saved properties' : 'Save property'}
+                aria-label={
+                  saved ? 'Remove from saved properties' : 'Save property'
+                }
                 aria-pressed={saved}
-                className="absolute top-3 right-14 z-10 w-9 h-9 rounded-full bg-white/90 flex items-center justify-center disabled:opacity-50"
+                className="absolute right-14 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/95 shadow-md transition hover:bg-white disabled:opacity-50"
               >
                 <Heart
-                  size={18}
+                  size={19}
                   className={
                     saved
                       ? 'fill-destructive text-destructive'
@@ -524,46 +711,63 @@ export default function ListingDetailPage() {
                 />
               </button>
 
+              {/* Share property */}
               <button
                 type="button"
                 onClick={handleShare}
                 aria-label="Share property"
-                className="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-white/90 flex items-center justify-center"
+                className="absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/95 shadow-md transition hover:bg-white"
               >
-                <Share2 size={16} className="text-foreground" />
+                <Share2 size={18} className="text-foreground" />
               </button>
 
-              {photos.length > 0 ? (
-                <img
-                  src={photos[currentPhoto]}
-                  alt={listing.title}
-                  className="w-full h-72 sm:h-96 object-cover"
-                />
-              ) : (
-                <div className="w-full h-72 sm:h-96 bg-secondary flex items-center justify-center text-muted-foreground">
-                  No Photos
-                </div>
-              )}
-
               {photos.length > 1 && (
-                <span className="absolute bottom-3 left-3 bg-black/60 text-white text-xs px-2 py-1 rounded">
-                  {currentPhoto + 1} / {photos.length}
-                </span>
+                <>
+                  {/* Previous photo arrow */}
+                  <button
+                    type="button"
+                    onClick={showPreviousPhoto}
+                    aria-label="Previous photo"
+                    className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-foreground shadow-lg transition hover:scale-105 hover:bg-white sm:h-12 sm:w-12"
+                  >
+                    <ChevronLeft size={25} />
+                  </button>
+
+                  {/* Next photo arrow */}
+                  <button
+                    type="button"
+                    onClick={showNextPhoto}
+                    aria-label="Next photo"
+                    className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-foreground shadow-lg transition hover:scale-105 hover:bg-white sm:h-12 sm:w-12"
+                  >
+                    <ChevronRight size={25} />
+                  </button>
+
+                  {/* Photo counter */}
+                  <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
+                    {currentPhoto + 1} / {photos.length}
+                  </span>
+                </>
               )}
             </div>
 
+            {/* Share feedback */}
             {shareMessage && (
               <div
                 role="status"
-                className="flex items-center gap-2 text-xs text-primary mb-4"
+                className="mb-4 flex items-center gap-2 text-xs text-primary"
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
                 {shareMessage}
               </div>
             )}
 
+            {/* Photo thumbnails */}
             {photos.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto mb-6 pb-1">
+              <div
+                className="mb-6 flex gap-2 overflow-x-auto pb-2"
+                aria-label="Property photo thumbnails"
+              >
                 {photos.map((url, index) => (
                   <button
                     type="button"
@@ -571,16 +775,17 @@ export default function ListingDetailPage() {
                     onClick={() => setCurrentPhoto(index)}
                     aria-label={`View photo ${index + 1}`}
                     aria-pressed={index === currentPhoto}
-                    className={`rounded-md overflow-hidden border-2 shrink-0 ${
+                    className={`relative h-16 w-20 shrink-0 overflow-hidden rounded-lg border-2 transition sm:h-20 sm:w-28 ${
                       index === currentPhoto
-                        ? 'border-primary'
-                        : 'border-transparent'
+                        ? 'border-primary ring-1 ring-primary'
+                        : 'border-transparent opacity-75 hover:opacity-100'
                     }`}
                   >
                     <img
                       src={url}
                       alt={`${listing.title}, photo ${index + 1}`}
-                      className="w-20 h-16 object-cover"
+                      draggable={false}
+                      className="h-full w-full select-none object-cover"
                     />
                   </button>
                 ))}
@@ -1073,6 +1278,108 @@ export default function ListingDetailPage() {
           </div>
         </div>
       </main>
+
+      {/* Share sheet */}
+      {showShareMenu && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
+          onClick={() => setShowShareMenu(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Share this property"
+        >
+          <div
+            className="w-full max-w-md rounded-t-2xl bg-background p-5 shadow-xl sm:rounded-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground">
+                Share this property
+              </h2>
+
+              <button
+                type="button"
+                onClick={() => setShowShareMenu(false)}
+                aria-label="Close share menu"
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="mb-4 truncate text-xs text-muted-foreground">
+              {listing.title}
+            </p>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => openShareLink('whatsapp')}
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+              >
+                <MessageCircle size={18} className="text-emerald-600" />
+                WhatsApp
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openShareLink('facebook')}
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+              >
+                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold leading-none text-white">
+                  f
+                </span>
+                Facebook
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openShareLink('x')}
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+              >
+                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black text-[10px] font-bold leading-none text-white">
+                  X
+                </span>
+                X (Twitter)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openShareLink('telegram')}
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+              >
+                <Send size={18} className="text-sky-500" />
+                Telegram
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+              >
+                <Copy size={18} />
+                Copy link
+              </button>
+
+              {canNativeShare && (
+                <button
+                  type="button"
+                  onClick={handleNativeShare}
+                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+                >
+                  <Share2 size={18} />
+                  More apps
+                </button>
+              )}
+            </div>
+
+            <p className="mt-4 text-[11px] leading-snug text-muted-foreground">
+              For TikTok or Instagram, tap &quot;More apps&quot; on your phone,
+              or copy the link and paste it into your post or story.
+            </p>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>
