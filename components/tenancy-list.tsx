@@ -14,6 +14,12 @@ function daysLeft(end: string | null): number | null {
   return Math.ceil(ms / 86400000)
 }
 
+const RENEWAL_LABELS: Record<string, string> = {
+  offered: 'Awaiting tenant response',
+  accepted: 'Accepted by tenant',
+  declined: 'Declined by tenant',
+}
+
 export function TenancyList({ role }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<any[]>([])
@@ -25,19 +31,36 @@ export function TenancyList({ role }: Props) {
   const [newEnd, setNewEnd] = useState('')
   const [terms, setTerms] = useState('')
   const [msg, setMsg] = useState('')
+  const [msgKind, setMsgKind] = useState<'error' | 'success'>('error')
+  const [busy, setBusy] = useState(false)
 
-  const load = async () => {
-    setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+  const flash = (text: string, kind: 'error' | 'success' = 'error') => {
+    setMsg(text)
+    setMsgKind(kind)
+  }
+
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true)
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) {
       router.push('/login')
       return
     }
-    const { data } = await supabase.rpc('my_tenancies', { p_as: role })
+
+    const { data, error: rpcError } = await supabase.rpc('my_tenancies', { p_as: role })
+    if (rpcError) {
+      flash('Could not load your tenancies. Please refresh and try again.')
+      setLoading(false)
+      return
+    }
     const list = data ?? []
     setRows(list)
+
     if (list.length > 0) {
       const ids = list.map((t: any) => t.id)
+
       const { data: pay } = await supabase
         .from('payments')
         .select('id, tenancy_id, amount, type, status, receipt_code, created_at, confirmed_at')
@@ -49,9 +72,10 @@ export function TenancyList({ role }: Props) {
         pm[p.tenancy_id].push(p)
       })
       setPayments(pm)
+
       const { data: ren } = await supabase
         .from('renewals')
-        .select('*')
+        .select('id, tenancy_id, landlord_id, tenant_id, new_rent, new_end_date, terms, status, created_at, responded_at')
         .in('tenancy_id', ids)
         .order('created_at', { ascending: false })
       const rm: Record<string, any[]> = {}
@@ -60,6 +84,9 @@ export function TenancyList({ role }: Props) {
         rm[r.tenancy_id].push(r)
       })
       setRenewals(rm)
+    } else {
+      setPayments({})
+      setRenewals({})
     }
     setLoading(false)
   }
@@ -70,41 +97,118 @@ export function TenancyList({ role }: Props) {
   }, [])
 
   const respond = async (id: string, status: 'accepted' | 'declined') => {
+    if (role !== 'tenant' || busy) return
+    const verb = status === 'accepted' ? 'accept' : 'decline'
+    if (!window.confirm(`Are you sure you want to ${verb} this renewal offer? No payment is taken.`)) return
+
+    setBusy(true)
     setMsg('')
-    const { error } = await supabase.from('renewals').update({ status }).eq('id', id)
-    if (error) setMsg(error.message)
-    load()
+    const { data, error } = await supabase
+      .from('renewals')
+      .update({ status })
+      .eq('id', id)
+      .eq('status', 'offered')
+      .select('id')
+
+    if (error) {
+      flash(error.message)
+    } else if (!data || data.length === 0) {
+      flash('This offer could not be updated. It may already have been answered.')
+    } else {
+      flash(
+        status === 'accepted'
+          ? 'You accepted the renewal offer. This records your response only. No payment has been charged.'
+          : 'You declined the renewal offer.',
+        'success'
+      )
+    }
+    setBusy(false)
+    await load(true)
   }
 
   const offer = async (t: any) => {
+    if (role !== 'landlord' || busy) return
     setMsg('')
-    if (!newRent) {
-      setMsg('Enter the new rent.')
+
+    const rentNumber = Number(newRent)
+    if (!newRent || !Number.isFinite(rentNumber) || rentNumber <= 0) {
+      flash('Enter a valid new rent amount.')
       return
     }
     if (!newEnd) {
-      setMsg('Enter the new end date.')
+      flash('Enter the new end date.')
       return
     }
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (t.end_date && new Date(newEnd) <= new Date(t.end_date)) {
+      flash('The new end date must be after the current end date.')
+      return
+    }
+    if (new Date(newEnd) <= new Date()) {
+      flash('The new end date must be in the future.')
+      return
+    }
+
+    setBusy(true)
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      setBusy(false)
+      router.push('/login')
+      return
+    }
+
+    // Use the real parties from the tenancy record, never the logged-in user for both.
+    const { data: tenancy, error: tenancyError } = await supabase
+      .from('tenancies')
+      .select('id, landlord_id, tenant_id, status')
+      .eq('id', t.id)
+      .maybeSingle()
+
+    if (tenancyError || !tenancy) {
+      flash('Could not load this tenancy. Please refresh and try again.')
+      setBusy(false)
+      return
+    }
+    if (tenancy.landlord_id !== user.id) {
+      flash('Only the landlord on this tenancy can send a renewal offer.')
+      setBusy(false)
+      return
+    }
+    if (!tenancy.tenant_id || tenancy.tenant_id === user.id) {
+      flash('This tenancy has no valid tenant, so a renewal offer cannot be sent.')
+      setBusy(false)
+      return
+    }
+    if (tenancy.status !== 'active') {
+      flash('Renewal offers can only be sent for active tenancies.')
+      setBusy(false)
+      return
+    }
+
     const { error } = await supabase.from('renewals').insert({
-      tenancy_id: t.id,
-      landlord_id: user.id,
-      tenant_id: user.id,
-      new_rent: Number(newRent),
+      tenancy_id: tenancy.id,
+      landlord_id: tenancy.landlord_id,
+      tenant_id: tenancy.tenant_id,
+      new_rent: rentNumber,
       new_end_date: newEnd,
-      terms: terms ? terms : null,
+      terms: terms.trim() ? terms.trim() : null,
+      status: 'offered',
     })
+
     if (error) {
-      setMsg(error.message)
+      flash(error.message)
+      setBusy(false)
       return
     }
+
     setOfferFor(null)
     setNewRent('')
     setNewEnd('')
     setTerms('')
-    load()
+    flash('Renewal offer sent. The tenant has not accepted it yet, and no payment is charged.', 'success')
+    setBusy(false)
+    await load(true)
   }
 
   if (loading) {
@@ -123,7 +227,15 @@ export function TenancyList({ role }: Props) {
       <p className="text-sm text-muted-foreground mb-6">
         Rent, dates, receipts and renewals. Nothing is charged automatically.
       </p>
-      {msg && <p className="text-sm text-destructive mb-4">{msg}</p>}
+      {msg && (
+        <p
+          className={`text-sm rounded-md p-3 mb-4 ${
+            msgKind === 'error' ? 'text-destructive bg-destructive/10' : 'text-primary bg-primary/10'
+          }`}
+        >
+          {msg}
+        </p>
+      )}
 
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No tenancies yet.</p>
@@ -133,6 +245,7 @@ export function TenancyList({ role }: Props) {
             const d = daysLeft(t.end_date)
             const offers = renewals[t.id] ?? []
             const open = offers.find((o) => o.status === 'offered')
+            const last = offers[0]
             return (
               <div key={t.id} className="bg-card border border-border rounded-lg p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -144,10 +257,19 @@ export function TenancyList({ role }: Props) {
                   <span className="text-xs border border-border rounded-full px-2 py-1 capitalize">{t.status}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm mt-3">
-                  <p><span className="text-muted-foreground block text-xs">Rent</span>₦{Number(t.rent_amount).toLocaleString()} / {t.rent_period}</p>
-                  <p><span className="text-muted-foreground block text-xs">{role === 'tenant' ? 'Landlord' : 'Tenant'}</span>{t.other_party ?? '—'}</p>
-                  <p><span className="text-muted-foreground block text-xs">Starts</span>{t.start_date ?? '—'}</p>
-                  <p><span className="text-muted-foreground block text-xs">Ends</span>{t.end_date ?? '—'}</p>
+                  <p>
+                    <span className="text-muted-foreground block text-xs">Rent</span>₦{Number(t.rent_amount).toLocaleString()} / {t.rent_period}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground block text-xs">{role === 'tenant' ? 'Landlord' : 'Tenant'}</span>
+                    {t.other_party ?? '—'}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground block text-xs">Starts</span>{t.start_date ?? '—'}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground block text-xs">Ends</span>{t.end_date ?? '—'}
+                  </p>
                 </div>
 
                 {t.status === 'active' && d !== null && d <= 30 && d >= 0 && (
@@ -160,54 +282,120 @@ export function TenancyList({ role }: Props) {
                 {open && role === 'tenant' && (
                   <div className="mt-3 border border-border rounded-md p-3 text-sm">
                     <p className="font-medium">Renewal offer</p>
-                    <p>New rent ₦{Number(open.new_rent).toLocaleString()}, until {open.new_end_date}</p>
+                    <p>
+                      New rent ₦{Number(open.new_rent).toLocaleString()}, until {open.new_end_date}
+                    </p>
                     {open.terms && <p className="text-muted-foreground">{open.terms}</p>}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Responding records your decision only. No payment is taken.
+                    </p>
                     <div className="flex gap-2 mt-2">
-                      <button onClick={() => respond(open.id, 'accepted')} className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm">Accept</button>
-                      <button onClick={() => respond(open.id, 'declined')} className="px-3 py-1.5 rounded-md border border-border text-sm">Decline</button>
+                      <button
+                        disabled={busy}
+                        onClick={() => respond(open.id, 'accepted')}
+                        className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => respond(open.id, 'declined')}
+                        className="px-3 py-1.5 rounded-md border border-border text-sm disabled:opacity-50"
+                      >
+                        Decline
+                      </button>
                     </div>
                   </div>
                 )}
                 {open && role === 'landlord' && (
-                  <p className="mt-3 text-sm text-muted-foreground">Renewal offer sent. Waiting for the tenant.</p>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Renewal offer sent (₦{Number(open.new_rent).toLocaleString()} until {open.new_end_date}). Waiting for the tenant.
+                  </p>
                 )}
-                {!open && offers[0] && (
-                  <p className="mt-3 text-sm text-muted-foreground capitalize">Last renewal offer: {offers[0].status}</p>
+                {!open && last && (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Last renewal offer: {RENEWAL_LABELS[last.status] ?? last.status}
+                  </p>
                 )}
 
-                {role === 'landlord' && t.status === 'active' && !open && (
-                  offerFor === t.id ? (
+                {role === 'landlord' &&
+                  t.status === 'active' &&
+                  !open &&
+                  (offerFor === t.id ? (
                     <div className="mt-3 space-y-2">
-                      <input type="number" value={newRent} onChange={(e) => setNewRent(e.target.value)} placeholder="New rent (₦)" className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm" />
-                      <input type="date" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm" />
-                      <textarea value={terms} onChange={(e) => setTerms(e.target.value)} rows={2} placeholder="Terms (optional)" className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm" />
+                      <input
+                        type="number"
+                        min={1}
+                        value={newRent}
+                        onChange={(e) => setNewRent(e.target.value)}
+                        placeholder="New rent (₦)"
+                        className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="date"
+                        value={newEnd}
+                        onChange={(e) => setNewEnd(e.target.value)}
+                        className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm"
+                      />
+                      <textarea
+                        value={terms}
+                        onChange={(e) => setTerms(e.target.value)}
+                        rows={2}
+                        placeholder="Terms (optional)"
+                        className="w-full bg-input border border-border rounded-lg px-3 py-2 text-sm"
+                      />
                       <div className="flex gap-2">
-                        <button onClick={() => offer(t)} className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm">Send offer</button>
-                        <button onClick={() => setOfferFor(null)} className="px-3 py-1.5 rounded-md border border-border text-sm">Cancel</button>
+                        <button
+                          disabled={busy}
+                          onClick={() => offer(t)}
+                          className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                        >
+                          {busy ? 'Sending...' : 'Send offer'}
+                        </button>
+                        <button onClick={() => setOfferFor(null)} className="px-3 py-1.5 rounded-md border border-border text-sm">
+                          Cancel
+                        </button>
                       </div>
                     </div>
                   ) : (
-                    <button onClick={() => setOfferFor(t.id)} className="mt-3 text-sm text-primary font-medium">Offer renewal</button>
-                  )
-                )}
+                    <button
+                      onClick={() => {
+                        setMsg('')
+                        setOfferFor(t.id)
+                      }}
+                      className="mt-3 text-sm text-primary font-medium"
+                    >
+                      Offer renewal
+                    </button>
+                  ))}
 
                 <div className="mt-4">
-                  <p className="text-xs font-semibold text-muted-foreground mb-1">Receipts</p>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Payment records</p>
                   {(payments[t.id] ?? []).length === 0 ? (
                     <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
                   ) : (
-                    <div className="space-y-1">
-                      {(payments[t.id] ?? []).map((p) => (
-                        <div key={p.id} className="flex items-center justify-between text-sm">
-                          <span>₦{Number(p.amount).toLocaleString()} <span className="text-muted-foreground capitalize">{p.type} · {p.status}</span></span>
-                          {p.receipt_code && (
-                            <Link href={`/receipt/${p.receipt_code}`} className="inline-flex items-center gap-1 text-primary">
-                              <Receipt size={14} /> {p.receipt_code}
-                            </Link>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <>
+                      <div className="space-y-1">
+                        {(payments[t.id] ?? []).map((p) => (
+                          <div key={p.id} className="flex items-center justify-between text-sm">
+                            <span>
+                              ₦{Number(p.amount).toLocaleString()}{' '}
+                              <span className="text-muted-foreground capitalize">
+                                {p.type} · {p.status}
+                              </span>
+                            </span>
+                            {p.receipt_code && (
+                              <Link href={`/receipt/${p.receipt_code}`} className="inline-flex items-center gap-1 text-primary">
+                                <Receipt size={14} /> {p.receipt_code}
+                              </Link>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        A payment record is not proof of cleared funds unless its status shows it as confirmed.
+                      </p>
+                    </>
                   )}
                 </div>
               </div>

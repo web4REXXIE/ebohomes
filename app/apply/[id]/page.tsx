@@ -8,6 +8,8 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 
+const OPEN_STATUSES = ['pending', 'info_requested', 'approved']
+
 export default function ApplyPage() {
   const { id } = useParams()
   const router = useRouter()
@@ -16,8 +18,9 @@ export default function ApplyPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [alreadyApplied, setAlreadyApplied] = useState(false)
-  const [error, setError] = useState('')
+  const [existingStatus, setExistingStatus] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [submitError, setSubmitError] = useState('')
 
   const [message, setMessage] = useState('')
   const [moveInDate, setMoveInDate] = useState('')
@@ -33,30 +36,43 @@ export default function ApplyPage() {
         return
       }
 
-      const { data: listingData } = await supabase
+      const { data: listingData, error: listingError } = await supabase
         .from('listings')
         .select('id, title, location_text, price_monthly, landlord_id, status, photos')
         .eq('id', id)
-        .single()
+        .maybeSingle()
+
+      if (listingError) {
+        setLoadError('We could not load this listing. Please try again.')
+        setLoading(false)
+        return
+      }
 
       if (!listingData || listingData.status !== 'approved') {
-        setError('This listing is not available for applications right now.')
+        setLoadError('This listing is not available for applications right now.')
+        setLoading(false)
+        return
+      }
+
+      if (listingData.landlord_id === user.id) {
+        setLoadError('You cannot apply to your own listing.')
         setLoading(false)
         return
       }
 
       setListing(listingData)
 
-      // Prevent duplicate applications from the same tenant for the same listing
-      const { data: existing } = await supabase
+      // Only an open application blocks a new one. Declined or withdrawn ones do not.
+      const { data: open } = await supabase
         .from('applications')
-        .select('id')
+        .select('id, status')
         .eq('listing_id', id)
         .eq('tenant_id', user.id)
-        .maybeSingle()
+        .in('status', OPEN_STATUSES)
+        .limit(1)
 
-      if (existing) {
-        setAlreadyApplied(true)
+      if (open && open.length > 0) {
+        setExistingStatus(open[0].status)
       }
 
       setLoading(false)
@@ -66,14 +82,19 @@ export default function ApplyPage() {
   }, [id, router])
 
   const handleSubmit = async () => {
+    if (submitting) return
     setSubmitting(true)
-    setError('')
+    setSubmitError('')
 
     const {
       data: { user },
     } = await supabase.auth.getUser()
 
-    if (!user || !listing) {
+    if (!user) {
+      router.push(`/login?redirect=/apply/${id}`)
+      return
+    }
+    if (!listing) {
       setSubmitting(false)
       return
     }
@@ -88,7 +109,17 @@ export default function ApplyPage() {
     })
 
     if (insertError) {
-      setError('Something went wrong submitting your application. Please try again.')
+      if (insertError.code === '23505') {
+        setExistingStatus('pending')
+      } else if (insertError.code === '42501' || /row-level security/i.test(insertError.message)) {
+        setSubmitError(
+          /not active/i.test(insertError.message)
+            ? 'Your account is not active, so you cannot apply right now. Please contact EboHomes support.'
+            : 'You are not able to apply to this property. It may no longer be open for applications.'
+        )
+      } else {
+        setSubmitError('Something went wrong submitting your application. Please try again.')
+      }
       setSubmitting(false)
       return
     }
@@ -97,118 +128,119 @@ export default function ApplyPage() {
     setSubmitting(false)
   }
 
+  const shell = (children: React.ReactNode) => (
+    <div className="min-h-screen flex flex-col bg-background">
+      <Header />
+      {children}
+      <Footer />
+    </div>
+  )
+
   if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-        <div className="max-w-xl mx-auto px-4 py-20 w-full animate-pulse">
-          <div className="h-6 bg-secondary rounded w-1/2 mb-4" />
-          <div className="h-32 bg-secondary rounded" />
-        </div>
-        <Footer />
+    return shell(
+      <div className="max-w-xl mx-auto px-4 py-20 w-full animate-pulse">
+        <div className="h-6 bg-secondary rounded w-1/2 mb-4" />
+        <div className="h-32 bg-secondary rounded" />
       </div>
     )
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-        <div className="max-w-xl mx-auto px-4 py-20 text-center">
-          <p className="text-foreground font-medium mb-2">{error}</p>
-          <button onClick={() => router.push('/search')} className="text-primary text-sm font-medium hover:underline">
-            ← Back to search
-          </button>
-        </div>
-        <Footer />
+  if (loadError) {
+    return shell(
+      <div className="max-w-xl mx-auto px-4 py-20 text-center">
+        <p className="text-foreground font-medium mb-2">{loadError}</p>
+        <button onClick={() => router.push('/search')} className="text-primary text-sm font-medium hover:underline">
+          ← Back to search
+        </button>
       </div>
     )
   }
 
-  if (alreadyApplied) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-        <div className="max-w-xl mx-auto px-4 py-20 text-center">
-          <CheckCircle2 size={48} className="mx-auto mb-4 text-primary" />
-          <p className="text-lg font-semibold text-foreground mb-2">You've already applied</p>
-          <p className="text-muted-foreground mb-6">You have already submitted an application for this property. Check your messages for updates.</p>
-          <button onClick={() => router.push('/messages')} className="text-primary text-sm font-medium hover:underline">
-            Go to messages
-          </button>
-        </div>
-        <Footer />
+  if (existingStatus) {
+    const text =
+      existingStatus === 'approved'
+        ? 'The landlord has accepted your application for this property. Open your applications to see the next step.'
+        : existingStatus === 'info_requested'
+        ? 'The landlord has asked you a question about your application. Open your applications to answer it.'
+        : 'Your application for this property is waiting for the landlord to review it.'
+    return shell(
+      <div className="max-w-xl mx-auto px-4 py-20 text-center">
+        <CheckCircle2 size={48} className="mx-auto mb-4 text-primary" />
+        <p className="text-lg font-semibold text-foreground mb-2">You've already applied</p>
+        <p className="text-muted-foreground mb-6">{text}</p>
+        <button onClick={() => router.push('/applications')} className="text-primary text-sm font-medium hover:underline">
+          Go to my applications
+        </button>
       </div>
     )
   }
 
   if (submitted) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-        <div className="max-w-xl mx-auto px-4 py-20 text-center">
-          <CheckCircle2 size={48} className="mx-auto mb-4 text-primary" />
-          <p className="text-lg font-semibold text-foreground mb-2">Application submitted!</p>
-          <p className="text-muted-foreground mb-6">The landlord has received your application. You'll be notified when they respond.</p>
-          <button onClick={() => router.push('/messages')} className="text-primary text-sm font-medium hover:underline">
-            Check messages
-          </button>
-        </div>
-        <Footer />
+    return shell(
+      <div className="max-w-xl mx-auto px-4 py-20 text-center">
+        <CheckCircle2 size={48} className="mx-auto mb-4 text-primary" />
+        <p className="text-lg font-semibold text-foreground mb-2">Application submitted</p>
+        <p className="text-muted-foreground mb-6">
+          Your application has been sent for the landlord to review. Submitting it does not reserve the property or involve any payment. You'll be notified when the landlord responds.
+        </p>
+        <button onClick={() => router.push('/applications')} className="text-primary text-sm font-medium hover:underline">
+          Track my application
+        </button>
       </div>
     )
   }
 
-  return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
+  const today = new Date().toISOString().split('T')[0]
 
-      <main className="flex-1 max-w-xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
-        <button onClick={() => router.back()} className="flex items-center gap-1 text-primary text-sm font-medium hover:underline mb-6">
-          <ArrowLeft size={16} /> Back
-        </button>
+  return shell(
+    <main className="flex-1 max-w-xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+      <button onClick={() => router.back()} className="flex items-center gap-1 text-primary text-sm font-medium hover:underline mb-6">
+        <ArrowLeft size={16} /> Back
+      </button>
 
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground mb-2">Apply for {listing?.title}</h1>
-          <p className="text-muted-foreground text-sm">{listing?.location_text}</p>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-foreground mb-2">Apply for {listing?.title}</h1>
+        <p className="text-muted-foreground text-sm">{listing?.location_text}</p>
+      </div>
+
+      <div className="bg-card border border-border rounded-lg p-6 space-y-6">
+        <div>
+          <label className="block text-sm font-semibold text-foreground mb-2">Move-in date</label>
+          <input
+            type="date"
+            min={today}
+            value={moveInDate}
+            onChange={(e) => setMoveInDate(e.target.value)}
+            className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+          />
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-6 space-y-6">
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-2">Move-in date</label>
-            <input
-              type="date"
-              value={moveInDate}
-              onChange={(e) => setMoveInDate(e.target.value)}
-              className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-2">Message to landlord (optional)</label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Tell the landlord about yourself..."
-              className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-              rows={4}
-            />
-          </div>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <Button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50"
-          >
-            {submitting ? <Loader2 size={16} className="animate-spin mr-2" /> : <FileText size={16} className="mr-2" />}
-            {submitting ? 'Submitting...' : 'Submit Application'}
-          </Button>
+        <div>
+          <label className="block text-sm font-semibold text-foreground mb-2">Note with your application (optional)</label>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Tell the landlord about yourself..."
+            className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+            rows={4}
+          />
         </div>
-      </main>
 
-      <Footer />
-    </div>
+        <p className="text-xs text-muted-foreground">
+          This is a rental application, not a payment and not a viewing request. You will arrange viewing and next steps through EboHomes after the landlord responds.
+        </p>
+
+        {submitError && <p className="text-sm text-destructive">{submitError}</p>}
+
+        <Button
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50"
+        >
+          {submitting ? <Loader2 size={16} className="animate-spin mr-2" /> : <FileText size={16} className="mr-2" />}
+          {submitting ? 'Submitting...' : 'Submit Application'}
+        </Button>
+      </div>
+    </main>
   )
 }
