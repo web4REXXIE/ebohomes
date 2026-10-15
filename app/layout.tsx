@@ -56,6 +56,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} light`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__ebohomesInstallEvent=e;});",
+          }}
+        />
+      </head>
       <body className="font-sans antialiased bg-background text-foreground">
         <InstallProvider>
           <SplashScreen>

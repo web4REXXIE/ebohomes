@@ -197,9 +197,11 @@ export function InstallProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   // 2. Browser install events. Registered once, removed on cleanup.
+  //    An early script in layout.tsx may already have caught the event before React loaded.
   useEffect(() => {
-    const onBeforeInstall = (e: Event) => {
-      e.preventDefault()
+    const w = window as Window & { __ebohomesInstallEvent?: Event | null }
+
+    const adopt = (e: Event) => {
       deferredPrompt.current = e as BeforeInstallPromptEvent
       setCanPrompt(true)
       // The browser only offers installation when the app is NOT installed,
@@ -211,8 +213,17 @@ export function InstallProvider({ children }: { children: React.ReactNode }) {
         setBannerSuppressed(isDismissed({ ...stored, installedAt: undefined }))
       }
     }
+
+    if (w.__ebohomesInstallEvent) adopt(w.__ebohomesInstallEvent)
+
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault()
+      w.__ebohomesInstallEvent = e
+      adopt(e)
+    }
     const onInstalled = () => {
       deferredPrompt.current = null
+      w.__ebohomesInstallEvent = null
       setCanPrompt(false)
       setHasInstalled(true)
       setBannerSuppressed(true)
@@ -227,18 +238,6 @@ export function InstallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 3. Keep "running as installed app" correct if the display mode changes
-  useEffect(() => {
-    let mq: MediaQueryList | null = null
-    try {
-      mq = window.matchMedia('(display-mode: standalone)')
-    } catch {
-      return
-    }
-    const onChange = () => setIsStandalone(detectStandalone())
-    mq.addEventListener?.('change', onChange)
-    return () => mq?.removeEventListener?.('change', onChange)
-  }, [])
 
   // 4. Coming back after being away counts as a new visit.
   //    Phones resume the same page instead of reloading it, so this is what makes the banner return.
@@ -307,6 +306,7 @@ export function InstallProvider({ children }: { children: React.ReactNode }) {
     if (!ev) return 'unavailable'
     // The browser allows each saved event to be used only once
     deferredPrompt.current = null
+    ;(window as Window & { __ebohomesInstallEvent?: Event | null }).__ebohomesInstallEvent = null
     setCanPrompt(false)
     try {
       await ev.prompt()
