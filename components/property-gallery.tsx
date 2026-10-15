@@ -2,19 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { X, ChevronLeft, ChevronRight, Images } from 'lucide-react'
-
-// Upload your EboHomes logo (PNG) to Cloudinary, then put its public ID here.
-// If it's inside a folder, use ":" instead of "/", e.g. 'branding:ebohomes_logo'.
-// Leave empty until then and no watermark is added.
-const WATERMARK_ID = '08a8295fc8d0881a1bd9363cf2d084e74203f2b4caa16aa58c741735c4031664_1_brejyt'
-
-function optimize(url: string, width: number) {
-  if (!url || !url.includes('/upload/')) return url
-  const wm = WATERMARK_ID
-    ? `/l_${WATERMARK_ID},w_${Math.round(width * 0.22)},o_70/fl_layer_apply,g_south_east,x_16,y_16`
-    : ''
-  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}${wm}/`)
-}
+import { watermarkedUrl, plainUrl } from '@/lib/watermark'
 
 export function PropertyGallery({
   images,
@@ -108,7 +96,7 @@ export function PropertyGallery({
               aria-label={`Open photo ${i + 1} fullscreen`}
             >
               <img
-                src={optimize(src, 900)}
+                src={watermarkedUrl(src, 900)}
                 alt={`${title} - photo ${i + 1}`}
                 loading={i === 0 ? 'eager' : 'lazy'}
                 fetchPriority={i === 0 ? 'high' : 'auto'}
@@ -165,7 +153,7 @@ export function PropertyGallery({
         )}
       </div>
 
-      {/* Thumbnail strip */}
+      {/* Thumbnail strip (no watermark, too small to read) */}
       {total > 1 && (
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {images.map((src, i) => (
@@ -179,7 +167,7 @@ export function PropertyGallery({
               }`}
             >
               <img
-                src={optimize(src, 200)}
+                src={plainUrl(src, 200)}
                 alt=""
                 loading="lazy"
                 decoding="async"
@@ -215,7 +203,7 @@ export function PropertyGallery({
             {images.map((src, i) => (
               <div key={i} className="flex h-full w-full shrink-0 snap-center items-center justify-center">
                 <img
-                  src={optimize(src, 1600)}
+                  src={watermarkedUrl(src, 1600)}
                   alt={`${title} - photo ${i + 1}`}
                   loading={Math.abs(i - fsIndex) <= 1 ? 'eager' : 'lazy'}
                   decoding="async"
