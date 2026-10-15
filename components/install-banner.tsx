@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { X } from 'lucide-react'
 import { useInstall } from '@/components/install-provider'
@@ -15,10 +15,16 @@ export function InstallBanner() {
     bannerSuppressed,
     sheetOpen,
     isStandalone,
+    visitId,
     startInstall,
     dismissBanner,
   } = useInstall()
   const [hiddenThisVisit, setHiddenThisVisit] = useState(false)
+
+  // A returning visitor gets a fresh chance (unless they dismissed it within the last 7 days)
+  useEffect(() => {
+    setHiddenThisVisit(false)
+  }, [visitId])
 
   const allowedHere = (INSTALL_CONFIG.bannerPaths as readonly string[]).includes(pathname)
 
@@ -35,11 +41,9 @@ export function InstallBanner() {
     return null
   }
 
-  const onInstall = async () => {
+  const onInstall = () => {
     setHiddenThisVisit(true)
-    const outcome = await startInstall()
-    // They said no in the browser's own dialog: respect it
-    if (outcome === 'dismissed') dismissBanner()
+    void startInstall()
   }
 
   return (

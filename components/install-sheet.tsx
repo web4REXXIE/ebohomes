@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { CheckCircle2, Download, Monitor, Plus, Share, ShieldCheck, Smartphone, X } from 'lucide-react'
+import { CheckCircle2, Download, Monitor, Share, ShieldCheck, Smartphone, X } from 'lucide-react'
 import { useInstall } from '@/components/install-provider'
 
 type Guide = {
@@ -22,7 +22,6 @@ const ShareIcon = () => (
 )
 
 function getGuide(platform: string, browser: string): Guide {
-  // Facebook, Instagram, TikTok and similar apps cannot install anything
   if (browser === 'inapp') {
     return {
       title: 'Open EboHomes in your browser',
@@ -133,10 +132,18 @@ function getGuide(platform: string, browser: string): Guide {
 }
 
 export function InstallSheet() {
-  const { sheetOpen, closeSheet, platform, browser, canPrompt, isStandalone, promptInstall } = useInstall()
+  const {
+    sheetOpen,
+    closeSheet,
+    hideSheet,
+    platform,
+    browser,
+    canPrompt,
+    isStandalone,
+    promptInstall,
+  } = useInstall()
   const closeRef = useRef<HTMLButtonElement>(null)
 
-  // Lock page scroll, close with Escape, and put focus on the close button
   useEffect(() => {
     if (!sheetOpen) return
     const prevOverflow = document.body.style.overflow
@@ -159,8 +166,8 @@ export function InstallSheet() {
 
   const onInstallNow = async () => {
     const outcome = await promptInstall()
-    // Accepted or dismissed in the browser's own dialog: nothing more to show here
-    if (outcome !== 'unavailable') closeSheet()
+    // The provider records a decline itself, so this only hides the guide
+    if (outcome !== 'unavailable') hideSheet()
   }
 
   return (
@@ -175,7 +182,6 @@ export function InstallSheet() {
         className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-[#FAF7F2] shadow-2xl sm:rounded-3xl motion-safe:animate-in motion-safe:slide-in-from-bottom-8"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Green header */}
         <div className="relative bg-gradient-to-br from-[#0A2E1A] via-[#0A7A3B] to-[#0A2E1A] px-6 pb-6 pt-7 text-white">
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.07]"
@@ -203,7 +209,6 @@ export function InstallSheet() {
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {isStandalone ? (
             <div className="flex items-start gap-3 rounded-2xl bg-white p-4 text-sm text-[#0A2E1A] ring-1 ring-black/5">
@@ -255,7 +260,6 @@ export function InstallSheet() {
           </div>
         </div>
 
-        {/* Footer */}
         <div
           className="border-t border-black/5 bg-[#FAF7F2] px-6 pt-3"
           style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
