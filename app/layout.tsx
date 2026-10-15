@@ -15,7 +15,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'EboHomes - Find Your Perfect Home in Ebonyi',
   description: 'Direct landlord-to-tenant rental listings for Ebonyi State, Nigeria',
+  applicationName: 'EboHomes',
   generator: 'v0.app',
+  appleWebApp: {
+    capable: true,
+    title: 'EboHomes',
+    statusBarStyle: 'default',
+  },
   icons: {
     icon: [
       {
@@ -27,12 +33,13 @@ export const metadata: Metadata = {
         media: '(prefers-color-scheme: dark)',
       },
     ],
-    apple: '/icon.png',
+    apple: '/icons/apple-touch-icon.png',
   },
 }
 
 export const viewport: Viewport = {
   colorScheme: 'light dark',
+  viewportFit: 'cover',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#FAF7F2' },
     { media: '(prefers-color-scheme: dark)', color: '#1C1A17' },
