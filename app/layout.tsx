@@ -5,6 +5,9 @@ import { SplashScreen } from '@/components/splash-screen'
 import { BottomNav } from '@/components/bottom-nav'
 import './globals.css'
 import { HelpBubble } from '@/components/help-bubble'
+import { InstallProvider } from '@/components/install-provider'
+import { InstallBanner } from '@/components/install-banner'
+import { InstallSheet } from '@/components/install-sheet'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({
@@ -54,13 +57,17 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} light`}>
       <body className="font-sans antialiased bg-background text-foreground">
-        <SplashScreen>
-          <div className="pb-16 md:pb-0">
-            {children}
-          </div>
-        </SplashScreen>
-        <BottomNav />
-        <HelpBubble />
+        <InstallProvider>
+          <SplashScreen>
+            <div className="pb-16 md:pb-0">
+              {children}
+            </div>
+          </SplashScreen>
+          <BottomNav />
+          <HelpBubble />
+          <InstallBanner />
+          <InstallSheet />
+        </InstallProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

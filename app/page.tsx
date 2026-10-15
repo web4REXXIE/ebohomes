@@ -46,6 +46,7 @@ import {
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
+import { InstallButton, InstallPromoSection } from '@/components/install-button'
 import { ListingCard } from '@/components/listing-card'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
@@ -950,6 +951,7 @@ export default function HomePage() {
               <p className="mx-auto mt-4 max-w-xl text-pretty text-base text-white/90 md:text-lg">
                 A safer way to find and rent properties in Ebonyi State, with every listing reviewed before it goes live.
               </p>
+              <InstallButton variant="hero" />
             </div>
           </div>
 
@@ -1344,24 +1346,8 @@ export default function HomePage() {
         {/* EboHomes AI: coming soon */}
         <AiComingSoon />
 
-        {/* App CTA */}
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-4">
-          <div className="bg-primary rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-5 text-primary-foreground">
-            <div>
-              <span className="inline-block bg-amber-400 text-amber-950 text-xs font-bold px-3 py-1 rounded-full mb-2">
-                COMING SOON
-              </span>
-              <h3 className="text-xl md:text-2xl font-bold mb-1">EboHomes App Coming Soon!</h3>
-              <p className="text-primary-foreground/80 text-sm max-w-md">
-                We're working hard to bring you the best property search experience on the go.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-3">
-              <CalendarClock size={20} />
-              <span className="text-sm font-medium">Stay tuned!</span>
-            </div>
-          </div>
-        </section>
+        {/* App install call-to-action */}
+        <InstallPromoSection />
 
         {/* Featured Upgrade Banner with Carousel */}
         <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 md:py-5">
@@ -1525,7 +1511,7 @@ export default function HomePage() {
         </section>
       </main>
 
-      <HelpBubble />
+    
       <Footer />
     </div>
   )

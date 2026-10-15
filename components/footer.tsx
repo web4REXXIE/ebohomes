@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { MessageCircle, Shield, ChevronDown, Phone, Mail } from 'lucide-react'
 import { EBOHOMES_WHATSAPP, EBOHOMES_EMAIL } from '@/lib/contact'
+import { InstallButton } from '@/components/install-button'
 
 function FacebookIcon() {
   return (
@@ -180,6 +181,7 @@ export function Footer() {
               Connecting people with places they can trust.
             </p>
             <div className="mb-8"><SocialRow /></div>
+            <InstallButton variant="footer" className="-mt-3 mb-8" />
             <TrustBadge />
           </div>
 
@@ -219,6 +221,7 @@ export function Footer() {
           </p>
 
           <div className="mb-6"><SocialRow /></div>
+          <InstallButton variant="footer" className="-mt-2 mb-6" />
 
           <div className="border-t border-white/10 pt-5">
             <TrustBadge />

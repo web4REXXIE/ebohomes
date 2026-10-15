@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { Button } from './ui/button'
 import { ProfileMenu } from './profile-menu'
+import { InstallButton } from '@/components/install-button'
 import { supabase } from '@/lib/supabase'
 
 export function Header() {
@@ -188,6 +189,7 @@ export function Header() {
             </nav>
 
             <div className="flex items-center gap-1 sm:gap-2">
+              <InstallButton variant="header" />
               <button
                 onClick={toggleDarkMode}
                 className="p-2.5 rounded-xl hover:bg-muted transition-colors text-foreground/70 hidden sm:inline-flex"
@@ -340,7 +342,7 @@ export function Header() {
                 />
               </DrawerGroup>
             )}
-
+             <InstallButton variant="drawer" />
             <DrawerGroup label="Preferences">
               <DrawerItem
                 icon={isDark ? <Sun size={18} /> : <Moon size={18} />}
