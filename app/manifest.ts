@@ -6,13 +6,13 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'EboHomes',
     short_name: 'EboHomes',
     description:
-      'Direct landlord-to-tenant rental listings for Ebonyi State, Nigeria',
+     'Find rental properties in Ebonyi State with clearer property information, verification, and a more trustworthy rental experience.',
     lang: 'en-NG',
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#0A2E1A',
-    theme_color: '#FAF7F2',
+    background_color: '#052C19',
+    theme_color: '#052C19',
     categories: ['lifestyle', 'business'],
     icons: [
       {
