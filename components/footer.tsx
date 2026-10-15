@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { MessageCircle, Shield, ChevronDown } from 'lucide-react'
+import { MessageCircle, Shield, ChevronDown, Phone, Mail } from 'lucide-react'
+import { EBOHOMES_WHATSAPP, EBOHOMES_EMAIL } from '@/lib/contact'
 
 function FacebookIcon() {
   return (
@@ -27,6 +28,7 @@ function XIcon() {
     </svg>
   )
 }
+
 function TikTokIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -34,37 +36,40 @@ function TikTokIcon() {
     </svg>
   )
 }
+
 const NAV_GROUPS = [
   {
     title: 'Explore',
     links: [
       { href: '/search', label: 'Browse Properties' },
       { href: '/search', label: 'Map & Locations' },
+      { href: '/saved', label: 'Saved Properties' },
       { href: '/#how-it-works', label: 'How It Works' },
     ],
   },
   {
-    title: 'For You',
+    title: 'Popular areas',
     links: [
-      { href: '/saved', label: 'Saved Properties' },
-      { href: '/applications', label: 'Rental Application' },
-      { href: '/contact', label: 'Help Center' },
+      { href: '/search?location=Abakaliki', label: 'Abakaliki' },
+      { href: '/search?location=Abakaliki%20GRA', label: 'Abakaliki GRA' },
+      { href: '/search', label: 'All areas' },
     ],
   },
   {
-    title: 'For Landlords',
+    title: 'Company',
     links: [
+      { href: '/contact', label: 'Contact Us' },
       { href: '/list-property', label: 'List Your Property' },
-      { href: '/dashboard/verify', label: 'Get Verified' },
-      { href: '/dashboard', label: 'Landlord Dashboard' },
+      { href: '/report-listing', label: 'Report a Listing' },
+      { href: `https://wa.me/${EBOHOMES_WHATSAPP}`, label: 'WhatsApp Support', external: true },
     ],
   },
   {
-    title: 'Support',
+    title: 'Legal',
     links: [
-      { href: '/contact', label: 'Contact' },
-      { href: '/report-listing', label: 'Report a Listing' },
-      { href: 'https://wa.me/2348012345678', label: 'WhatsApp Support', external: true },
+      { href: '/privacy', label: 'Privacy Policy' },
+      { href: '/terms', label: 'Terms & Conditions' },
+      { href: '/cookies', label: 'Cookie Policy' },
     ],
   },
 ]
@@ -138,12 +143,23 @@ function TrustBadge() {
 
 function SocialRow() {
   return (
-    <div className="flex items-center gap-3">
-      <SocialIcon href="https://www.tiktok.com/@ebohomes7" label="TikTok"><TikTokIcon /></SocialIcon>
-      <SocialIcon href="https://wa.me/message/WKKSKKPRDS2SE1" label="WhatsApp"><MessageCircle size={16} /></SocialIcon>
+    <div>
+      <div className="flex items-center gap-3">
+        <SocialIcon href="https://www.tiktok.com/@ebohomes7" label="TikTok"><TikTokIcon /></SocialIcon>
+        <SocialIcon href="https://wa.me/message/WKKSKKPRDS2SE1" label="WhatsApp"><MessageCircle size={16} /></SocialIcon>
+      </div>
+      <div className="mt-4 space-y-2 text-sm text-white/70">
+        <a href={`tel:+${EBOHOMES_WHATSAPP}`} className="flex items-center gap-2 hover:text-white transition-colors">
+          <Phone size={14} /> +{EBOHOMES_WHATSAPP}
+        </a>
+        <a href={`mailto:${EBOHOMES_EMAIL}`} className="flex items-center gap-2 hover:text-white transition-colors">
+          <Mail size={14} /> {EBOHOMES_EMAIL}
+        </a>
+      </div>
     </div>
   )
 }
+
 export function Footer() {
   const [openGroup, setOpenGroup] = useState<string | null>(null)
 
@@ -176,7 +192,7 @@ export function Footer() {
               <ul className="space-y-3 text-sm text-white/70">
                 {group.links.map((link) => (
                   <li key={link.label}>
-                    {link.external ? (
+                    {'external' in link && link.external ? (
                       <a href={link.href} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
                         {link.label}
                       </a>
@@ -226,11 +242,11 @@ export function Footer() {
                       className={`text-white/50 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
                     />
                   </button>
-                  <div className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-40 pb-4' : 'max-h-0'}`}>
+                  <div className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-56 pb-4' : 'max-h-0'}`}>
                     <ul className="space-y-3 text-sm text-white/70">
                       {group.links.map((link) => (
                         <li key={link.label}>
-                          {link.external ? (
+                          {'external' in link && link.external ? (
                             <a href={link.href} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
                               {link.label}
                             </a>
@@ -250,17 +266,10 @@ export function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-12 pt-6 border-t border-white/10 flex flex-col-reverse sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-white/50 text-center sm:text-left">
+        <div className="mt-12 pt-6 border-t border-white/10 flex items-center justify-center">
+          <p className="text-xs text-white/50 text-center">
             &copy; {new Date().getFullYear()} EboHomes. All rights reserved.
           </p>
-          <div className="flex items-center gap-3 text-xs text-white/60">
-            <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
-            <span className="text-white/20">|</span>
-            <Link href="/terms" className="hover:text-white transition-colors">Terms &amp; Conditions</Link>
-            <span className="text-white/20">|</span>
-            <Link href="/cookies" className="hover:text-white transition-colors">Cookie Policy</Link>
-          </div>
         </div>
       </div>
     </footer>

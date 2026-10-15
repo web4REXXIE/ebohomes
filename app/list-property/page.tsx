@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import dynamic from 'next/dynamic'
 import { computeImageHash, computeVideoHashes } from '@/lib/image-hash'
 import { getDeviceId } from '@/lib/device-id'
+import { cleanDescription } from '@/lib/clean-description'
 import {
   OWNERSHIP_BUCKET,
   OWNERSHIP_ACCEPT,
@@ -260,34 +261,38 @@ export default function ListPropertyPage() {
       return
     }
 
-    const { data: newListing, error } = await supabase.from('listings').insert({
-      landlord_id: userData.user.id,
-      title: formData.title || `${formData.bedrooms} bed ${formData.propertyType} in ${formData.location}`,
-      description: formData.description,
-      listing_type: formData.listingType,
-      price_monthly: Number(formData.monthlyRent),
-      location_text: formData.location,
-      lat: formData.lat,
-      lng: formData.lng,
-      property_type: formData.propertyType,
-      bedrooms: Number(formData.bedrooms),
-      bathrooms: formData.bathrooms ? Number(formData.bathrooms) : null,
-      toilets: formData.toilets ? Number(formData.toilets) : null,
-      furnished: formData.furnished === 'yes',
-      amenities: formData.amenities,
-      photos: photos,
-      photo_hashes: photoHashes.filter((h) => h.length === 16),
-      ownership_doc_url: ownershipDoc || null,
-      contact_info: formData.phoneNumber,
-      availability_date: formData.availabilityDate || null,
-      listed_by_role: formData.listedByRole || null,
-      video_url: videoUrl ? videoUrl : null,
-      video_hashes: videoHashes,
-      device_id: getDeviceId() ? getDeviceId() : null,
-      service_charge: formData.serviceCharge ? Number(formData.serviceCharge) : null,
-      caution_deposit: formData.cautionDeposit ? Number(formData.cautionDeposit) : null,
-      status: 'pending', // critical: must be set for search filtering + admin review queue
-    })
+    const { data: newListing, error } = await supabase
+      .from('listings')
+      .insert({
+        landlord_id: userData.user.id,
+        title: formData.title || `${formData.bedrooms} bed ${formData.propertyType} in ${formData.location}`,
+        description: cleanDescription(formData.description),
+        listing_type: formData.listingType,
+        price_monthly: Number(formData.monthlyRent),
+        location_text: formData.location,
+        lat: formData.lat,
+        lng: formData.lng,
+        property_type: formData.propertyType,
+        bedrooms: Number(formData.bedrooms),
+        bathrooms: formData.bathrooms ? Number(formData.bathrooms) : null,
+        toilets: formData.toilets ? Number(formData.toilets) : null,
+        furnished: formData.furnished === 'yes',
+        amenities: formData.amenities,
+        photos: photos,
+        photo_hashes: photoHashes.filter((h) => h.length === 16),
+        ownership_doc_url: ownershipDoc || null,
+        contact_info: formData.phoneNumber,
+        availability_date: formData.availabilityDate || null,
+        listed_by_role: formData.listedByRole || null,
+        video_url: videoUrl ? videoUrl : null,
+        video_hashes: videoHashes,
+        device_id: getDeviceId() ? getDeviceId() : null,
+        service_charge: formData.serviceCharge ? Number(formData.serviceCharge) : null,
+        caution_deposit: formData.cautionDeposit ? Number(formData.cautionDeposit) : null,
+        status: 'pending', // critical: must be set for search filtering + admin review queue
+      })
+      .select('id')
+      .single()
 
     setSubmitting(false)
 
@@ -296,7 +301,8 @@ export default function ListPropertyPage() {
       alert('Failed to submit listing: ' + error.message)
       return
     }
-if (needsOwner && newListing?.id) {
+
+    if (needsOwner && newListing?.id) {
       const { error: ownerError } = await supabase.from('listing_owner_details').insert({
         listing_id: newListing.id,
         owner_name: formData.ownerName.trim(),

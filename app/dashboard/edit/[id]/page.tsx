@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
+import { cleanDescription } from '@/lib/clean-description';
 
 const PROPERTY_TYPES = [
   'Flat / Apartment',
@@ -100,7 +101,7 @@ export default function EditListingPage() {
         property_type: formData.propertyType,
         bedrooms: Number(formData.bedrooms),
         price_monthly: Number(formData.monthlyRent),
-        description: formData.description,
+        description: cleanDescription(formData.description),
         contact_info: formData.phoneNumber,
         availability_date: formData.availabilityDate || null,
       })

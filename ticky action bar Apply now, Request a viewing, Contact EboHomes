@@ -1,0 +1,16 @@
+warning: in the working copy of 'app/layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/list-property/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/footer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/header.tsx', LF will be replaced by CRLF the next time Git touches it
+ app/dashboard/edit/[id]/page.tsx |   3 [32m+[m[31m-[m
+ app/layout.tsx                   |   2 [32m+[m
+ app/list-property/page.tsx       |  64 [32m+++[m[31m---[m
+ app/listing/[id]/page.tsx        | 416 [32m+++++++++++++++++++[m[31m-------------------[m
+ app/page.tsx                     | 384 [32m+++++++++++++++++++++++++++++[m[31m------[m
+ app/search/page.tsx              | 420 [32m+++++++++++++++++++++++++++++++++[m[31m------[m
+ components/footer.tsx            |  63 [32m+++[m[31m---[m
+ components/header.tsx            | 208 [32m+++++++++++++[m[31m------[m
+ components/listing-card.tsx      |  25 [32m++[m[31m-[m
+ lib/contact.ts                   |   3 [32m+[m[31m-[m
+ next-env.d.ts                    |   2 [32m+[m[31m-[m
+ 11 files changed, 1147 insertions(+), 443 deletions(-)

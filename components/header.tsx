@@ -7,6 +7,7 @@ import {
   Sun, Moon, LogOut, LayoutDashboard, Menu, X,
   Info, HelpCircle, Mail, PlusCircle, ChevronRight,
   Bell, Search as SearchIcon, Home as HomeIcon, Heart, MessageCircle,
+  UserCircle,
 } from 'lucide-react'
 import { Button } from './ui/button'
 import { ProfileMenu } from './profile-menu'
@@ -26,20 +27,31 @@ export function Header() {
     setIsDark(document.documentElement.classList.contains('dark'))
 
     const fetchRole = async (userId: string) => {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .maybeSingle()
-      if (error) console.error('Failed to fetch profile role:', error)
-      setRole(profile?.role ?? null)
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .maybeSingle()
+        if (error) {
+          // Network or database problem: keep the last known role
+          console.error('Failed to fetch profile role:', error.message)
+          return
+        }
+        setRole(profile?.role ?? null)
+      } catch (err) {
+        console.error('Unexpected profile role error:', err)
+      }
     }
 
-    supabase.auth.getUser().then(({ data }) => {
-      const userId = data?.user?.id
-      if (userId) { setLoggedIn(true); fetchRole(userId) }
-      else { setLoggedIn(false); setRole(null) }
-    })
+    supabase.auth
+      .getUser()
+      .then(({ data }) => {
+        const userId = data?.user?.id
+        if (userId) { setLoggedIn(true); fetchRole(userId) }
+        else { setLoggedIn(false); setRole(null) }
+      })
+      .catch((err) => console.error('Failed to check user:', err))
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) { setLoggedIn(true); fetchRole(session.user.id) }
@@ -64,6 +76,11 @@ export function Header() {
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen])
 
+  // Close the menu whenever the page changes
+  useEffect(() => {
+    setDrawerOpen(false)
+  }, [pathname])
+
   const toggleDarkMode = () => {
     if (!mounted) return
     document.documentElement.classList.toggle('dark')
@@ -87,7 +104,11 @@ export function Header() {
   const scrollToSection = (sectionId: string) => {
     setDrawerOpen(false)
     const element = document.getElementById(sectionId)
-    if (element) element.scrollIntoView({ behavior: 'smooth' })
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' })
+    } else {
+      router.push(`/#${sectionId}`)
+    }
   }
 
   const dashboardHref = role === 'landlord' ? '/dashboard' : '/home'
@@ -121,7 +142,7 @@ export function Header() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setDrawerOpen(true)}
-                className="md:hidden p-2.5 rounded-xl hover:bg-muted text-foreground -ml-2"
+                className="md:hidden flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted text-foreground -ml-2"
                 aria-label="Open menu"
               >
                 <Menu size={22} />
@@ -195,22 +216,28 @@ export function Header() {
                     </Button>
                   )}
 
-                  <button
-                    className="p-2.5 rounded-xl hover:bg-muted transition-colors text-foreground/70 inline-flex"
+                  <Link
+                    href="/notifications"
+                    className="flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted transition-colors text-foreground/70"
                     aria-label="Notifications"
                   >
                     <Bell size={18} />
-                  </button>
+                  </Link>
 
                   {/* Desktop: full dropdown */}
                   <div className="hidden sm:block">
                     <ProfileMenuWrapper />
                   </div>
 
-                  {/* Mobile: tappable avatar → profile page */}
-                  <div className="sm:hidden">
-                    <MobileAvatarLink />
-                  </div>
+                  {/* Mobile: tappable avatar opens the menu */}
+                  <button
+                    type="button"
+                    onClick={() => setDrawerOpen(true)}
+                    className="flex h-11 w-11 items-center justify-center sm:hidden"
+                    aria-label="Open account menu"
+                  >
+                    <Avatar size={36} />
+                  </button>
                 </>
               )}
             </div>
@@ -234,7 +261,7 @@ export function Header() {
           role="dialog"
           aria-modal="true"
           aria-label="Menu"
-          className={`absolute top-0 left-0 h-full w-[82%] max-w-[320px] bg-card shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
+          className={`absolute top-0 left-0 h-full w-[85%] max-w-[330px] bg-card shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
             drawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
@@ -242,21 +269,26 @@ export function Header() {
             <img src="/logo-horizontal-compact.png" alt="EboHomes" className="h-10 w-auto mix-blend-multiply dark:mix-blend-normal" />
             <button
               onClick={() => setDrawerOpen(false)}
-              className="p-2 -mr-2 rounded-xl hover:bg-muted text-foreground"
+              className="flex h-11 w-11 items-center justify-center -mr-2 rounded-xl hover:bg-muted text-foreground"
               aria-label="Close menu"
             >
               <X size={20} />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-4 px-3">
+          <div
+            className="flex-1 overflow-y-auto py-4 px-3"
+            style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+          >
+            {loggedIn && <DrawerAccountCard onNavigate={() => setDrawerOpen(false)} />}
+
             {loggedIn && role === 'landlord' && (
               <button
                 onClick={() => { setDrawerOpen(false); handleListClick() }}
                 className="w-full flex items-center gap-2 justify-center bg-primary text-primary-foreground font-semibold rounded-xl py-3 mb-5 text-sm"
               >
                 <PlusCircle size={16} />
-                List a Property
+                Post a Listing
               </button>
             )}
 
@@ -281,6 +313,31 @@ export function Header() {
                   label="Dashboard"
                   onClick={() => setDrawerOpen(false)}
                 />
+                <DrawerItem
+                  icon={<Heart size={18} />}
+                  href="/saved"
+                  label="Favourites"
+                  onClick={() => setDrawerOpen(false)}
+                />
+                <DrawerItem
+                  icon={<Bell size={18} />}
+                  href="/notifications"
+                  label="Notifications"
+                  onClick={() => setDrawerOpen(false)}
+                />
+                <DrawerItem
+                  icon={<UserCircle size={18} />}
+                  href="/profile"
+                  label="Settings"
+                  onClick={() => setDrawerOpen(false)}
+                />
+                <DrawerItem
+                  icon={<LogOut size={18} />}
+                  label="Sign out"
+                  onClick={handleLogout}
+                  as="button"
+                  danger
+                />
               </DrawerGroup>
             )}
 
@@ -291,24 +348,15 @@ export function Header() {
                 onClick={toggleDarkMode}
                 as="button"
               />
-              {loggedIn && (
-                <DrawerItem
-                  icon={<LogOut size={18} />}
-                  label="Logout"
-                  onClick={handleLogout}
-                  as="button"
-                  danger
-                />
-              )}
             </DrawerGroup>
 
             {!loggedIn && (
               <div className="flex flex-col gap-2 mt-2 px-2">
                 <Link href="/login" onClick={() => setDrawerOpen(false)}>
-                  <Button variant="outline" className="w-full">Log in</Button>
+                  <Button variant="outline" className="w-full h-11">Log in</Button>
                 </Link>
                 <Link href="/login?mode=signup" onClick={() => setDrawerOpen(false)}>
-                  <Button className="w-full">Sign Up</Button>
+                  <Button className="w-full h-11">Sign Up</Button>
                 </Link>
               </div>
             )}
@@ -322,39 +370,78 @@ export function Header() {
 function ProfileMenuWrapper() {
   const [email, setEmail] = useState('')
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setEmail(data?.user?.email ?? ''))
+    supabase.auth
+      .getUser()
+      .then(({ data }) => setEmail(data?.user?.email ?? ''))
+      .catch((err) => console.error('Failed to load email:', err))
   }, [])
   if (!email) return null
   return <ProfileMenu email={email} />
 }
 
-function MobileAvatarLink() {
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [initial, setInitial] = useState('?')
+// Small hook-like helper: loads the signed-in person's name, email and photo
+function useAccountInfo() {
+  const [info, setInfo] = useState<{ name: string; email: string; avatarUrl: string | null }>({
+    name: '',
+    email: '',
+    avatarUrl: null,
+  })
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      const user = data?.user
-      if (!user) return
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name, avatar_url')
-        .eq('id', user.id)
-        .maybeSingle()
-      setAvatarUrl(profile?.avatar_url ?? null)
-      setInitial((profile?.full_name?.[0] ?? user.email?.[0] ?? '?').toUpperCase())
-    })
+    supabase.auth
+      .getUser()
+      .then(async ({ data }) => {
+        const user = data?.user
+        if (!user) return
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, avatar_url')
+          .eq('id', user.id)
+          .maybeSingle()
+        setInfo({
+          name: profile?.full_name ?? '',
+          email: user.email ?? '',
+          avatarUrl: profile?.avatar_url ?? null,
+        })
+      })
+      .catch((err) => console.error('Failed to load account info:', err))
   }, [])
 
+  return info
+}
+
+function Avatar({ size = 36 }: { size?: number }) {
+  const { name, email, avatarUrl } = useAccountInfo()
+  const initial = (name?.[0] ?? email?.[0] ?? '?').toUpperCase()
+  const style = { width: size, height: size }
+
+  return avatarUrl ? (
+    <img src={avatarUrl} alt="" style={style} className="rounded-full object-cover" />
+  ) : (
+    <div
+      style={style}
+      className="rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm"
+    >
+      {initial}
+    </div>
+  )
+}
+
+function DrawerAccountCard({ onNavigate }: { onNavigate: () => void }) {
+  const { name, email } = useAccountInfo()
+
   return (
-    <Link href="/profile" className="block" aria-label="Your profile">
-      {avatarUrl ? (
-        <img src={avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover" />
-      ) : (
-        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-          {initial}
-        </div>
-      )}
+    <Link
+      href="/profile"
+      onClick={onNavigate}
+      className="mb-5 flex items-center gap-3 rounded-xl border border-border bg-secondary/40 p-3"
+    >
+      <Avatar size={44} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-foreground">{name || 'My account'}</p>
+        <p className="truncate text-xs text-muted-foreground">{email}</p>
+      </div>
+      <ChevronRight size={16} className="shrink-0 text-muted-foreground/60" />
     </Link>
   )
 }
@@ -388,7 +475,8 @@ function DrawerItem({
     </>
   )
 
-  const className = 'flex items-center justify-between px-3 py-3 rounded-xl hover:bg-muted transition-colors'
+  const className =
+    'flex min-h-[46px] items-center justify-between px-3 py-3 rounded-xl hover:bg-muted transition-colors'
 
   if (as === 'button') {
     return <button onClick={onClick} className={`text-left ${className}`}>{content}</button>

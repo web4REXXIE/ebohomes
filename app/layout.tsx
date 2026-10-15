@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { SplashScreen } from '@/components/splash-screen'
 import { BottomNav } from '@/components/bottom-nav'
 import './globals.css'
+import { HelpBubble } from '@/components/help-bubble'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({
@@ -52,6 +53,7 @@ export default function RootLayout({
           </div>
         </SplashScreen>
         <BottomNav />
+        <HelpBubble />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

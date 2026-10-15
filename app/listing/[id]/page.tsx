@@ -11,6 +11,7 @@ import {
   ShieldOff,
   Flag,
   Calendar,
+  Clock,
   FileText,
   Route,
   Droplet,
@@ -20,8 +21,7 @@ import {
   Building2,
   ChevronDown,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight,
+
   CheckCircle2,
   AlertTriangle,
   Leaf,
@@ -38,11 +38,12 @@ import { supabase } from '@/lib/supabase'
 import dynamic from 'next/dynamic'
 import { ReportListingModal } from '@/components/report-listing-modal'
 import { EBOHOMES_WHATSAPP } from '@/lib/contact'
+import { PropertyGallery } from '@/components/property-gallery'
 
-const MapPlaceholder = dynamic(
+const ListingLocation = dynamic(
   () =>
-    import('@/components/map-placeholder').then((mod) => ({
-      default: mod.MapPlaceholder,
+    import('@/components/listing-location').then((mod) => ({
+      default: mod.ListingLocation,
     })),
   { ssr: false }
 )
@@ -52,6 +53,37 @@ const ROLE_LABELS: Record<string, string> = {
   agent: 'Agent',
   manager: 'Property manager',
   other: 'Other',
+}
+
+// Fixes garbled characters (encoding bugs) and tidies spacing in descriptions
+function cleanDescription(text: string) {
+  if (!text) return ''
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/â‚¦/g, '₦')
+    .replace(/â€™/g, '’')
+    .replace(/â€˜/g, '‘')
+    .replace(/â€œ|â€\u009d|â€/g, '"')
+    .replace(/â€“/g, '–')
+    .replace(/â€”/g, '—')
+    .replace(/â€¢/g, '•')
+    .replace(/Â/g, '')
+    .replace(/\uFFFD/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-NG', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 export default function ListingDetailPage() {
@@ -64,11 +96,14 @@ export default function ListingDetailPage() {
   const [landlord, setLandlord] = useState<any>(null)
   const [inspection, setInspection] = useState<any>(null)
   const [trust, setTrust] = useState<any>(null)
+  const [dates, setDates] = useState<{
+    created_at: string | null
+    updated_at: string | null
+  }>({ created_at: null, updated_at: null })
   const [inspectionExpanded, setInspectionExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [currentPhoto, setCurrentPhoto] = useState(0)
-  const [touchStartX, setTouchStartX] = useState<number | null>(null)
-  const [touchEndX, setTouchEndX] = useState<number | null>(null)
+  
+
   const [saved, setSaved] = useState(false)
   const [savedBusy, setSavedBusy] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
@@ -85,93 +120,8 @@ export default function ListingDetailPage() {
     ? listing.photos
     : []
 
-  /* ---------------- Gallery ---------------- */
+ 
 
-  function showPreviousPhoto() {
-    if (photos.length < 2) return
-
-    setCurrentPhoto((current) =>
-      current === 0 ? photos.length - 1 : current - 1
-    )
-  }
-
-  function showNextPhoto() {
-    if (photos.length < 2) return
-
-    setCurrentPhoto((current) =>
-      current === photos.length - 1 ? 0 : current + 1
-    )
-  }
-
-  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
-    setTouchStartX(event.touches[0].clientX)
-    setTouchEndX(null)
-  }
-
-  function handleTouchMove(event: React.TouchEvent<HTMLDivElement>) {
-    setTouchEndX(event.touches[0].clientX)
-  }
-
-  function handleTouchEnd() {
-    if (touchStartX === null || touchEndX === null) {
-      setTouchStartX(null)
-      setTouchEndX(null)
-      return
-    }
-
-    const distance = touchStartX - touchEndX
-    const minimumSwipeDistance = 45
-
-    if (Math.abs(distance) >= minimumSwipeDistance) {
-      if (distance > 0) {
-        showNextPhoto()
-      } else {
-        showPreviousPhoto()
-      }
-    }
-
-    setTouchStartX(null)
-    setTouchEndX(null)
-  }
-
-  // Reset to first photo when the listing changes
-  useEffect(() => {
-    setCurrentPhoto(0)
-  }, [id])
-
-  // Keyboard navigation (left / right arrow keys)
-  useEffect(() => {
-    const count = photos.length
-    if (count < 2) return
-
-    function onKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null
-      const tag = target?.tagName
-      if (
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        tag === 'SELECT' ||
-        target?.isContentEditable
-      ) {
-        return
-      }
-
-      if (showShareMenu) return
-
-      if (event.key === 'ArrowLeft') {
-        setCurrentPhoto((current) =>
-          current === 0 ? count - 1 : current - 1
-        )
-      } else if (event.key === 'ArrowRight') {
-        setCurrentPhoto((current) =>
-          current === count - 1 ? 0 : current + 1
-        )
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [photos.length, showShareMenu])
 
   /* ---------------- Share ---------------- */
 
@@ -316,6 +266,38 @@ export default function ListingDetailPage() {
         }
 
         setListing(data)
+
+        // Date added / updated. Separate query so the page never breaks
+        // if a column is missing.
+        {
+          const both = await supabase
+            .from('listings')
+            .select('created_at, updated_at')
+            .eq('id', data.id)
+            .maybeSingle()
+
+          if (!cancelled) {
+            if (!both.error && both.data) {
+              setDates({
+                created_at: (both.data as any).created_at ?? null,
+                updated_at: (both.data as any).updated_at ?? null,
+              })
+            } else {
+              const createdOnly = await supabase
+                .from('listings')
+                .select('created_at')
+                .eq('id', data.id)
+                .maybeSingle()
+
+              if (!cancelled && !createdOnly.error && createdOnly.data) {
+                setDates({
+                  created_at: (createdOnly.data as any).created_at ?? null,
+                  updated_at: null,
+                })
+              }
+            }
+          }
+        }
 
         if (data.landlord_id) {
           const { data: profile, error: profileError } = await supabase
@@ -579,6 +561,19 @@ export default function ListingDetailPage() {
     ? ROLE_LABELS[listing.listed_by_role] ?? 'Other'
     : null
 
+  const addedText = formatDate(dates.created_at)
+  const updatedText = formatDate(dates.updated_at)
+  const showUpdated =
+    !!dates.created_at &&
+    !!dates.updated_at &&
+    Math.abs(
+      new Date(dates.updated_at).getTime() -
+        new Date(dates.created_at).getTime()
+    ) > 86400000 &&
+    !!updatedText
+
+  const cleanedDescription = cleanDescription(listing.description ?? '')
+
   const inspectionFields = inspection
     ? [
         {
@@ -651,7 +646,7 @@ export default function ListingDetailPage() {
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:py-6">
         <button
           onClick={() => router.back()}
           className="text-sm text-primary font-medium hover:underline mb-4"
@@ -670,25 +665,12 @@ export default function ListingDetailPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
-            <div
-              className="relative mb-2 overflow-hidden rounded-xl border border-border bg-secondary"
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-            >
-              {/* Main property photo */}
-              {photos.length > 0 ? (
-                <img
-                  src={photos[currentPhoto]}
-                  alt={`${listing.title} — photo ${currentPhoto + 1}`}
-                  draggable={false}
-                  className="h-72 w-full select-none object-cover sm:h-96 lg:h-[460px]"
-                />
-              ) : (
-                <div className="flex h-72 w-full items-center justify-center text-muted-foreground sm:h-96">
-                  No Photos Available
-                </div>
-              )}
+            <div className="relative mb-4">
+              <PropertyGallery
+                key={listing.id}
+                images={photos}
+                title={listing.title}
+              />
 
               {/* Save property */}
               <button
@@ -720,35 +702,6 @@ export default function ListingDetailPage() {
               >
                 <Share2 size={18} className="text-foreground" />
               </button>
-
-              {photos.length > 1 && (
-                <>
-                  {/* Previous photo arrow */}
-                  <button
-                    type="button"
-                    onClick={showPreviousPhoto}
-                    aria-label="Previous photo"
-                    className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-foreground shadow-lg transition hover:scale-105 hover:bg-white sm:h-12 sm:w-12"
-                  >
-                    <ChevronLeft size={25} />
-                  </button>
-
-                  {/* Next photo arrow */}
-                  <button
-                    type="button"
-                    onClick={showNextPhoto}
-                    aria-label="Next photo"
-                    className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-foreground shadow-lg transition hover:scale-105 hover:bg-white sm:h-12 sm:w-12"
-                  >
-                    <ChevronRight size={25} />
-                  </button>
-
-                  {/* Photo counter */}
-                  <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
-                    {currentPhoto + 1} / {photos.length}
-                  </span>
-                </>
-              )}
             </div>
 
             {/* Share feedback */}
@@ -759,36 +712,6 @@ export default function ListingDetailPage() {
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
                 {shareMessage}
-              </div>
-            )}
-
-            {/* Photo thumbnails */}
-            {photos.length > 1 && (
-              <div
-                className="mb-6 flex gap-2 overflow-x-auto pb-2"
-                aria-label="Property photo thumbnails"
-              >
-                {photos.map((url, index) => (
-                  <button
-                    type="button"
-                    key={`${url}-${index}`}
-                    onClick={() => setCurrentPhoto(index)}
-                    aria-label={`View photo ${index + 1}`}
-                    aria-pressed={index === currentPhoto}
-                    className={`relative h-16 w-20 shrink-0 overflow-hidden rounded-lg border-2 transition sm:h-20 sm:w-28 ${
-                      index === currentPhoto
-                        ? 'border-primary ring-1 ring-primary'
-                        : 'border-transparent opacity-75 hover:opacity-100'
-                    }`}
-                  >
-                    <img
-                      src={url}
-                      alt={`${listing.title}, photo ${index + 1}`}
-                      draggable={false}
-                      className="h-full w-full select-none object-cover"
-                    />
-                  </button>
-                ))}
               </div>
             )}
 
@@ -810,10 +733,19 @@ export default function ListingDetailPage() {
               )}
             </div>
 
-            <p className="flex items-center gap-1 text-muted-foreground text-sm mb-4">
+            <p className="flex items-center gap-1 text-muted-foreground text-sm mb-2">
               <MapPin size={14} />
               {listing.location_text}
             </p>
+
+            {/* Date added / updated */}
+            {addedText && (
+              <p className="mb-4 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                <Clock size={12} className="shrink-0" />
+                <span>Added {addedText}</span>
+                {showUpdated && <span>· Updated {updatedText}</span>}
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-2 mb-6">
               {listing.property_type && (
@@ -857,14 +789,14 @@ export default function ListingDetailPage() {
               </div>
             )}
 
-            {listing.description && (
+            {cleanedDescription && (
               <div className="mb-6">
                 <h3 className="font-semibold text-foreground mb-2">
                   Description
                 </h3>
 
                 <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-line">
-                  {listing.description}
+                  {cleanedDescription}
                 </p>
               </div>
             )}
@@ -1078,35 +1010,67 @@ export default function ListingDetailPage() {
             )}
 
             {listing.lat != null && listing.lng != null && (
-              <div className="mb-6">
-                <h3 className="font-semibold text-foreground mb-3">
-                  Location
-                </h3>
-
-                <div className="rounded-lg overflow-hidden border border-border">
-                  <MapPlaceholder
-                    height="h-64"
-                    listings={[
-                      {
-                        id: listing.id,
-                        lat: listing.lat,
-                        lng: listing.lng,
-                        title: listing.title,
-                      },
-                    ]}
-                  />
-                </div>
-              </div>
+              <ListingLocation
+                lat={Number(listing.lat)}
+                lng={Number(listing.lng)}
+                title={listing.title}
+                address={listing.location_text}
+              />
             )}
 
-            <button
-              type="button"
-              onClick={() => setShowReportModal(true)}
-              className="flex items-center gap-2 text-sm font-semibold text-destructive border border-destructive rounded-md px-3 py-2 hover:bg-destructive hover:text-white transition-colors"
-            >
-              <Flag size={14} />
-              Report this listing
-            </button>
+            {/* Safety tip */}
+            <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck
+                  size={20}
+                  className="mt-0.5 shrink-0 text-amber-700"
+                />
+
+                <div className="min-w-0">
+                  <p className="text-sm font-extrabold text-amber-900">
+                    Stay safe: never pay outside EboHomes
+                  </p>
+
+                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-amber-900">
+                    <li>
+                      Do not send money to any person or account that is not
+                      arranged through EboHomes.
+                    </li>
+                    <li>
+                      Inspect the property before you pay, and confirm the
+                      rent, agreement and documents.
+                    </li>
+                    <li>
+                      Unsure about anything? Tap the chat button and ask
+                      EboHomes first.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Report property */}
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">
+                  Something doesn&apos;t look right?
+                </p>
+
+                <p className="text-xs text-muted-foreground">
+                  Report fake, wrong or already-rented listings so EboHomes can
+                  check them.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowReportModal(true)}
+                className="flex shrink-0 items-center justify-center gap-2 rounded-md border border-destructive px-3 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive hover:text-white"
+              >
+                <Flag size={14} />
+                Report property
+              </button>
+            </div>
 
             {showReportModal && (
               <ReportListingModal
@@ -1278,6 +1242,56 @@ export default function ListingDetailPage() {
           </div>
         </div>
       </main>
+
+      {/* Sticky action bar (mobile and tablet) */}
+      <div
+        className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-background/95 px-3 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur md:bottom-0 lg:hidden"
+        role="region"
+        aria-label="Property actions"
+      >
+        <div className="mx-auto flex max-w-xl items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              window.open(
+                `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(ebohomesMessage)}`,
+                '_blank',
+                'noopener,noreferrer'
+              )
+            }}
+            aria-label="Contact EboHomes"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-primary transition hover:bg-secondary"
+          >
+            <MessageCircle size={20} />
+          </button>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              window.open(
+                `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(viewingMessage)}`,
+                '_blank',
+                'noopener,noreferrer'
+              )
+            }}
+            className="h-11 flex-1 gap-1.5 px-2 text-[13px] font-semibold"
+          >
+            <Calendar size={16} />
+            Request a viewing
+          </Button>
+
+          <Button
+            type="button"
+            onClick={() => router.push(`/apply/${listing.id}`)}
+            disabled={listing.status !== 'approved'}
+            className="h-11 flex-[1.3] gap-1.5 bg-primary px-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileText size={16} />
+            Apply now
+          </Button>
+        </div>
+      </div>
 
       {/* Share sheet */}
       {showShareMenu && (

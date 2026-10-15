@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef, useTransition } from 'react'
+import { useState, useEffect, useMemo, useRef, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Search,
@@ -35,6 +36,13 @@ import {
   ChevronRight,
   Camera,
   Loader2,
+  Play,
+  X,
+  Flag,
+  Lock,
+  HelpCircle,
+  Clock,
+  Bath,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
@@ -60,9 +68,37 @@ const CATEGORIES = [
   { value: 'Event Center', label: 'Event Centers', desc: 'Spaces for events and gatherings', icon: CalendarClock },
 ]
 
+const RECENT_KEY = 'ebo_recent_searches'
+
+const naira = (v: unknown) => `₦${(Number(v) || 0).toLocaleString('en-NG')}`
+
+// Cloudinary: smaller, faster images (auto format + quality + width). Non-Cloudinary URLs are left alone.
+function img(url: string | undefined, width: number) {
+  if (!url) return '/placeholder.jpg'
+  if (!url.includes('/upload/') || url.includes('/upload/f_auto')) return url
+  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`)
+}
+
+const FAQS = [
+  { q: 'How do I see a property in person?', a: 'Open the listing and tap "Request a viewing". EboHomes arranges the inspection with the owner for you. You never have to chase anyone.' },
+  { q: 'How do I apply for a property?', a: 'Tap "Apply now" on the listing and fill in the form. EboHomes handles the paperwork between you and the owner.' },
+  { q: 'Who do I pay?', a: 'Only EboHomes. Never pay anyone outside EboHomes, because we cannot protect payments made elsewhere.' },
+  { q: 'What if I see a fake or wrong listing?', a: 'Tap "Report" on the listing or use the report page. Our team reviews every report.' },
+  { q: 'Is it free to search?', a: 'Yes. Searching and browsing are free for tenants.' },
+  { q: 'I still have a question. Who can I ask?', a: 'Open the Contact page or chat with the EboHomes support team on WhatsApp.' },
+]
+
+const TRUST = [
+  { icon: BadgeCheck, title: 'Reviewed listings', text: 'Every listing is checked by EboHomes before it goes live.' },
+  { icon: Lock, title: 'One safe channel', text: 'Viewings, applications and payments all go through EboHomes. Never pay outside it.' },
+  { icon: Flag, title: 'Report anything wrong', text: 'See a fake or misleading listing? Report it and we will review it.' },
+]
+
+type RecentSearch = { label: string; query: string }
+
 const WHY_CHOOSE = [
-  { title: 'Landlord Checks', desc: 'Landlords submit their details and documents for review before their listings go live.', icon: ShieldCheck },,
-  { title: 'Secure & Safe', desc: 'Your safety is our priority with secure messaging.', icon: ScanFace },
+  { title: 'Landlord Checks', desc: 'Landlords submit their details and documents for review before their listings go live.', icon: ShieldCheck },
+  { title: 'Secure & Safe', desc: 'Viewings, applications and payments all go through EboHomes, so you never deal with strangers.', icon: ScanFace },
   { title: 'Quality Listings', desc: 'We approve every listing to ensure genuine properties.', icon: BadgeCheck },
   { title: 'Easy Search', desc: 'Advanced filters help you find the perfect home fast.', icon: SearchCheck },
   { title: 'Always Here', desc: 'Our support team is ready to help whenever you need us.', icon: Headphones },
@@ -103,7 +139,10 @@ function FeaturedMarquee({ items }: { items: any[] }) {
           <ListingCard
             id={listing.id}
             landlord_id={listing.landlord_id}
-            image={listing.photos?.[0] ?? ''}
+            title={listing.title}
+            image={img(listing.photos?.[0], 600)}
+            photoCount={Array.isArray(listing.photos) ? listing.photos.length : undefined}
+            bathrooms={listing.bathrooms}
             price_monthly={listing.price_monthly}
             price_yearly={listing.price_yearly}
             location={listing.location_text}
@@ -146,7 +185,7 @@ function RecentMarquee({ items }: { items: any[] }) {
             <p className="mt-1 text-sm text-white/70">The newest homes on EboHomes.</p>
           </div>
           <button
-            onClick={() => router.push('/search?mode=rent')}
+            onClick={() => router.push('/search')}
             className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-amber-300 hover:text-amber-200"
           >
             See all <ChevronRight size={16} />
@@ -171,7 +210,7 @@ function RecentMarquee({ items }: { items: any[] }) {
                 >
                   <div className="relative h-40 w-full overflow-hidden">
                     <img
-                      src={l.photos?.[0] || '/placeholder.jpg'}
+                      src={img(l.photos?.[0], 600)}
                       alt={`${l.property_type} in ${l.location_text}`}
                       draggable={false}
                       loading="lazy"
@@ -182,6 +221,11 @@ function RecentMarquee({ items }: { items: any[] }) {
                       }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
+                    {Array.isArray(l.photos) && l.photos.length > 0 && (
+                      <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-white">
+                        <Camera size={11} /> {l.photos.length}
+                      </span>
+                    )}
                     {added && (
                       <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-primary shadow">
                         {added}
@@ -190,10 +234,11 @@ function RecentMarquee({ items }: { items: any[] }) {
                   </div>
                   <div className="p-4">
                     <p className="text-lg font-extrabold text-primary">
-                      ₦{l.price_monthly?.toLocaleString()}
+                      {naira(l.price_monthly)}
                       <span className="text-sm font-medium text-muted-foreground">/month</span>
                     </p>
-                    <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                    <p className="mt-1 line-clamp-1 text-sm font-semibold text-foreground">{l.title || l.property_type}</p>
+                    <p className="mt-0.5 flex items-center gap-1 text-sm text-muted-foreground">
                       <MapPin size={13} className="shrink-0" />
                       <span className="truncate">{l.location_text}</span>
                     </p>
@@ -203,7 +248,12 @@ function RecentMarquee({ items }: { items: any[] }) {
                       </span>
                       {l.bedrooms ? (
                         <span className="flex items-center gap-1.5">
-                          <Bed size={13} /> {l.bedrooms} Beds
+                          <Bed size={13} /> {l.bedrooms}
+                        </span>
+                      ) : null}
+                      {l.bathrooms ? (
+                        <span className="flex items-center gap-1.5">
+                          <Bath size={13} /> {l.bathrooms}
                         </span>
                       ) : null}
                     </div>
@@ -305,9 +355,9 @@ function CountUp({ to }: { to: number }) {
 // ---------- How it works: timeline (vertical on phone, horizontal on desktop) ----------
 const STEPS = [
   { icon: Search, title: 'Search', desc: 'Find properties that fit your needs.' },
-  { icon: MessageCircle, title: 'Contact', desc: 'Chat with EboHomes to arrange viewings.' },
-  { icon: ClipboardCheck, title: 'Inspect', desc: 'Schedule a viewing and see it yourself.' },
-  { icon: Key, title: 'Move in', desc: 'Sign the agreement and get your keys.' },
+  { icon: ClipboardCheck, title: 'Request a viewing', desc: 'EboHomes arranges the inspection. You never chase an owner or agent.' },
+  { icon: MessageCircle, title: 'Apply', desc: 'Found the one? Apply online and EboHomes handles the paperwork.' },
+  { icon: Key, title: 'Move in', desc: 'Sign the agreement and get your keys. Pay only through EboHomes.' },
 ]
 
 function HowItWorks() {
@@ -367,7 +417,7 @@ function HowItWorks() {
           <div>
             <p className="font-bold text-foreground">Safe. Simple. Stress-free.</p>
             <p className="text-sm text-muted-foreground">
-              We verify landlords and protect your info, so your search stays smooth from start to finish.
+              Everything goes through EboHomes. Never pay anyone outside the platform.
             </p>
           </div>
         </div>
@@ -389,7 +439,7 @@ const FOUNDER = {
   paragraphs: [
     "I'm Onwe Rex, a 200 level Medical Laboratory Science student at EBSU.",
     "When I got to uni, finding a house turned into a struggle. Agents' fees, inspection fees, and still nothing that matched what I needed. Prices kept jumping, and with no direct access to the owner, that extra money was simply wasted.",
-    'So I started thinking about a better way: connect tenants directly with real landlords, no middlemen, no wasted inspection money.',
+    'So I started building a better way: real, reviewed properties, one trusted platform, and no wasted inspection money.',
   ],
   skillsLine: 'Beyond EboHomes, I build solutions to real problems with:',
   skills: ['AI Agents', 'Automation', 'Web3 & Crypto', 'Web Building'],
@@ -662,9 +712,87 @@ function HeroBackground() {
   )
 }
 
+function SectionHead({ title, sub, onClick, cta = 'See all' }: { title: string; sub?: string; onClick?: () => void; cta?: string }) {
+  return (
+    <div className="flex items-end justify-between gap-4">
+      <div>
+        <h2 className="text-xl font-extrabold tracking-tight text-foreground md:text-3xl">{title}</h2>
+        {sub && <p className="mt-1 text-sm text-muted-foreground">{sub}</p>}
+      </div>
+      {onClick && (
+        <button onClick={onClick} className="inline-flex shrink-0 items-center text-sm font-semibold text-primary hover:underline">
+          {cta} <ChevronRight size={16} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function FaqList() {
+  const [open, setOpen] = useState<number | null>(0)
+  return (
+    <div className="space-y-2">
+      {FAQS.map((f, i) => (
+        <div key={f.q} className="rounded-2xl border border-border bg-card">
+          <button
+            type="button"
+            onClick={() => setOpen(open === i ? null : i)}
+            aria-expanded={open === i}
+            className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-sm font-semibold text-foreground md:text-base"
+          >
+            {f.q}
+            <ChevronDown size={18} className={`shrink-0 transition-transform ${open === i ? 'rotate-180' : ''}`} />
+          </button>
+          {open === i && <p className="px-5 pb-5 text-sm leading-relaxed text-muted-foreground">{f.a}</p>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Floating "?" button: opens a sheet with the FAQs and a link to EboHomes support.
+function HelpBubble() {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Help and frequently asked questions"
+        className="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-primary shadow-lg md:bottom-6"
+      >
+        <HelpCircle size={24} />
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 md:items-center" onClick={() => setOpen(false)} role="dialog" aria-modal="true" aria-label="Help">
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-background p-5 shadow-xl md:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-extrabold text-foreground">How can we help?</h2>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close help" className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-secondary">
+                <X size={18} />
+              </button>
+            </div>
+            <FaqList />
+            <Link href="/contact" onClick={() => setOpen(false)} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-bold text-primary-foreground">
+              <Headphones size={18} /> Contact EboHomes support
+            </Link>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function HomePage() {
   const router = useRouter()
-  const [listingMode] = useState<'rent' | 'sale'>('rent')
   const [location, setLocation] = useState('')
   const [propertyType, setPropertyType] = useState('')
   const [minPrice, setMinPrice] = useState('')
@@ -672,76 +800,88 @@ export default function HomePage() {
 
   const [featured, setFeatured] = useState<any[]>([])
   const [recent, setRecent] = useState<any[]>([])
+  const [videos, setVideos] = useState<any[]>([])
+  const [areas, setAreas] = useState<{ name: string; count: number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({})
   const [stats, setStats] = useState({ properties: 0, landlords: 0 })
   const [featuredIndex, setFeaturedIndex] = useState(0)
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([])
   const [isSearching, startSearch] = useTransition()
 
   useEffect(() => {
-    const fetchHomeListings = async () => {
+    const fetchHome = async () => {
       setLoading(true)
+      setLoadError(false)
 
-      const { data: featuredData } = await supabase
+      // One query (only the columns the home page needs), everything else is derived from it
+      const { data, error } = await supabase
         .from('listings')
-        .select('*')
-        .eq('status', 'approved')
-        .eq('featured', true)
-        .order('created_at', { ascending: false })
-
-      const { data: recentData } = await supabase
-        .from('listings')
-        .select('*')
+        .select('id, landlord_id, title, photos, price_monthly, price_yearly, location_text, property_type, bedrooms, bathrooms, featured, video_url, created_at')
         .eq('status', 'approved')
         .order('created_at', { ascending: false })
-        .limit(6)
+        .limit(500)
+
+      if (error) {
+        console.error('Failed to load home listings:', error.message)
+        setLoadError(true)
+        setLoading(false)
+        return
+      }
+
+      const rows = data ?? []
 
       // Every featured listing is shown; order is shuffled on each visit so none is always first
-      const shuffled = [...(featuredData ?? [])]
+      const shuffled = rows.filter((l) => l.featured)
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1))
         ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
       }
       setFeatured(shuffled)
-      setRecent(recentData ?? [])
+      setRecent(rows.slice(0, 6))
+      setVideos(rows.filter((l) => l.video_url).slice(0, 6))
+
+      const types: Record<string, number> = {}
+      const places: Record<string, { name: string; count: number }> = {}
+      for (const r of rows) {
+        if (r.property_type) types[r.property_type] = (types[r.property_type] || 0) + 1
+        const name = (r.location_text || '').trim()
+        if (name) {
+          const key = name.toLowerCase()
+          places[key] = { name: places[key]?.name ?? name, count: (places[key]?.count ?? 0) + 1 }
+        }
+      }
+      setCategoryCounts(types)
+      setAreas(Object.values(places).sort((a, b) => b.count - a.count))
+      setStats((s) => ({ ...s, properties: rows.length }))
       setLoading(false)
     }
-    fetchHomeListings()
-  }, [])
+    fetchHome()
 
-  useEffect(() => {
-    const fetchCategoryCounts = async () => {
-      const { data } = await supabase
-        .from('listings')
-        .select('property_type')
-        .eq('status', 'approved')
-
-      const counts: Record<string, number> = {}
-      data?.forEach((row) => {
-        const type = row.property_type
-        counts[type] = (counts[type] || 0) + 1
-      })
-      setCategoryCounts(counts)
+    const fetchLandlords = async () => {
+      const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'landlord')
+      setStats((s) => ({ ...s, landlords: count ?? 0 }))
     }
-    fetchCategoryCounts()
+    fetchLandlords()
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+      if (Array.isArray(saved)) setRecentSearches(saved.slice(0, 4))
+    } catch {}
   }, [])
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      const { count: propCount } = await supabase
-        .from('listings')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'approved')
+  const saveRecentSearch = (item: RecentSearch) => {
+    const next = [item, ...recentSearches.filter((r) => r.query !== item.query)].slice(0, 4)
+    setRecentSearches(next)
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch {}
+  }
 
-      const { count: landlordCount } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('role', 'landlord')
-
-      setStats({ properties: propCount ?? 0, landlords: landlordCount ?? 0 })
-    }
-    fetchStats()
-  }, [])
+  const removeRecentSearch = (query: string) => {
+    const next = recentSearches.filter((r) => r.query !== query)
+    setRecentSearches(next)
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch {}
+  }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -750,10 +890,19 @@ export default function HomePage() {
     if (propertyType) params.set('type', propertyType)
     if (minPrice) params.set('minPrice', minPrice)
     if (maxPrice) params.set('maxPrice', maxPrice)
-    params.set('mode', listingMode)
+    const query = params.toString()
+    if (query) {
+      const label = [
+        location.trim(),
+        propertyType,
+        minPrice && `from ${naira(minPrice)}`,
+        maxPrice && `up to ${naira(maxPrice)}`,
+      ].filter(Boolean).join(' · ')
+      saveRecentSearch({ label, query })
+    }
     // isSearching stays true until the search page has loaded, so the button shows a spinner
     startSearch(() => {
-      router.push('/search?' + params.toString())
+      router.push('/search' + (query ? '?' + query : ''))
     })
   }
 
@@ -904,9 +1053,9 @@ export default function HomePage() {
             {/* Quick searches: only property types that really have listings, plus budget shortcuts */}
             <div className="-mx-4 sm:mx-0 mt-4 flex gap-2 overflow-x-auto px-4 sm:px-0 sm:flex-wrap sm:justify-center sm:overflow-visible pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {[
-                { label: 'Under ₦100k', href: '/search?mode=rent&maxPrice=100000' },
-                { label: '₦100k – ₦300k', href: '/search?mode=rent&minPrice=100000&maxPrice=300000' },
-                { label: '2 Bedroom', href: '/search?mode=rent&bedrooms=2' },
+                { label: 'Under ₦100k', href: '/search?maxPrice=100000' },
+                { label: '₦100k – ₦300k', href: '/search?minPrice=100000&maxPrice=300000' },
+                { label: '2 Bedroom', href: '/search?bedrooms=2' },
                 ...CATEGORIES.filter((c) => (categoryCounts[c.value] ?? 0) > 0)
                   .slice(0, 5)
                   .map((c) => ({ label: c.label, href: '/search?type=' + encodeURIComponent(c.value) })),
@@ -922,6 +1071,37 @@ export default function HomePage() {
               ))}
             </div>
           </div>
+        </section>
+
+        {/* Safety strip */}
+        <section className="mx-auto max-w-5xl px-4 pt-5 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
+            <Lock size={18} className="shrink-0 text-primary" />
+            <p><span className="font-bold">Never pay outside EboHomes.</span> Viewings, applications and payments all go through us.</p>
+          </div>
+
+          {recentSearches.length > 0 && (
+            <div className="mt-6">
+              <h2 className="text-base font-bold text-foreground md:text-lg">Your recent searches</h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {recentSearches.map((r) => (
+                  <div key={r.query} className="flex items-center gap-1 rounded-lg border border-border bg-secondary/60 pl-3">
+                    <Link href={`/search?${r.query}`} className="py-2 text-sm font-medium text-primary">{r.label}</Link>
+                    <button type="button" onClick={() => removeRecentSearch(r.query)} aria-label={`Remove ${r.label}`} className="px-2 py-2 text-muted-foreground hover:text-foreground">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {loadError && (
+            <div className="mt-6 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground">
+              We could not load properties right now. Check your connection and{' '}
+              <button type="button" onClick={() => window.location.reload()} className="font-semibold text-primary underline">try again</button>.
+            </div>
+          )}
         </section>
 
         {/* Featured Properties */}
@@ -958,6 +1138,53 @@ export default function HomePage() {
             ) : (
               <RecentMarquee items={recent} />
             )}
+          </section>
+        )}
+
+        {/* Explore by area: real counts from approved listings */}
+        {areas.length > 0 && (
+          <section className="mx-auto max-w-7xl px-4 py-5 sm:px-6 md:py-8 lg:px-8">
+            <SectionHead title="Explore by area" sub="Real listing counts. Tap an area to see its properties." onClick={() => router.push('/search')} cta="All areas" />
+            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+              {areas.slice(0, 8).map((a) => (
+                <Link
+                  key={a.name}
+                  href={`/search?location=${encodeURIComponent(a.name)}`}
+                  className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4 transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md sm:p-5"
+                >
+                  <p className="text-4xl font-extrabold leading-none text-foreground sm:text-5xl">{a.count}</p>
+                  <div className="mt-6">
+                    <p className="line-clamp-1 text-base font-bold text-foreground">{a.name}</p>
+                    <p className="text-xs text-muted-foreground">{a.count === 1 ? 'property' : 'properties'} available</p>
+                    <p className="mt-2 inline-flex items-center text-sm font-semibold text-primary">Explore <ChevronRight size={15} /></p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Homes with videos: only appears when real videos exist */}
+        {videos.length > 0 && (
+          <section className="mx-auto max-w-7xl px-4 py-5 sm:px-6 md:py-8 lg:px-8">
+            <SectionHead title="Homes with videos" sub="Walk through the real property before you request a viewing." />
+            <div className="-mx-4 mt-5 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {videos.map((l) => (
+                <Link key={l.id} href={`/listing/${l.id}`} className="w-[72%] shrink-0 snap-start overflow-hidden rounded-xl border border-border bg-card sm:w-[46%] md:w-[31%]">
+                  <div className="relative bg-black">
+                    <video src={`${l.video_url}#t=0.5`} preload="metadata" muted playsInline className="aspect-video w-full object-cover" />
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black"><Play size={22} className="ml-0.5 fill-current" /></span>
+                    </span>
+                  </div>
+                  <div className="p-3">
+                    <p className="font-extrabold text-primary">{naira(l.price_monthly)}<span className="text-[11px] font-medium text-muted-foreground"> /month</span></p>
+                    <p className="line-clamp-1 text-sm font-semibold text-foreground">{l.title || l.property_type}</p>
+                    <p className="line-clamp-1 text-xs text-muted-foreground">{l.location_text}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </section>
         )}
 
@@ -1085,8 +1312,34 @@ export default function HomePage() {
           <InstitutionsTicker />
         </section>
 
+        {/* Why EboHomes: trust cards */}
+        <section className="mx-auto max-w-6xl px-4 py-5 sm:px-6 md:py-8 lg:px-8">
+          <SectionHead title="Why people rent through EboHomes" />
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {TRUST.map(({ icon: Icon, title, text }) => (
+              <div key={title} className="flex gap-4 rounded-2xl border border-border bg-card p-5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon size={22} /></span>
+                <div>
+                  <h3 className="font-bold text-foreground">{title}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* Founder */}
         <FounderSection />
+
+        {/* FAQ */}
+        <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-4 py-5 sm:px-6 md:py-8">
+          <SectionHead title="Frequently asked questions" />
+          <div className="mt-5"><FaqList /></div>
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            Still stuck?{' '}
+            <Link href="/contact" className="font-semibold text-primary hover:underline">Contact EboHomes support</Link>
+          </p>
+        </section>
 
         {/* EboHomes AI: coming soon */}
         <AiComingSoon />
@@ -1162,7 +1415,7 @@ export default function HomePage() {
                   <div className="relative bg-white rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-500">
                     <div className="relative h-52 md:h-60">
                       <img
-                        src={featured[featuredIndex]?.photos?.[0] ?? '/hero.jpg'}
+                        src={img(featured[featuredIndex]?.photos?.[0], 800)}
                         alt={featured[featuredIndex]?.property_type ?? 'Featured property'}
                         className="w-full h-full object-cover"
                       />
@@ -1180,7 +1433,7 @@ export default function HomePage() {
 
                     <div className="p-5">
                       <p className="text-xl font-extrabold text-primary mb-1.5">
-                        ₦{featured[featuredIndex]?.price_monthly?.toLocaleString()}
+                        {naira(featured[featuredIndex]?.price_monthly)}
                         <span className="text-sm font-medium text-muted-foreground">/month</span>
                       </p>
                       <p className="text-sm text-muted-foreground flex items-center gap-1 mb-3">
@@ -1272,6 +1525,7 @@ export default function HomePage() {
         </section>
       </main>
 
+      <HelpBubble />
       <Footer />
     </div>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Search,
@@ -20,12 +20,17 @@ import {
   Send,
   MessageCircle,
   Building2,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { EBOHOMES_WHATSAPP } from '@/lib/contact'
+import { RecentSearches, saveRecentSearch } from '@/components/recent-searches'
+import { SearchAlertBar } from '@/components/search-alert-bar'
 
 // Values must match what is stored in listings.property_type (same list as /list-property)
 const PROPERTY_TYPES = [
@@ -53,6 +58,35 @@ const matchCount = (actual: number | null | undefined, wanted: string) =>
   wanted.endsWith('+') ? Number(actual) >= parseInt(wanted) : String(actual) === wanted
 
 const naira = (value: unknown) => `₦${(Number(value) || 0).toLocaleString('en-NG')}`
+
+// Cloudinary: auto format, auto quality, width-sized. Other URLs are left alone.
+function cardImage(url: string, width: number) {
+  if (!url || !url.includes('/upload/')) return url
+  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`)
+}
+
+function addedLabel(createdAt?: string) {
+  if (!createdAt) return ''
+  const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000)
+  if (days <= 0) return 'Added today'
+  if (days === 1) return 'Added yesterday'
+  if (days < 7) return `Added ${days} days ago`
+  if (days < 30) return `Added ${Math.floor(days / 7)}w ago`
+  return ''
+}
+
+// Page numbers with ellipsis, e.g. 1 … 4 5 6 … 20
+function getPageNumbers(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages: (number | '…')[] = [1]
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+  if (start > 2) pages.push('…')
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (end < total - 1) pages.push('…')
+  pages.push(total)
+  return pages
+}
 
 /* ---------- Seeded shuffle: new order on every visit/reload, stable while filtering ---------- */
 
@@ -229,7 +263,9 @@ function PropertyCard({
 }) {
   const isList = layout === 'list'
   const photo: string | undefined = Array.isArray(listing.photos) ? listing.photos[0] : undefined
+  const photoCount: number = Array.isArray(listing.photos) ? listing.photos.length : 0
   const featured = !!listing.featured
+  const added = addedLabel(listing.created_at)
 
   function requestViewing() {
     const message =
@@ -253,10 +289,11 @@ function PropertyCard({
         <button type="button" onClick={onOpen} className="block w-full" aria-label="View property">
           {photo ? (
             <img
-              src={photo}
+              src={cardImage(photo, 600)}
               alt={listing.title || listing.property_type || 'Property photo'}
               loading="lazy"
-              className={`w-full object-cover ${
+              decoding="async"
+              className={`w-full bg-secondary/40 object-cover ${
                 isList ? 'aspect-[4/3] md:h-full md:aspect-auto' : 'aspect-[4/3]'
               }`}
             />
@@ -294,10 +331,17 @@ function PropertyCard({
             className={saved ? 'fill-destructive text-destructive' : 'text-foreground'}
           />
         </button>
+
+        {photoCount > 0 && (
+          <div className="pointer-events-none absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
+            <Camera size={11} />
+            {photoCount}
+          </div>
+        )}
       </div>
 
       {/* Details */}
-      <div className="flex flex-1 flex-col p-3 sm:p-4">
+      <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-base font-extrabold leading-tight text-primary sm:text-lg">
@@ -343,17 +387,19 @@ function PropertyCard({
           )}
           {listing.bedrooms != null && (
             <span className="flex items-center gap-1">
-              <BedDouble size={13} />
+              <BedDouble size={13} className="text-primary" />
               {listing.bedrooms}
             </span>
           )}
           {listing.bathrooms != null && (
             <span className="flex items-center gap-1">
-              <Bath size={13} />
+              <Bath size={13} className="text-primary" />
               {listing.bathrooms}
             </span>
           )}
         </div>
+
+        {added && <p className="mt-2 text-[11px] font-medium text-emerald-700">{added}</p>}
 
         <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
           <Button type="button" variant="outline" onClick={onOpen} className="h-9 px-2 text-xs font-semibold sm:text-sm">
@@ -373,10 +419,80 @@ function PropertyCard({
   )
 }
 
+/* ---------------- Pagination ---------------- */
+
+function Pagination({
+  page,
+  totalPages,
+  onChange,
+}: {
+  page: number
+  totalPages: number
+  onChange: (p: number) => void
+}) {
+  if (totalPages <= 1) return null
+
+  const base =
+    'flex h-10 min-w-[2.5rem] items-center justify-center rounded-lg border px-3 text-sm font-semibold transition-colors'
+
+  return (
+    <nav className="mt-8 flex flex-col items-center gap-3" aria-label="Pagination">
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onChange(page - 1)}
+          disabled={page === 1}
+          aria-label="Previous page"
+          className={`${base} border-border bg-card text-foreground hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          <ChevronLeft size={18} />
+        </button>
+
+        {getPageNumbers(page, totalPages).map((p, i) =>
+          p === '…' ? (
+            <span key={`gap-${i}`} className="px-1 text-muted-foreground">
+              …
+            </span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onChange(p)}
+              aria-current={p === page ? 'page' : undefined}
+              className={`${base} ${
+                p === page
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-card text-foreground hover:bg-secondary'
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+
+        <button
+          type="button"
+          onClick={() => onChange(page + 1)}
+          disabled={page === totalPages}
+          aria-label="Next page"
+          className={`${base} border-border bg-card text-foreground hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Page {page} of {totalPages}
+      </p>
+    </nav>
+  )
+}
+
 /* ---------------- Page ---------------- */
 
 export default function SearchPage() {
   const router = useRouter()
+  const resultsTopRef = useRef<HTMLDivElement>(null)
 
   const [listings, setListings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -384,7 +500,7 @@ export default function SearchPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
   const [sortBy, setSortBy] = useState('recommended')
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [page, setPage] = useState(1)
 
   // New random seed on every visit/reload so featured listings rotate
   const [seed, setSeed] = useState<number | null>(null)
@@ -397,6 +513,7 @@ export default function SearchPage() {
   const [bedrooms, setBedrooms] = useState<string>('')
   const [bathrooms, setBathrooms] = useState<string>('')
   const [amenities, setAmenities] = useState<string[]>([])
+  const [featuredOnly, setFeaturedOnly] = useState(false)
 
   const [userId, setUserId] = useState<string | null>(null)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
@@ -406,18 +523,22 @@ export default function SearchPage() {
     setSeed(Math.floor(Math.random() * 2147483647))
   }, [])
 
-  // Pre-fill from Home page search
+  // Pre-fill from Home page links (?location, ?type, ?minPrice, ?maxPrice, ?bedrooms, ?featured=1, ?sort=newest)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
 
     setLocationText(params.get('location') || '')
     setPropertyType(params.get('type') || '')
+    setSearch(params.get('q') || '')
 
     if (params.get('minPrice')) setMinPrice(Number(params.get('minPrice')))
     if (params.get('maxPrice')) setMaxPrice(Number(params.get('maxPrice')))
 
     const beds = params.get('bedrooms')
     if (beds && ['1', '2', '3', '4+'].includes(beds)) setBedrooms(beds)
+
+    if (params.get('featured') === '1') setFeaturedOnly(true)
+    if (params.get('sort') === 'newest') setSortBy('newest')
   }, [])
 
   useEffect(() => {
@@ -523,6 +644,8 @@ export default function SearchPage() {
   const results = useMemo(() => {
     let r = [...listings]
 
+    if (featuredOnly) r = r.filter((l) => l.featured)
+
     if (locationText) {
       const q = locationText.toLowerCase()
       r = r.filter((l) => l.location_text?.toLowerCase().includes(q))
@@ -566,6 +689,9 @@ export default function SearchPage() {
     } else if (sortBy === 'price-high') {
       featured.sort(priceHigh)
       regular.sort(priceHigh)
+    } else if (sortBy === 'newest') {
+      featured.sort(newest)
+      regular.sort(newest)
     } else {
       // Recommended: featured rotate randomly each visit, the rest newest first
       featured = seed === null ? featured : seededShuffle(featured, seed)
@@ -575,6 +701,7 @@ export default function SearchPage() {
     return [...featured, ...regular]
   }, [
     listings,
+    featuredOnly,
     locationText,
     search,
     propertyType,
@@ -587,21 +714,73 @@ export default function SearchPage() {
     seed,
   ])
 
-  // Reset pagination when the result set changes
+  // Back to page 1 whenever the filters or sort change
   useEffect(() => {
-    setVisibleCount(PAGE_SIZE)
-  }, [locationText, search, propertyType, minPrice, maxPrice, bedrooms, bathrooms, amenities, sortBy])
+    setPage(1)
+  }, [
+    featuredOnly,
+    locationText,
+    search,
+    propertyType,
+    minPrice,
+    maxPrice,
+    bedrooms,
+    bathrooms,
+    amenities,
+    sortBy,
+  ])
 
-  const visibleResults = results.slice(0, visibleCount)
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const firstShown = results.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
+  const lastShown = Math.min(currentPage * PAGE_SIZE, results.length)
+  const pageResults = results.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  const changePage = (p: number) => {
+    setPage(Math.min(Math.max(1, p), totalPages))
+    resultsTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const priceActive = minPrice > 0 || maxPrice < PRICE_CAP
 
   const activeFilterCount =
+    (featuredOnly ? 1 : 0) +
+    (locationText ? 1 : 0) +
     (propertyType ? 1 : 0) +
-    (minPrice > 0 || maxPrice < PRICE_CAP ? 1 : 0) +
+    (priceActive ? 1 : 0) +
     (bedrooms ? 1 : 0) +
     (bathrooms ? 1 : 0) +
     amenities.length
 
+  // Label and link for recent searches and alerts
+  const searchLabel = [
+    bedrooms ? `${bedrooms} bed` : '',
+    propertyType || (activeFilterCount > 0 || search ? 'Properties' : ''),
+    locationText ? `in ${locationText}` : '',
+    search ? `"${search}"` : '',
+    maxPrice < PRICE_CAP ? `under ${naira(maxPrice)}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const urlParams = new URLSearchParams()
+  if (locationText) urlParams.set('location', locationText)
+  if (propertyType) urlParams.set('type', propertyType)
+  if (search) urlParams.set('q', search)
+  if (minPrice > 0) urlParams.set('minPrice', String(minPrice))
+  if (maxPrice < PRICE_CAP) urlParams.set('maxPrice', String(maxPrice))
+  if (bedrooms) urlParams.set('bedrooms', bedrooms)
+  const searchHref = `/search?${urlParams.toString()}`
+
+  // Save to recent searches once the person stops changing filters
+  useEffect(() => {
+    if (!searchLabel || loading) return
+    const timer = setTimeout(() => saveRecentSearch(searchLabel, searchHref), 2000)
+    return () => clearTimeout(timer)
+  }, [searchLabel, searchHref, loading])
+
   const clearFilters = () => {
+    setFeaturedOnly(false)
     setLocationText('')
     setSearch('')
     setPropertyType('')
@@ -616,12 +795,38 @@ export default function SearchPage() {
     setAmenities((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]))
   }
 
+  // Removable chips shown above the results
+  const activeChips: { key: string; label: string; onRemove: () => void }[] = []
+  if (featuredOnly) activeChips.push({ key: 'featured', label: 'Featured only', onRemove: () => setFeaturedOnly(false) })
+  if (locationText) activeChips.push({ key: 'loc', label: locationText, onRemove: () => setLocationText('') })
+  if (search) activeChips.push({ key: 'q', label: `"${search}"`, onRemove: () => setSearch('') })
+  if (propertyType) activeChips.push({ key: 'type', label: propertyType, onRemove: () => setPropertyType('') })
+  if (priceActive) {
+    activeChips.push({
+      key: 'price',
+      label: maxPrice >= PRICE_CAP ? `From ${naira(minPrice)}` : `Up to ${naira(maxPrice)}`,
+      onRemove: () => {
+        setMinPrice(0)
+        setMaxPrice(PRICE_CAP)
+      },
+    })
+  }
+  if (bedrooms) activeChips.push({ key: 'beds', label: `${bedrooms} bed`, onRemove: () => setBedrooms('') })
+  if (bathrooms) activeChips.push({ key: 'baths', label: `${bathrooms} bath`, onRemove: () => setBathrooms('') })
+  for (const a of amenities) {
+    activeChips.push({ key: `am-${a}`, label: a, onRemove: () => toggleAmenity(a) })
+  }
+
   // Rendered as a function (not a component) so inputs keep focus while typing
   const renderFilters = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-foreground">Filter Results</h3>
-        <button onClick={clearFilters} className="text-xs font-medium text-primary hover:underline">
+        <button
+          type="button"
+          onClick={clearFilters}
+          className="text-xs font-medium text-primary hover:underline"
+        >
           Reset
         </button>
       </div>
@@ -644,6 +849,7 @@ export default function SearchPage() {
         <div className="grid grid-cols-2 gap-2">
           {[{ value: '', label: 'All Types' }, ...PROPERTY_TYPES].map((t) => (
             <button
+              type="button"
               key={t.value || 'all'}
               onClick={() => setPropertyType(t.value)}
               className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
@@ -684,6 +890,7 @@ export default function SearchPage() {
         <div className="flex gap-2">
           {['', '1', '2', '3', '4+'].map((b) => (
             <button
+              type="button"
               key={b || 'any'}
               onClick={() => setBedrooms(b)}
               className={`flex-1 rounded-lg border py-2 text-xs font-medium transition-colors ${
@@ -704,6 +911,7 @@ export default function SearchPage() {
         <div className="flex gap-2">
           {['', '1', '2', '3', '4+'].map((b) => (
             <button
+              type="button"
               key={b || 'any'}
               onClick={() => setBathrooms(b)}
               className={`flex-1 rounded-lg border py-2 text-xs font-medium transition-colors ${
@@ -737,6 +945,7 @@ export default function SearchPage() {
       </div>
 
       <Button
+        type="button"
         onClick={() => setShowMobileFilters(false)}
         className="w-full bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
       >
@@ -749,6 +958,11 @@ export default function SearchPage() {
     viewMode === 'grid'
       ? 'grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3'
       : 'grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-1'
+
+  const chipBase =
+    'shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors sm:text-sm'
+  const chipOn = 'border-primary bg-primary text-primary-foreground'
+  const chipOff = 'border-border bg-card text-foreground hover:bg-secondary'
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -772,6 +986,7 @@ export default function SearchPage() {
           </div>
 
           <button
+            type="button"
             onClick={() => setShowMobileFilters(true)}
             className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary lg:hidden"
           >
@@ -787,15 +1002,18 @@ export default function SearchPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
+            aria-label="Sort properties"
             className="rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="recommended">Recommended</option>
+            <option value="newest">Newest first</option>
             <option value="price-low">Price: Low to High</option>
             <option value="price-high">Price: High to Low</option>
           </select>
 
           <div className="hidden items-center overflow-hidden rounded-lg border border-border md:flex">
             <button
+              type="button"
               onClick={() => setViewMode('grid')}
               aria-label="Grid view"
               className={`p-2.5 ${viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
@@ -803,6 +1021,7 @@ export default function SearchPage() {
               <Grid size={16} />
             </button>
             <button
+              type="button"
               onClick={() => setViewMode('list')}
               aria-label="List view"
               className={`p-2.5 ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
@@ -813,8 +1032,10 @@ export default function SearchPage() {
         </div>
       </div>
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 lg:px-8">
-        {/* Site numbers + property type chips */}
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-24 pt-5 sm:px-6 md:pb-8 lg:px-8">
+        <RecentSearches />
+
+        {/* Site numbers + quick filter chips */}
         {!loading && listings.length > 0 && (
           <section className="mb-5">
             <p className="mb-3 text-xs text-muted-foreground sm:text-sm">
@@ -833,29 +1054,55 @@ export default function SearchPage() {
               )}
             </p>
 
-            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+            {/* Property type chips */}
+            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden">
               <button
+                type="button"
                 onClick={() => setPropertyType('')}
-                className={`shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
-                  propertyType === ''
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border bg-card text-foreground hover:bg-secondary'
-                }`}
+                className={`${chipBase} ${propertyType === '' ? chipOn : chipOff}`}
               >
                 All ({listings.length})
               </button>
 
-              {PROPERTY_TYPES.filter((t) => typeCounts[t.value] > 0).map((t) => (
+              {featuredTotal > 0 && (
                 <button
-                  key={t.value}
-                  onClick={() => setPropertyType(propertyType === t.value ? '' : t.value)}
-                  className={`shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
-                    propertyType === t.value
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border bg-card text-foreground hover:bg-secondary'
+                  type="button"
+                  onClick={() => setFeaturedOnly(!featuredOnly)}
+                  aria-pressed={featuredOnly}
+                  className={`${chipBase} inline-flex items-center gap-1 ${
+                    featuredOnly
+                      ? 'border-amber-400 bg-amber-400 text-amber-950'
+                      : 'border-amber-300 bg-card text-amber-700 hover:bg-amber-50'
                   }`}
                 >
+                  <Star size={12} className="fill-current" />
+                  Featured ({featuredTotal})
+                </button>
+              )}
+
+              {PROPERTY_TYPES.filter((t) => typeCounts[t.value] > 0).map((t) => (
+                <button
+                  type="button"
+                  key={t.value}
+                  onClick={() => setPropertyType(propertyType === t.value ? '' : t.value)}
+                  className={`${chipBase} ${propertyType === t.value ? chipOn : chipOff}`}
+                >
                   {t.label} ({typeCounts[t.value]})
+                </button>
+              ))}
+            </div>
+
+            {/* Bedroom chips */}
+            <div className="-mx-4 mt-2 flex items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">Bedrooms:</span>
+              {['', '1', '2', '3', '4+'].map((b) => (
+                <button
+                  type="button"
+                  key={b || 'any'}
+                  onClick={() => setBedrooms(bedrooms === b ? '' : b)}
+                  className={`${chipBase} ${bedrooms === b ? chipOn : chipOff}`}
+                >
+                  {b === '' ? 'Any' : b}
                 </button>
               ))}
             </div>
@@ -871,12 +1118,67 @@ export default function SearchPage() {
           </aside>
 
           {/* Results */}
-          <div>
-            <p className="mb-4 text-sm text-muted-foreground">
-              {loading
-                ? 'Loading...'
-                : `${results.length} ${results.length === 1 ? 'property' : 'properties'} found`}
-            </p>
+          <div ref={resultsTopRef} className="scroll-mt-32">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">
+                {loading ? (
+                  'Loading...'
+                ) : results.length === 0 ? (
+                  '0 properties found'
+                ) : (
+                  <>
+                    Showing{' '}
+                    <span className="font-semibold text-foreground">
+                      {firstShown}–{lastShown}
+                    </span>{' '}
+                    of <span className="font-semibold text-foreground">{results.length}</span>{' '}
+                    {results.length === 1 ? 'property' : 'properties'}
+                  </>
+                )}
+              </p>
+
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-xs font-semibold text-primary hover:underline"
+                >
+                  Clear all ({activeFilterCount})
+                </button>
+              )}
+            </div>
+
+            {/* Active filter chips */}
+            {activeChips.length > 0 && (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {activeChips.map((chip) => (
+                  <button
+                    type="button"
+                    key={chip.key}
+                    onClick={chip.onRemove}
+                    aria-label={`Remove filter ${chip.label}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition hover:bg-primary/20"
+                  >
+                    {chip.label}
+                    <X size={12} />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!loading && !loadError && searchLabel && (
+              <SearchAlertBar
+                key={searchHref}
+                label={searchLabel}
+                filters={{
+                  location: locationText,
+                  propertyType,
+                  minPrice: minPrice > 0 ? minPrice : null,
+                  maxPrice: maxPrice < PRICE_CAP ? maxPrice : null,
+                  bedrooms: bedrooms ? parseInt(bedrooms) : null,
+                }}
+              />
+            )}
 
             {loading ? (
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
@@ -892,8 +1194,11 @@ export default function SearchPage() {
                 <h3 className="mb-2 text-lg font-semibold text-foreground">
                   Could not load properties
                 </h3>
-                <p className="mb-5 text-sm text-muted-foreground">Please check your connection and try again.</p>
+                <p className="mb-5 text-sm text-muted-foreground">
+                  Please check your connection and try again.
+                </p>
                 <Button
+                  type="button"
                   onClick={() => window.location.reload()}
                   className="bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
                 >
@@ -902,22 +1207,29 @@ export default function SearchPage() {
               </div>
             ) : results.length === 0 ? (
               <div className="rounded-lg border border-border bg-card p-10 text-center sm:p-12">
-                <div className="mb-4 text-4xl">🔍</div>
-                <h3 className="mb-2 text-lg font-semibold text-foreground">No properties found</h3>
-                <p className="mb-6 text-muted-foreground">
-                  Try widening your search or adjusting your filters
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                  <Search size={26} />
+                </div>
+                <h3 className="mb-2 text-lg font-semibold text-foreground">No properties match</h3>
+                <p className="mx-auto mb-6 max-w-sm text-sm text-muted-foreground">
+                  {activeFilterCount > 0 || search
+                    ? 'Try removing a filter or widening your budget to see more.'
+                    : 'There are no approved properties yet. Please check back soon.'}
                 </p>
-                <Button
-                  onClick={clearFilters}
-                  className="bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
-                >
-                  Clear Filters
-                </Button>
+                {(activeFilterCount > 0 || search) && (
+                  <Button
+                    type="button"
+                    onClick={clearFilters}
+                    className="bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
+                  >
+                    Clear filters
+                  </Button>
+                )}
               </div>
             ) : (
               <>
                 <div className={gridClass}>
-                  {visibleResults.map((listing) => (
+                  {pageResults.map((listing) => (
                     <PropertyCard
                       key={listing.id}
                       listing={listing}
@@ -930,17 +1242,7 @@ export default function SearchPage() {
                   ))}
                 </div>
 
-                {visibleCount < results.length && (
-                  <div className="mt-6 text-center">
-                    <Button
-                      variant="outline"
-                      onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
-                      className="font-semibold"
-                    >
-                      Show more ({results.length - visibleCount} left)
-                    </Button>
-                  </div>
-                )}
+                <Pagination page={currentPage} totalPages={totalPages} onChange={changePage} />
               </>
             )}
           </div>
@@ -957,7 +1259,11 @@ export default function SearchPage() {
           <div className="absolute bottom-0 right-0 top-0 w-full max-w-sm overflow-y-auto bg-card p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold text-foreground">Filters</h2>
-              <button onClick={() => setShowMobileFilters(false)} aria-label="Close filters">
+              <button
+                type="button"
+                onClick={() => setShowMobileFilters(false)}
+                aria-label="Close filters"
+              >
                 <X size={20} className="text-foreground" />
               </button>
             </div>

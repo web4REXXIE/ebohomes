@@ -36,9 +36,27 @@ type ListingCardProps = {
   living_rooms?: number
   build_size?: number
   photoCount?: number
+  created_at?: string
   verified?: boolean // kept for future Phase 6 use — not displayed at property level today (no evidence backs it yet)
   featured?: boolean
   layout?: 'grid' | 'list' // 'list' = wide horizontal card on desktop (md and up)
+}
+
+// Cloudinary: auto format, auto quality, width-sized. Other URLs are left alone.
+function cardImage(url: string, width: number) {
+  if (!url || !url.includes('/upload/')) return url
+  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`)
+}
+
+function addedLabel(createdAt?: string) {
+  if (!createdAt) return ''
+  const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000)
+  if (Number.isNaN(days)) return ''
+  if (days <= 0) return 'Added today'
+  if (days === 1) return 'Added yesterday'
+  if (days < 7) return `Added ${days} days ago`
+  if (days < 30) return `Added ${Math.floor(days / 7)}w ago`
+  return ''
 }
 
 /* ---------------- Share sheet ---------------- */
@@ -194,6 +212,7 @@ export function ListingCard({
   bathrooms,
   living_rooms,
   photoCount,
+  created_at,
   featured,
   layout = 'grid',
 }: ListingCardProps) {
@@ -205,6 +224,7 @@ export function ListingCard({
 
   const isList = layout === 'list'
   const displayTitle = title || property_type
+  const added = addedLabel(created_at)
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
@@ -273,9 +293,10 @@ export function ListingCard({
         <div className={`relative ${isList ? 'md:w-72 md:shrink-0' : ''}`}>
           <Link href={`/listing/${id}`} className="block h-full" aria-label="View property">
             <img
-              src={image || '/placeholder.jpg'}
+              src={image ? cardImage(image, 600) : '/placeholder.jpg'}
               alt={displayTitle}
               loading="lazy"
+              decoding="async"
               className={`w-full bg-secondary/40 object-cover ${
                 isList ? 'aspect-[4/3] md:aspect-auto md:h-full' : 'aspect-[4/3]'
               }`}
@@ -384,6 +405,8 @@ export function ListingCard({
               </span>
             )}
           </div>
+
+          {added && <p className="mt-2 text-[11px] font-medium text-emerald-700">{added}</p>}
 
           <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
             <Link
