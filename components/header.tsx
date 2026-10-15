@@ -12,6 +12,7 @@ import {
 import { Button } from './ui/button'
 import { ProfileMenu } from './profile-menu'
 import { InstallButton } from '@/components/install-button'
+import { NotificationBell } from '@/components/notification-bell'
 import { supabase } from '@/lib/supabase'
 
 export function Header() {
@@ -218,13 +219,7 @@ export function Header() {
                     </Button>
                   )}
 
-                  <Link
-                    href="/notifications"
-                    className="flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted transition-colors text-foreground/70"
-                    aria-label="Notifications"
-                  >
-                    <Bell size={18} />
-                  </Link>
+                <NotificationBell />
 
                   {/* Desktop: full dropdown */}
                   <div className="hidden sm:block">
