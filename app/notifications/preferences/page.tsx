@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { notifyPreferencesChanged, playNotificationSound } from '@/lib/notification-sound'
+import { PushNotificationSettings } from '@/components/push-notification-settings'
 
 
 type Prefs = {
@@ -233,6 +234,10 @@ export default function NotificationPreferencesPage() {
             {status === 'saved' ? 'Saved' : null}
             {status === 'error' ? 'Could not save. Please try again.' : null}
           </p>
+
+          {userId && (
+            <PushNotificationSettings userId={userId} inAppEnabled={prefs.in_app_enabled} />
+          )}
         </>
       )}
     </div>
