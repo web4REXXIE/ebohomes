@@ -67,16 +67,17 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased bg-background text-foreground">
         <InstallProvider>
-          <SplashScreen>
-            <div className="pb-16 md:pb-0">
-              {children}
-            </div>
-          </SplashScreen>
-          <BottomNav />
-          <HelpBubble />
-          <InstallBanner />
-          <InstallSheet />
-          <NotificationListener />
+          <NotificationProvider>
+            <SplashScreen>
+              <div className="pb-16 md:pb-0">
+                {children}
+              </div>
+            </SplashScreen>
+            <BottomNav />
+            <HelpBubble />
+            <InstallBanner />
+            <InstallSheet />
+          </NotificationProvider>
         </InstallProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
