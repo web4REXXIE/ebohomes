@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, Send, Paperclip, Phone, Video, MoreVertical, Loader2, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useNotifications } from '@/components/notification-provider'
 
 type Profile = {
   id: string
@@ -41,6 +42,14 @@ export default function MessagesPage() {
   const [loadingThread, setLoadingThread] = useState(false)
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { markMessageNotificationsRead, setActiveConversation } = useNotifications()
+  // ?to=<person> in the link opens that conversation (used by notification links)
+  const startToRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    setActiveConversation(activePartnerId)
+    return () => setActiveConversation(null)
+  }, [activePartnerId, setActiveConversation])
 
   // ---- initial load: who am I, then all my messages, grouped into conversations ----
   useEffect(() => {
@@ -51,7 +60,14 @@ export default function MessagesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setCurrentUserId(user.id)
+    const to = new URLSearchParams(window.location.search).get('to')
+    startToRef.current = to && to !== 'undefined' ? to : null
     await loadConversations(user.id)
+    if (startToRef.current) {
+      const target = startToRef.current
+      startToRef.current = null
+      await openConversation(target, user.id)
+    }
   }
 
   async function loadConversations(userId: string) {
@@ -104,7 +120,7 @@ export default function MessagesPage() {
     setLoadingConvos(false)
 
     // auto-select first conversation if none selected
-    if (convos.length > 0 && !activePartnerId) {
+    if (convos.length > 0 && !activePartnerId && !startToRef.current) {
       openConversation(convos[0].partnerId, userId)
     }
   }
@@ -134,6 +150,8 @@ export default function MessagesPage() {
           prev.map((c) => (c.partnerId === partnerId ? { ...c, unreadCount: 0 } : c))
         )
       }
+      // Clear the matching bell / inbox notifications too
+      void markMessageNotificationsRead(partnerId)
     }
     setLoadingThread(false)
     setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }), 50)

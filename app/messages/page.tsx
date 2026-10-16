@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Search, Send, ArrowLeft, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useNotifications } from '@/components/notification-provider'
 
 type Profile = {
   id: string

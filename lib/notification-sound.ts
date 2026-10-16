@@ -1,4 +1,5 @@
 let audioContext: AudioContext | null = null
+let lastPlayedAt = 0
 
 type WindowWithWebkitAudio = Window & {
   webkitAudioContext?: typeof AudioContext
@@ -25,7 +26,7 @@ function getContext(): AudioContext | null {
 }
 
 // Browsers only allow sound after the person has tapped or clicked something.
-// The notification listener calls this on the first tap anywhere on the site,
+// The notification provider calls this on the first tap anywhere on the site,
 // so a later automatic sound is allowed to play.
 export function unlockNotificationSound() {
   try {
@@ -38,32 +39,66 @@ export function unlockNotificationSound() {
   }
 }
 
-// Plays a short, soft two-tone beep. Fails quietly if the browser has not
-// allowed sound yet.
+// One bell-like note: a pure tone plus two quiet overtones, with a fast
+// attack and a smooth fade. The overtones give it a warm "chime" character.
+function strike(
+  ctx: AudioContext,
+  out: AudioNode,
+  frequency: number,
+  start: number,
+  length: number,
+  peak: number
+) {
+  const partials = [
+    { multiple: 1, level: 1 },
+    { multiple: 2, level: 0.3 },
+    { multiple: 3, level: 0.1 },
+  ]
+  for (const p of partials) {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(frequency * p.multiple, start)
+    gain.gain.setValueAtTime(0.0001, start)
+    gain.gain.exponentialRampToValueAtTime(peak * p.level, start + 0.012)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + length)
+    osc.connect(gain)
+    gain.connect(out)
+    osc.start(start)
+    osc.stop(start + length + 0.05)
+  }
+}
+
+// Plays a short, pleasant three-note rising chime (G5, C6, E6).
+// Fails quietly if the browser has not allowed sound yet.
 export function playNotificationSound() {
   try {
     const ctx = getContext()
     if (!ctx) return
+
+    // Never stack sounds on top of each other
+    const nowMs = Date.now()
+    if (nowMs - lastPlayedAt < 800) return
+    lastPlayedAt = nowMs
+
     if (ctx.state === 'suspended') {
       void ctx.resume()
     }
 
-    const now = ctx.currentTime
-    const oscillator = ctx.createOscillator()
-    const gain = ctx.createGain()
+    const start = ctx.currentTime + 0.02
 
-    oscillator.type = 'sine'
-    oscillator.frequency.setValueAtTime(880, now)
-    oscillator.frequency.setValueAtTime(1175, now + 0.12)
+    // A gentle limiter so the chime is clear but never harsh
+    const limiter = ctx.createDynamicsCompressor()
+    limiter.threshold.setValueAtTime(-14, start)
+    limiter.ratio.setValueAtTime(8, start)
+    const master = ctx.createGain()
+    master.gain.setValueAtTime(0.9, start)
+    master.connect(limiter)
+    limiter.connect(ctx.destination)
 
-    gain.gain.setValueAtTime(0.0001, now)
-    gain.gain.exponentialRampToValueAtTime(0.15, now + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35)
-
-    oscillator.connect(gain)
-    gain.connect(ctx.destination)
-    oscillator.start(now)
-    oscillator.stop(now + 0.4)
+    strike(ctx, master, 783.99, start, 0.55, 0.3) // G5
+    strike(ctx, master, 1046.5, start + 0.13, 0.65, 0.3) // C6
+    strike(ctx, master, 1318.51, start + 0.26, 1.0, 0.32) // E6
   } catch (err) {
     console.error('Could not play notification sound:', err)
   }

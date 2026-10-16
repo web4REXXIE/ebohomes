@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { playNotificationSound } from '@/lib/notification-sound'
+import { notifyPreferencesChanged, playNotificationSound } from '@/lib/notification-sound'
+import { NotificationProvider } from '@/components/notification-provider'
 
 type Prefs = {
   in_app_enabled: boolean
@@ -86,6 +87,7 @@ export default function NotificationPreferencesPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [prefs, setPrefs] = useState<Prefs>(DEFAULTS)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
@@ -107,6 +109,7 @@ export default function NotificationPreferencesPage() {
 
       if (error) {
         console.error('Failed to load preferences:', error.message)
+        setLoadError(true)
       } else if (data) {
         setPrefs(data as Prefs)
       }
@@ -137,6 +140,8 @@ export default function NotificationPreferencesPage() {
       return
     }
     setStatus('saved')
+    // Tell the notification system straight away (sound on/off)
+    notifyPreferencesChanged()
   }
 
   const saving = status === 'saving'
@@ -152,17 +157,21 @@ export default function NotificationPreferencesPage() {
 
       <h1 className="text-xl font-bold text-foreground mb-1">Notification settings</h1>
       <p className="text-sm text-muted-foreground mb-4">
-        Choose what you want to be told about.
+        Choose what you want to be told about. Changes apply to new notifications only.
       </p>
 
       {loading ? (
         <Loader2 className="animate-spin text-primary" size={24} />
+      ) : loadError ? (
+        <p className="text-sm text-muted-foreground">
+          Could not load your settings. Please refresh and try again.
+        </p>
       ) : (
         <>
           <div className="bg-card border border-border rounded-lg px-4 divide-y divide-border">
             <Row
               title="In-app notifications"
-              description="Show notifications in the bell and your inbox."
+              description="Turn this off to stop getting new notifications. The ones you already have stay in your inbox."
               checked={prefs.in_app_enabled}
               onChange={(v) => update('in_app_enabled', v)}
               disabled={saving}
@@ -172,47 +181,49 @@ export default function NotificationPreferencesPage() {
               description="When someone sends you a message."
               checked={prefs.messages}
               onChange={(v) => update('messages', v)}
-              disabled={saving}
+              disabled={saving || !prefs.in_app_enabled}
             />
             <Row
               title="Applications"
               description="New applications and status changes."
               checked={prefs.applications}
               onChange={(v) => update('applications', v)}
-              disabled={saving}
+              disabled={saving || !prefs.in_app_enabled}
             />
             <Row
               title="Listings"
               description="When the status of a listing changes."
               checked={prefs.listings}
               onChange={(v) => update('listings', v)}
-              disabled={saving}
+              disabled={saving || !prefs.in_app_enabled}
             />
             <Row
               title="Renewals"
               description="Renewal offers and responses."
               checked={prefs.renewals}
               onChange={(v) => update('renewals', v)}
-              disabled={saving}
+              disabled={saving || !prefs.in_app_enabled}
             />
             <Row
               title="Notification sound"
-              description="Play a sound for new notifications (coming soon)."
+              description="Play a short chime when a new notification arrives while EboHomes is open. Your browser may stay silent until you have tapped the page."
               checked={prefs.sound_enabled}
               onChange={(v) => update('sound_enabled', v)}
-              disabled={saving}
+              disabled={saving || !prefs.in_app_enabled}
             />
           </div>
-           
-           {prefs.sound_enabled && (
-            <button
-              type="button"
-              onClick={playNotificationSound}
-              className="mt-3 text-sm text-primary font-medium"
-            >
-              Play test sound
-            </button>
-          )} 
+
+          <button
+            type="button"
+            onClick={playNotificationSound}
+            className="mt-3 text-sm text-primary font-medium"
+          >
+            Play test sound
+          </button>
+          <p className="mt-1 text-xs text-muted-foreground">
+            No sound? Check your phone volume and silent mode. Sound only plays while EboHomes is
+            open in your browser.
+          </p>
           <p className="mt-3 text-xs text-muted-foreground">
             Security alerts about your account, such as changes to your bank, phone or
             email, are always on.

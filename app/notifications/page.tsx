@@ -2,35 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Loader2 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
-import { notifyNotificationsChanged } from '@/lib/use-unread-notifications'
 import Link from 'next/link'
+import { Bell, Loader2 } from 'lucide-react'
+import {
+  resolveNotificationLink,
+  useNotifications,
+  type NotificationItem,
+} from '@/components/notification-provider'
+import { supabase } from '@/lib/supabase'
 
-type NotificationRow = {
-  id: string
-  user_id: string
-  type: string | null
-  title: string | null
-  message: string | null
-  body: string | null
-  link: string | null
-  read: boolean
-  created_at: string
-}
-
-// Only allow links that stay inside EboHomes
-function isSafeInternalLink(link: string | null): link is string {
-  return (
-    typeof link === 'string' &&
-    link.startsWith('/') &&
-    !link.startsWith('//') &&
-    !link.startsWith('/\\')
-  )
-}
-
-function timeAgo(iso: string) {
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+function timeAgo(iso: string | null) {
+  if (!iso) return ''
+  const time = new Date(iso).getTime()
+  if (Number.isNaN(time)) return ''
+  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000))
   if (seconds < 60) return 'Just now'
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ago`
@@ -43,98 +28,46 @@ function timeAgo(iso: string) {
 
 export default function NotificationsPage() {
   const router = useRouter()
-  const [userId, setUserId] = useState<string | null>(null)
-  const [rows, setRows] = useState<NotificationRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
+  const { items, unreadCount, loading, error, role, markRead, markAllRead, refresh } =
+    useNotifications()
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const [signedOut, setSignedOut] = useState(false)
 
-  const load = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      router.push('/login')
-      return
-    }
-    setUserId(user.id)
-
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('id, user_id, type, title, message, body, link, read, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(100)
-
-    if (error) {
-      console.error('Failed to load notifications:', error.message)
-      setLoadError(true)
-    } else {
-      setLoadError(false)
-      setRows((data ?? []) as NotificationRow[])
-    }
-    setLoading(false)
-  }
-
+  // The provider only knows the signed-in person once it has checked.
+  // Send signed-out visitors to the login page.
   useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const markOneRead = async (n: NotificationRow) => {
-    if (n.read || !userId) return
-
-    // Update the screen straight away, undo if the database refuses
-    setRows((prev) => prev.map((r) => (r.id === n.id ? { ...r, read: true } : r)))
-
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('id', n.id)
-      .eq('user_id', userId)
-
-    if (error) {
-      console.error('Failed to mark notification read:', error.message)
-      setRows((prev) => prev.map((r) => (r.id === n.id ? { ...r, read: false } : r)))
-      return
+    let active = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return
+      if (!data.session) {
+        setSignedOut(true)
+        router.push('/login')
+      }
+    })
+    return () => {
+      active = false
     }
-    notifyNotificationsChanged()
+  }, [router])
+
+  const handleOpen = async (n: NotificationItem) => {
+    void markRead(n.id)
+    const destination = resolveNotificationLink(n.link, role)
+    if (destination) router.push(destination)
   }
 
-  const handleOpen = async (n: NotificationRow) => {
-    await markOneRead(n)
-    if (isSafeInternalLink(n.link)) {
-      router.push(n.link)
-    }
-  }
-
-  const markAllRead = async () => {
-    if (!userId) return
-    setRows((prev) => prev.map((r) => ({ ...r, read: true })))
-
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('user_id', userId)
-      .eq('read', false)
-
-    if (error) {
-      console.error('Failed to mark all read:', error.message)
-      load()
-      return
-    }
-    notifyNotificationsChanged()
-  }
-
-  const unreadCount = rows.filter((n) => !n.read).length
-  const visible = filter === 'unread' ? rows.filter((n) => !n.read) : rows
+  const visible = filter === 'unread' ? items.filter((n) => !n.read) : items
 
   return (
     <div className="max-w-2xl mx-auto w-full px-4 py-8">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-foreground">Notifications</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold text-foreground">Notifications</h1>
+          <Link href="/notifications/preferences" className="text-xs text-muted-foreground underline">
+            Settings
+          </Link>
+        </div>
         {unreadCount > 0 && (
-          <button onClick={markAllRead} className="text-sm text-primary font-medium">
+          <button onClick={() => void markAllRead()} className="text-sm text-primary font-medium">
             Mark all read
           </button>
         )}
@@ -159,12 +92,17 @@ export default function NotificationsPage() {
         </button>
       </div>
 
-      {loading ? (
+      {signedOut ? (
+        <p className="text-sm text-muted-foreground">Please log in to see your notifications.</p>
+      ) : loading ? (
         <Loader2 className="animate-spin text-primary" size={24} />
-      ) : loadError ? (
-        <p className="text-sm text-muted-foreground">
-          Could not load notifications. Please refresh and try again.
-        </p>
+      ) : error ? (
+        <div className="text-sm text-muted-foreground">
+          <p>Could not load notifications.</p>
+          <button onClick={() => void refresh()} className="mt-2 text-primary font-medium">
+            Try again
+          </button>
+        </div>
       ) : visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {filter === 'unread' ? 'No unread notifications.' : "You're all caught up."}
@@ -199,9 +137,7 @@ export default function NotificationsPage() {
                   <p className="text-sm text-foreground">
                     {n.message ? n.message : n.body ? n.body : 'Notification'}
                   </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    {n.created_at ? timeAgo(n.created_at) : ''}
-                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-1">{timeAgo(n.created_at)}</p>
                 </div>
                 {!n.read && <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-2" />}
               </div>

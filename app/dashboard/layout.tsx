@@ -21,6 +21,7 @@ import {
   FileText,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useNotifications } from '@/components/notification-provider'
 
 const NAV = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -42,7 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [unreadMessages, setUnreadMessages] = useState(0)
-  const [unreadNotifs, setUnreadNotifs] = useState(0)
+  const { unreadCount: unreadNotifs } = useNotifications()
   const [pendingApplications, setPendingApplications] = useState(0)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
@@ -73,11 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .eq('receiver_id', user.id)
         .is('read_at', null)
 
-      const { count: notifCount } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('read', false)
+      
 
       const { count: pendingAppCount } = await supabase
         .from('applications')
@@ -86,7 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .eq('status', 'pending')
 
       setUnreadMessages(msgCount ?? 0)
-      setUnreadNotifs(notifCount ?? 0)
+     .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, refreshUnread)
       setPendingApplications(pendingAppCount ?? 0)
       setLoading(false)
     }

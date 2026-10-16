@@ -8,7 +8,7 @@ import { HelpBubble } from '@/components/help-bubble'
 import { InstallProvider } from '@/components/install-provider'
 import { InstallBanner } from '@/components/install-banner'
 import { InstallSheet } from '@/components/install-sheet'
-import { NotificationListener } from '@/components/notification-listener'
+import { NotificationProvider } from '@/components/notification-provider'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({

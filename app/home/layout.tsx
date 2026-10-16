@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useNotifications } from '@/components/notification-provider'
 
 const NAV = [
   { label: 'Dashboard', href: '/home', icon: LayoutDashboard },
@@ -24,6 +25,8 @@ const NAV = [
   { label: 'Saved Homes', href: '/saved', icon: Heart },
   { label: 'Messages', href: '/messages', icon: MessageCircle, badgeKey: 'messages' },
   { label: 'Applications', href: '/applications', icon: FileText },
+  { label: 'My Tenancies', href: '/tenancies', icon: FileText },
+  { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
   
   
   { label: 'Settings', href: '/settings', icon: Settings },
@@ -35,7 +38,7 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
   const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [unreadMessages, setUnreadMessages] = useState(0)
-  const [unreadNotifs, setUnreadNotifs] = useState(0)
+  const { unreadCount: unreadNotifs } = useNotifications()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   useEffect(() => {
@@ -65,14 +68,9 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
         .eq('receiver_id', user.id)
         .is('read_at', null)
 
-      const { count: notifCount } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('read', false)
-
-      setUnreadMessages(msgCount ?? 0)
-      setUnreadNotifs(notifCount ?? 0)
+     
+        setUnreadMessages(msgCount ?? 0)
+     
       setLoading(false)
     }
 
@@ -92,19 +90,14 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
       setUnreadMessages(count ?? 0)
     }
 
-    const refreshNotifs = async () => {
-      const { count } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', profile.id)
-        .eq('read', false)
-      setUnreadNotifs(count ?? 0)
-    }
-
+   // Notification counts come from the shared NotificationProvider.
     const channel = supabase
       .channel(`home-live-${profile.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, refreshMessages)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, refreshNotifs)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages', filter: `receiver_id=eq.${profile.id}` },
+        refreshMessages
+      )
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
