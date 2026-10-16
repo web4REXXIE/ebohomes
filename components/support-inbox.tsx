@@ -37,7 +37,15 @@ const STATUS_STYLE: Record<string, string> = {
   closed: 'bg-secondary text-muted-foreground',
 }
 
-function InboxInner({ role }: { role: Role }) {
+function InboxInner({
+  role,
+  topOffset,
+  noTopOffsetOnDesktop,
+}: {
+  role: Role
+  topOffset: string
+  noTopOffsetOnDesktop: boolean
+}) {
   const searchParams = useSearchParams()
   const { markMessageNotificationsRead, setActiveConversation } = useNotifications()
 
@@ -266,6 +274,7 @@ function InboxInner({ role }: { role: Role }) {
       setError(err.message)
       setDraft(body)
     } else {
+      // realtime may be slow; make sure it shows
       const { data } = await supabase
         .from('support_messages').select(MESSAGE_COLUMNS).eq('thread_id', activeId).order('created_at', { ascending: true })
       setMessages((data as SupportMessage[]) ?? [])
@@ -335,7 +344,12 @@ function InboxInner({ role }: { role: Role }) {
   const showRightPanel = mobileView === 'thread'
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] min-h-[500px]">
+    // dvh = the visible screen height on phones (100vh is taller than the visible area).
+    // The bottom padding keeps the message box above the mobile bottom menu.
+    <div
+      className={`flex min-h-[420px] h-[calc(100dvh-var(--inbox-top))] overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0 ${noTopOffsetOnDesktop ? 'lg:[--inbox-top:0px]' : ''}`}
+      style={{ '--inbox-top': topOffset } as React.CSSProperties}
+    >
       {/* left list */}
       <div className={`w-full sm:w-80 border-r border-border flex-col shrink-0 ${showRightPanel ? 'hidden sm:flex' : 'flex'}`}>
         <div className="p-4 border-b border-border">
@@ -410,7 +424,7 @@ function InboxInner({ role }: { role: Role }) {
               <button className="sm:hidden" onClick={() => setMobileView('list')} aria-label="Back"><ArrowLeft size={18} /></button>
               <p className="text-sm font-semibold text-foreground">New conversation with EboHomes</p>
             </div>
-            <div className="p-4 space-y-4 max-w-xl">
+            <div className="p-4 pb-24 space-y-4 max-w-xl">
               <div className="flex gap-2 rounded-lg bg-primary/5 p-3 text-xs text-foreground">
                 <ShieldCheck size={16} className="text-primary shrink-0 mt-0.5" />
                 <p>EboHomes handles your {role === 'landlord' ? 'tenant' : 'landlord'} communication for you. Start one conversation per topic so nothing gets mixed up.</p>
@@ -523,13 +537,14 @@ function InboxInner({ role }: { role: Role }) {
               })}
             </div>
             {error && <p className="px-4 pb-1 text-xs text-red-600">{error}</p>}
-            <div className="p-3 border-t border-border flex items-center gap-2">
+            {/* Right padding leaves room for the floating help (?) button so it never covers Send */}
+            <div className="shrink-0 py-3 pl-3 pr-[4.75rem] border-t border-border bg-background flex items-center gap-2">
               <input value={draft} onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') void handleSend() }}
                 placeholder={active.status === 'closed' ? 'Reply to reopen this conversation…' : 'Type a message…'}
-                className="flex-1 h-10 px-3 rounded-full border border-border bg-background text-sm" />
+                className="flex-1 min-w-0 h-11 px-4 rounded-full border border-border bg-background text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
               <button onClick={() => void handleSend()} disabled={sending || !draft.trim()} aria-label="Send"
-                className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-50 shrink-0">
+                className="w-11 h-11 rounded-full bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-50 shrink-0">
                 {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={15} />}
               </button>
             </div>
@@ -544,10 +559,20 @@ function InboxInner({ role }: { role: Role }) {
   )
 }
 
-export default function SupportInbox({ role }: { role: Role }) {
+// topOffset = height of the header above the inbox (so the inbox fills the rest of the screen).
+// noTopOffsetOnDesktop = true when that header only exists on phones (the landlord dashboard).
+export default function SupportInbox({
+  role,
+  topOffset = '3.5rem',
+  noTopOffsetOnDesktop = false,
+}: {
+  role: Role
+  topOffset?: string
+  noTopOffsetOnDesktop?: boolean
+}) {
   return (
     <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary" size={20} /></div>}>
-      <InboxInner role={role} />
+      <InboxInner role={role} topOffset={topOffset} noTopOffsetOnDesktop={noTopOffsetOnDesktop} />
     </Suspense>
   )
 }
