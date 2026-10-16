@@ -48,47 +48,60 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
+    let redirected = false
+
     const checkAccess = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          redirected = true
+          router.push('/login')
+          return
+        }
+
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single()
+
+        if (!profileData || profileData.role !== 'landlord') {
+          redirected = true
+          router.push('/')
+          return
+        }
+
+        if (cancelled) return
+        setProfile(profileData)
+
+        const { count: msgCount } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('receiver_id', user.id)
+          .is('read_at', null)
+
+        const { count: pendingAppCount } = await supabase
+          .from('applications')
+          .select('*', { count: 'exact', head: true })
+          .eq('landlord_id', user.id)
+          .eq('status', 'pending')
+
+        if (cancelled) return
+        setUnreadMessages(msgCount ?? 0)
+        setPendingApplications(pendingAppCount ?? 0)
+      } catch (err) {
+        console.error('Dashboard access check failed:', err)
+      } finally {
+        // Never leave the spinner up forever, even if a request fails
+        if (!cancelled && !redirected) setLoading(false)
       }
-
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-
-      if (!profileData || profileData.role !== 'landlord') {
-        router.push('/')
-        return
-      }
-
-      setProfile(profileData)
-
-      const { count: msgCount } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', user.id)
-        .is('read_at', null)
-
-      
-
-      const { count: pendingAppCount } = await supabase
-        .from('applications')
-        .select('*', { count: 'exact', head: true })
-        .eq('landlord_id', user.id)
-        .eq('status', 'pending')
-
-      setUnreadMessages(msgCount ?? 0)
-     .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, refreshUnread)
-      setPendingApplications(pendingAppCount ?? 0)
-      setLoading(false)
     }
 
     checkAccess()
+    return () => {
+      cancelled = true
+    }
   }, [router])
 
   // ---- keep the unread messages badge live without needing a page reload ----

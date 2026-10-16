@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { notifyPreferencesChanged, playNotificationSound } from '@/lib/notification-sound'
-import { NotificationProvider } from '@/components/notification-provider'
+
 
 type Prefs = {
   in_app_enabled: boolean
@@ -185,7 +185,7 @@ export default function NotificationPreferencesPage() {
             />
             <Row
               title="Applications"
-              description="New applications and status changes."
+              description="Applications, tenancies and payments."
               checked={prefs.applications}
               onChange={(v) => update('applications', v)}
               disabled={saving || !prefs.in_app_enabled}
@@ -225,8 +225,7 @@ export default function NotificationPreferencesPage() {
             open in your browser.
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
-            Security alerts about your account, such as changes to your bank, phone or
-            email, are always on.
+          Security alerts (such as changes to your bank, phone or email) and landlord verification results are always on.
           </p>
 
           <p className="mt-2 h-4 text-xs text-muted-foreground" aria-live="polite">
