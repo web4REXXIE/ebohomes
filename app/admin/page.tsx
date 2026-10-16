@@ -7,6 +7,7 @@ import {
   Wallet, ArrowRight, FileWarning, AlertTriangle,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getUnreadMessageCount } from '@/lib/support'
 
 type Stats = {
   totalUsers: number
@@ -65,7 +66,7 @@ export default function AdminDashboardPage() {
       supabase.from('listings').select('*', { count: 'exact', head: true }),
       supabase.from('bookings').select('*', { count: 'exact', head: true }),
       user
-        ? supabase.from('messages').select('*', { count: 'exact', head: true }).eq('receiver_id', user.id).is('read_at', null)
+        ? supabase.from('support_messages').select('id', { count: 'exact', head: true }).eq('sender_kind', 'customer').is('read_at', null)
         : Promise.resolve({ count: 0 }),
       supabase.from('listings').select('id, title, location_text, price_monthly, status, created_at, photos').order('created_at', { ascending: false }).limit(5),
       // ⚠️ assumes a column called `amount` — adjust once you confirm the real column name
@@ -155,7 +156,7 @@ export default function AdminDashboardPage() {
   const pendingActions = [
     { label: 'Property Reviews', value: stats.pendingReview, icon: ClipboardCheck, href: '/admin/property-review' },
     { label: 'Verify Landlords', value: stats.pendingVerification, icon: ShieldCheck, href: '/admin/verify-landlords' },
-    { label: 'Unread Messages', value: stats.unreadAdminMessages, icon: MessageSquare, href: '/admin/messages' },
+    { label: 'Unread Support Messages', value: stats.unreadAdminMessages, icon: MessageSquare, href: '/admin/support' },
   ]
 
   const quickAccess = [
@@ -163,7 +164,7 @@ export default function AdminDashboardPage() {
     { label: 'Verify Landlords', icon: ShieldCheck, href: '/admin/verify-landlords' },
     { label: 'Manage Users', icon: Users, href: '/admin/users' },
     { label: 'Reports', icon: FileWarning, href: '/admin/reports' },
-    { label: 'Messages', icon: MessageSquare, href: '/admin/messages' },
+    { label: 'Support Inbox', icon: MessageSquare, href: '/admin/support' },
   ]
 
   return (

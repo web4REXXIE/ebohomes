@@ -173,7 +173,7 @@ export default function AdminMessagesPage() {
         setDeleteError(error.message)
       } else if (count === 0) {
         setDeleteError("Delete was blocked — you don't have permission to remove these messages (check RLS policies).")
-      } else if (count < ids.length) {
+      } else if ((count ?? 0) < ids.length) {
         // partial delete: some rows removed, some blocked
         setAllMessages((prev) => prev.filter((m) => !ids.includes(m.id)))
         setActiveKey(null)

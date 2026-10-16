@@ -12,7 +12,7 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) {
-        router.push('/login?redirect=/messages')
+        router.push(`/login?redirect=${encodeURIComponent('/messages' + window.location.search)}`)
         return
       }
       setChecking(false)

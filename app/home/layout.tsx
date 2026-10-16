@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getUnreadMessageCount } from '@/lib/support'
 import { useNotifications } from '@/components/notification-provider'
 
 const NAV = [
@@ -27,8 +28,6 @@ const NAV = [
   { label: 'Applications', href: '/applications', icon: FileText },
   { label: 'My Tenancies', href: '/tenancies', icon: FileText },
   { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
-  
-  
   { label: 'Settings', href: '/settings', icon: Settings },
 ]
 
@@ -62,15 +61,9 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
 
       setProfile(profileData)
 
-      const { count: msgCount } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', user.id)
-        .is('read_at', null)
+      const msgCount = await getUnreadMessageCount()
+      setUnreadMessages(msgCount)
 
-     
-        setUnreadMessages(msgCount ?? 0)
-     
       setLoading(false)
     }
 
@@ -82,15 +75,10 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
     if (!profile?.id) return
 
     const refreshMessages = async () => {
-      const { count } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', profile.id)
-        .is('read_at', null)
-      setUnreadMessages(count ?? 0)
+      setUnreadMessages(await getUnreadMessageCount())
     }
 
-   // Notification counts come from the shared NotificationProvider.
+    // Notification counts come from the shared NotificationProvider.
     const channel = supabase
       .channel(`home-live-${profile.id}`)
       .on(
@@ -98,6 +86,7 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
         { event: '*', schema: 'public', table: 'messages', filter: `receiver_id=eq.${profile.id}` },
         refreshMessages
       )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, refreshMessages)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }

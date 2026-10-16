@@ -7,7 +7,6 @@ import { Clock, CheckCircle2, XCircle, FileText, HelpCircle, MessageCircle, Eye 
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
-import { EBOHOMES_WHATSAPP } from '@/lib/contact'
 
 type ApplicationRow = {
   id: string
@@ -114,9 +113,15 @@ export default function MyApplicationsPage() {
   }
 
   const whatsapp = (app: ApplicationRow) => {
-    const code = app.listing?.properties?.public_id ?? app.listing?.title ?? ''
-    const text = `Hello EboHomes, my application for property ${code} was accepted and I'd like help with the next step.`
-    return `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(text)}`
+    const code = app.listing?.properties?.public_id ?? app.listing?.title ?? 'my application'
+    const params = new URLSearchParams({
+      new: '1',
+      category: 'application',
+      application: app.id,
+      listing: app.listing_id,
+      subject: `Application: ${String(code).slice(0, 90)}`,
+    })
+    return `/messages?${params.toString()}`
   }
 
   return (
@@ -227,9 +232,9 @@ export default function MyApplicationsPage() {
                             <Eye size={14} /> View property
                           </Link>
                         )}
-                        <a href={whatsapp(app)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold border border-border rounded-md px-3 py-1.5 hover:bg-secondary">
+                        <Link href={whatsapp(app)} className="inline-flex items-center gap-1.5 text-sm font-semibold border border-border rounded-md px-3 py-1.5 hover:bg-secondary">
                           <MessageCircle size={14} /> Talk to EboHomes
-                        </a>
+                        </Link>
                       </div>
                       {app.tenant_interest_at ? (
                         <p className="text-primary font-medium">

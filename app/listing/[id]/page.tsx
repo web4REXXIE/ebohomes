@@ -21,7 +21,6 @@ import {
   Building2,
   ChevronDown,
   ChevronUp,
-
   CheckCircle2,
   AlertTriangle,
   Leaf,
@@ -37,7 +36,6 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import dynamic from 'next/dynamic'
 import { ReportListingModal } from '@/components/report-listing-modal'
-import { EBOHOMES_WHATSAPP } from '@/lib/contact'
 import { PropertyGallery } from '@/components/property-gallery'
 
 const ListingLocation = dynamic(
@@ -68,7 +66,7 @@ function cleanDescription(text: string) {
     .replace(/â€”/g, '—')
     .replace(/â€¢/g, '•')
     .replace(/Â/g, '')
-    .replace(/\uFFFD/g, '')
+    .replace(/�/g, '')
     .replace(/[ \t]+/g, ' ')
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -102,7 +100,6 @@ export default function ListingDetailPage() {
   }>({ created_at: null, updated_at: null })
   const [inspectionExpanded, setInspectionExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
-  
 
   const [saved, setSaved] = useState(false)
   const [savedBusy, setSavedBusy] = useState(false)
@@ -119,9 +116,6 @@ export default function ListingDetailPage() {
   const photos: string[] = Array.isArray(listing?.photos)
     ? listing.photos
     : []
-
- 
-
 
   /* ---------------- Share ---------------- */
 
@@ -547,15 +541,22 @@ export default function ListingDetailPage() {
 
   /* ---------------- Derived values ---------------- */
 
-  const propertyCode = listing.properties?.public_id ?? listing.title
-
-  const viewingMessage =
-    `Hello EboHomes, I'd like to request a viewing for property ${propertyCode}. ` +
-    `Listing: ${listing.title}, ${listing.location_text}.`
-
-  const ebohomesMessage =
-    `Hello EboHomes, I'm interested in property ${propertyCode}. ` +
-    `Listing: ${listing.title}, ${listing.location_text}.`
+  // Contact goes through the EboHomes in-app inbox (one conversation per property).
+  const openEboHomesChat = (category: 'viewing' | 'property') => {
+    if (!listing) return
+    const params = new URLSearchParams({
+      new: '1',
+      category,
+      listing: String(listing.id),
+      subject: `${category === 'viewing' ? 'Viewing' : 'Question'}: ${String(listing.title ?? 'Property').slice(0, 90)}`,
+    })
+    const target = `/messages?${params.toString()}`
+    if (!userId) {
+      router.push(`/login?redirect=${encodeURIComponent(target)}`)
+      return
+    }
+    router.push(target)
+  }
 
   const listedByLabel: string | null = listing.listed_by_role
     ? ROLE_LABELS[listing.listed_by_role] ?? 'Other'
@@ -1187,13 +1188,7 @@ export default function ListingDetailPage() {
                 <div>
                   <Button
                     type="button"
-                    onClick={() => {
-                      window.open(
-                        `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(ebohomesMessage)}`,
-                        '_blank',
-                        'noopener,noreferrer'
-                      )
-                    }}
+                    onClick={() => openEboHomesChat('property')}
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold mb-4 flex items-center justify-center gap-2"
                   >
                     <MessageCircle size={16} />
@@ -1216,13 +1211,7 @@ export default function ListingDetailPage() {
 
                   <Button
                     type="button"
-                    onClick={() => {
-                      window.open(
-                        `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(viewingMessage)}`,
-                        '_blank',
-                        'noopener,noreferrer'
-                      )
-                    }}
+                    onClick={() => openEboHomesChat('viewing')}
                     variant="outline"
                     className="w-full font-semibold mt-2 flex items-center justify-center gap-2"
                   >
@@ -1252,13 +1241,7 @@ export default function ListingDetailPage() {
         <div className="mx-auto flex max-w-xl items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              window.open(
-                `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(ebohomesMessage)}`,
-                '_blank',
-                'noopener,noreferrer'
-              )
-            }}
+            onClick={() => openEboHomesChat('property')}
             aria-label="Contact EboHomes"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-primary transition hover:bg-secondary"
           >
@@ -1268,13 +1251,7 @@ export default function ListingDetailPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => {
-              window.open(
-                `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(viewingMessage)}`,
-                '_blank',
-                'noopener,noreferrer'
-              )
-            }}
+            onClick={() => openEboHomesChat('viewing')}
             className="h-11 flex-1 gap-1.5 px-2 text-[13px] font-semibold"
           >
             <Calendar size={16} />

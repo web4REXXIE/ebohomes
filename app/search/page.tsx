@@ -28,7 +28,6 @@ import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
-import { EBOHOMES_WHATSAPP } from '@/lib/contact'
 import { RecentSearches, saveRecentSearch } from '@/components/recent-searches'
 import { SearchAlertBar } from '@/components/search-alert-bar'
 
@@ -268,14 +267,13 @@ function PropertyCard({
   const added = addedLabel(listing.created_at)
 
   function requestViewing() {
-    const message =
-      `Hello EboHomes, I'd like to request a viewing for: ${listing.title || listing.property_type}, ` +
-      `${listing.location_text}.`
-    window.open(
-      `https://wa.me/${EBOHOMES_WHATSAPP}?text=${encodeURIComponent(message)}`,
-      '_blank',
-      'noopener,noreferrer'
-    )
+    const params = new URLSearchParams({
+      new: '1',
+      category: 'viewing',
+      listing: String(listing.id),
+      subject: `Viewing: ${String(listing.title || listing.property_type || 'Property').slice(0, 90)}`,
+    })
+    window.location.assign(`/messages?${params.toString()}`)
   }
 
   return (

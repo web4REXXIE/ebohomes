@@ -21,6 +21,7 @@ import {
   FileText,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getUnreadMessageCount } from '@/lib/support'
 import { useNotifications } from '@/components/notification-provider'
 
 const NAV = [
@@ -75,11 +76,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (cancelled) return
         setProfile(profileData)
 
-        const { count: msgCount } = await supabase
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('receiver_id', user.id)
-          .is('read_at', null)
+        const msgCount = await getUnreadMessageCount()
 
         const { count: pendingAppCount } = await supabase
           .from('applications')
@@ -88,7 +85,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           .eq('status', 'pending')
 
         if (cancelled) return
-        setUnreadMessages(msgCount ?? 0)
+        setUnreadMessages(msgCount)
         setPendingApplications(pendingAppCount ?? 0)
       } catch (err) {
         console.error('Dashboard access check failed:', err)
@@ -109,17 +106,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!profile?.id) return
 
     const refreshUnread = async () => {
-      const { count } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', profile.id)
-        .is('read_at', null)
-      setUnreadMessages(count ?? 0)
+      setUnreadMessages(await getUnreadMessageCount())
     }
 
     const channel = supabase
       .channel(`sidebar-unread-${profile.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, refreshUnread)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, refreshUnread)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }

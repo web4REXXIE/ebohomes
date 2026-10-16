@@ -324,7 +324,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
               row.type === 'message' &&
               !!partner &&
               typeof row.link === 'string' &&
-              row.link.includes(`to=${partner}`)
+              (row.link.includes(`thread=${partner}`) || row.link.includes(`to=${partner}`))
 
             const stored: NotificationItem = isOpenChat ? { ...row, read: true } : row
             commitItems(sortItems([stored, ...itemsRef.current]).slice(0, PAGE_SIZE))
@@ -471,18 +471,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (!uid) return
       const unreadMessages = itemsRef.current.filter((n) => n.type === 'message' && !n.read)
       const ids = unreadMessages
-        .filter((n) => typeof n.link === 'string' && n.link.includes(`to=${partnerId}`))
+        .filter((n) => typeof n.link === 'string' && (n.link.includes(`thread=${partnerId}`) || n.link.includes(`to=${partnerId}`)))
         .map((n) => n.id)
 
       // Old message notifications have no sender in their link. If this
       // person has no unread messages left at all, those are stale too.
       if (unreadMessages.length > ids.length) {
-        const { count, error: countError } = await supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('receiver_id', uid)
-          .is('read_at', null)
-        if (!countError && (count ?? 0) === 0) {
+        const { data: remaining, error: countError } = await supabase.rpc('my_unread_message_count')
+        if (!countError && (remaining ?? 0) === 0) {
           await markIdsRead(unreadMessages.map((n) => n.id))
           return
         }

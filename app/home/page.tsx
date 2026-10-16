@@ -16,6 +16,7 @@ import {
   Bell,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getUnreadMessageCount } from '@/lib/support'
 
 type Listing = {
   id: string
@@ -81,7 +82,7 @@ export default function TenantHomePage() {
       { count: views },
     ] = await Promise.all([
       supabase.from('saved_properties').select('*', { count: 'exact', head: true }).eq('tenant_id', user.id),
-      supabase.from('messages').select('*', { count: 'exact', head: true }).eq('receiver_id', user.id).is('read_at', null),
+      getUnreadMessageCount().then((n) => ({ count: n })),
       supabase.from('search_history').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
       supabase.from('property_views').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
     ])
@@ -93,7 +94,7 @@ export default function TenantHomePage() {
     // Recommended For You
     const { data: recs } = await supabase
       .from('listings')
-     .select('id, title, price_monthly, location_text, property_type, bedrooms, bathrooms, photos, landlord_id, created_at')
+      .select('id, title, price_monthly, location_text, property_type, bedrooms, bathrooms, photos, landlord_id, created_at')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(4)
@@ -143,34 +144,25 @@ export default function TenantHomePage() {
       (searchRows ?? []).map((s) => ({ id: s.id, text: s.query_text || s.location_text || 'Search' }))
     )
 
-    // Recent Messages (top 3 conversations)
-    const { data: msgs } = await supabase
-      .from('messages')
-      .select('*')
-      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .order('created_at', { ascending: false })
-      .limit(30)
-    if (msgs && msgs.length > 0) {
-      const byPartner = new Map<string, any>()
-      for (const m of msgs) {
-        const partnerId = m.sender_id === user.id ? m.receiver_id : m.sender_id
-        if (!byPartner.has(partnerId)) byPartner.set(partnerId, m)
-      }
-      const partnerIds = Array.from(byPartner.keys()).slice(0, 3)
-      const { data: partners } = await supabase.from('profiles').select('id, full_name').in('id', partnerIds)
-      const nameMap: Record<string, string> = {}
-      ;(partners ?? []).forEach((p: any) => { nameMap[p.id] = p.full_name ?? 'User' })
+    // Recent conversations with EboHomes Support (top 3)
+    const { data: threads } = await supabase
+      .from('support_threads')
+      .select('id, subject, last_message_at')
+      .eq('customer_id', user.id)
+      .order('last_message_at', { ascending: false })
+      .limit(3)
+    if (threads && threads.length > 0) {
+      const { data: unreadRows } = await supabase
+        .from('support_messages').select('thread_id').eq('sender_kind', 'staff').is('read_at', null)
+      const unreadSet = new Set((unreadRows ?? []).map((r: any) => r.thread_id))
       setRecentMessages(
-        partnerIds.map((pid) => {
-          const m = byPartner.get(pid)
-          return {
-            partnerId: pid,
-            partnerName: nameMap[pid] ?? 'User',
-            lastMessage: m.message,
-            lastTime: formatTime(m.created_at),
-            unread: m.receiver_id === user.id && !m.read_at,
-          }
-        })
+        threads.map((t: any) => ({
+          partnerId: t.id,
+          partnerName: 'EboHomes Support',
+          lastMessage: t.subject,
+          lastTime: formatTime(t.last_message_at),
+          unread: unreadSet.has(t.id),
+        }))
       )
     }
 
@@ -286,7 +278,7 @@ export default function TenantHomePage() {
               {recentMessages.map((c) => (
                 <Link
                   key={c.partnerId}
-                  href={`/messages?to=${c.partnerId}`}
+                  href={`/messages?thread=${c.partnerId}`}
                   className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-secondary/40"
                 >
                   <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
@@ -306,7 +298,7 @@ export default function TenantHomePage() {
           )}
         </Section>
 
-       <Section title="Notifications" href="/home" compact>
+        <Section title="Notifications" href="/home" compact>
           {notifications.length === 0 ? (
             <EmptyRow text="You're all caught up." />
           ) : (
