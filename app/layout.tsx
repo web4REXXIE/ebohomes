@@ -9,6 +9,8 @@ import { InstallProvider } from '@/components/install-provider'
 import { InstallBanner } from '@/components/install-banner'
 import { InstallSheet } from '@/components/install-sheet'
 import { NotificationProvider } from '@/components/notification-provider'
+import { PushSync } from '@/components/push-sync'
+import { PushPrompt } from '@/components/push-prompt'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({
@@ -68,6 +70,8 @@ export default function RootLayout({
       <body className="font-sans antialiased bg-background text-foreground">
         <InstallProvider>
           <NotificationProvider>
+            <PushSync />
+            <PushPrompt />
             <SplashScreen>
               <div className="pb-16 md:pb-0">
                 {children}

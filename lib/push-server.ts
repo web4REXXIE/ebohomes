@@ -114,7 +114,7 @@ export async function sendPushToUser(
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           body,
-          { TTL: 60 * 60 * 24, urgency: options?.urgency ?? 'normal', timeout: 8000 }
+          { TTL: 60 * 60 * 24, urgency: options?.urgency ?? 'high', timeout: 8000 }
         )
         result.sent++
         await admin

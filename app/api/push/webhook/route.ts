@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     })
 
     const result = await sendPushToUser(n.user_id, payload, {
-      urgency: n.type === 'message' ? 'high' : 'normal',
+      urgency: 'high',
     })
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
