@@ -19,6 +19,7 @@ import {
   X,
   ShieldCheck,
   FileText,
+  CalendarClock,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
@@ -28,6 +29,7 @@ const NAV = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'My Listings', href: '/dashboard/listings', icon: List },
   { label: 'Applications', href: '/dashboard/applications', icon: FileText, badgeKey: 'applications' },
+  { label: 'Viewings', href: '/dashboard/viewings', icon: CalendarClock },
   { label: 'Get Verified', href: '/dashboard/verify', icon: ShieldCheck },
   { label: 'Add New Listing', href: '/list-property', icon: Plus },
   { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badgeKey: 'messages' },
@@ -78,11 +80,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         const msgCount = await getUnreadMessageCount()
 
+        // EboHomes decides every application. The badge counts open applications
+        // where the landlord has not yet added a recommendation (optional, but helpful).
         const { count: pendingAppCount } = await supabase
           .from('applications')
           .select('*', { count: 'exact', head: true })
           .eq('landlord_id', user.id)
-          .eq('status', 'pending')
+          .in('status', ['pending', 'info_requested'])
+          .is('landlord_recommendation', null)
 
         if (cancelled) return
         setUnreadMessages(msgCount)

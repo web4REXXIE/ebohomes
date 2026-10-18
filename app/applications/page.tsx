@@ -19,15 +19,16 @@ type ApplicationRow = {
   decision_note: string | null
   tenant_interest_at: string | null
   tenant_inspected: boolean | null
+  case_ref: string | null
   listing?: { title: string; location_text: string; price_monthly: number; photos: string[]; status: string; properties?: { public_id: string } | null }
 }
 
 const BADGES: Record<string, { label: string; cls: string; icon: any }> = {
-  approved: { label: 'Accepted', cls: 'text-primary bg-primary/10', icon: CheckCircle2 },
+  approved: { label: 'Approved', cls: 'text-primary bg-primary/10', icon: CheckCircle2 },
   rejected: { label: 'Declined', cls: 'text-destructive bg-destructive/10', icon: XCircle },
   info_requested: { label: 'More info needed', cls: 'text-amber-700 bg-amber-100', icon: HelpCircle },
   withdrawn: { label: 'Withdrawn', cls: 'text-muted-foreground bg-secondary', icon: XCircle },
-  pending: { label: 'Pending', cls: 'text-muted-foreground bg-secondary', icon: Clock },
+  pending: { label: 'Awaiting EboHomes review', cls: 'text-muted-foreground bg-secondary', icon: Clock },
 }
 
 export default function MyApplicationsPage() {
@@ -50,7 +51,7 @@ export default function MyApplicationsPage() {
     }
     const { data: apps, error: appsError } = await supabase
       .from('applications')
-      .select('id, status, message, created_at, listing_id, info_request, tenant_reply, decision_note, tenant_interest_at, tenant_inspected')
+      .select('id, status, message, created_at, listing_id, info_request, tenant_reply, decision_note, tenant_interest_at, tenant_inspected, case_ref')
       .eq('tenant_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -161,7 +162,7 @@ export default function MyApplicationsPage() {
                       <p className="font-semibold text-foreground truncate">{app.listing?.title ?? 'Listing'}</p>
                       <p className="text-xs text-muted-foreground truncate">{app.listing?.location_text}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {code ? `${code} · ` : ''}Applied {new Date(app.created_at).toLocaleDateString()}
+                        {app.case_ref ? `${app.case_ref} · ` : ''}{code ? `${code} · ` : ''}Applied {new Date(app.created_at).toLocaleDateString()}
                       </p>
                     </div>
                     <span className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full shrink-0 ${b.cls}`}>
@@ -177,7 +178,7 @@ export default function MyApplicationsPage() {
 
                   {app.status === 'info_requested' && (
                     <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
-                      <p className="font-semibold text-amber-900">The landlord asked:</p>
+                      <p className="font-semibold text-amber-900">EboHomes asked:</p>
                       <p className="text-amber-900 mt-1">{app.info_request}</p>
                       <textarea
                         rows={3}
@@ -192,7 +193,7 @@ export default function MyApplicationsPage() {
                           const saved = await update(
                             app.id,
                             { tenant_reply: (replies[app.id] ?? '').trim(), status: 'pending' },
-                            'Your answer was sent. The landlord will review your application again.',
+                            'Your answer was sent. EboHomes will review your application again.',
                             ['info_requested']
                           )
                           // Keep what the tenant typed if sending failed.
@@ -206,7 +207,7 @@ export default function MyApplicationsPage() {
                   )}
 
                   {app.status === 'rejected' && app.decision_note && (
-                    <p className="mt-3 text-sm text-muted-foreground bg-secondary rounded-md p-2">Landlord's note: {app.decision_note}</p>
+                    <p className="mt-3 text-sm text-muted-foreground bg-secondary rounded-md p-2">EboHomes' note: {app.decision_note}</p>
                   )}
 
                   {(app.status === 'rejected' || app.status === 'withdrawn') && listingOpen && (
@@ -217,9 +218,9 @@ export default function MyApplicationsPage() {
 
                   {app.status === 'approved' && (
                     <div className="mt-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm space-y-3">
-                      <p className="font-semibold text-foreground">The landlord has accepted your application.</p>
+                      <p className="font-semibold text-foreground">EboHomes has approved your application.</p>
                       <p className="text-muted-foreground">
-                        Accepting an application is not a tenancy and no payment has been taken. Next step: see the property
+                        Approval is not a tenancy and no payment has been taken. Next step: see the property
                         yourself. Even if EboHomes inspected it, check the condition, location, utilities, the landlord or
                         agent, the rent and the agreement before you pay anything.
                       </p>
@@ -235,6 +236,7 @@ export default function MyApplicationsPage() {
                         <Link href={whatsapp(app)} className="inline-flex items-center gap-1.5 text-sm font-semibold border border-border rounded-md px-3 py-1.5 hover:bg-secondary">
                           <MessageCircle size={14} /> Talk to EboHomes
                         </Link>
+                        <Link href="/viewings" className="inline-flex items-center gap-1.5 text-sm font-semibold border border-border rounded-md px-3 py-1.5 hover:bg-secondary">Request a viewing</Link>
                       </div>
                       {app.tenant_interest_at ? (
                         <p className="text-primary font-medium">

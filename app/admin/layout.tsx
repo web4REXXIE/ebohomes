@@ -10,6 +10,7 @@ import {
 import { supabase } from '@/lib/supabase'
 
 const NAV_ITEMS = [
+  { href: '/admin/cases', label: 'Cases', icon: ClipboardList },
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
   { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },

@@ -20,6 +20,10 @@ type ApplicationRow = {
   decision_note: string | null
   tenant_interest_at: string | null
   tenant_inspected: boolean | null
+  case_ref: string | null
+  decided_by: string | null
+  landlord_recommendation: string | null
+  landlord_recommendation_note: string | null
   listing?: { title: string; location_text: string; price_monthly: number; photos: string[] }
   tenant?: { full_name: string; phone: string }
 }
@@ -35,11 +39,17 @@ type TenancyRow = {
 
 const TABS = ['pending', 'info_requested', 'approved', 'rejected', 'withdrawn'] as const
 const TAB_LABELS: Record<string, string> = {
-  pending: 'Pending',
+  pending: 'With EboHomes',
   info_requested: 'Waiting for tenant',
-  approved: 'Accepted',
+  approved: 'Approved',
   rejected: 'Declined',
   withdrawn: 'Withdrawn',
+}
+
+const RECOMMENDATION_LABELS: Record<string, string> = {
+  recommend: 'I recommend this applicant',
+  neutral: 'No preference',
+  not_recommend: 'I do not recommend this applicant',
 }
 
 export default function LandlordApplicationsPage() {
@@ -51,9 +61,8 @@ export default function LandlordApplicationsPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [tenanciesByApp, setTenanciesByApp] = useState<Record<string, TenancyRow>>({})
   const [tenancyModalApp, setTenancyModalApp] = useState<ApplicationRow | null>(null)
-  const [infoOpenId, setInfoOpenId] = useState<string | null>(null)
-  const [infoText, setInfoText] = useState('')
-  const [declineNotes, setDeclineNotes] = useState<Record<string, string>>({})
+  const [recChoice, setRecChoice] = useState<Record<string, string>>({})
+  const [recNote, setRecNote] = useState<Record<string, string>>({})
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -74,7 +83,7 @@ export default function LandlordApplicationsPage() {
 
     const { data: apps, error: appsError } = await supabase
       .from('applications')
-      .select('id, status, message, created_at, listing_id, tenant_id, landlord_id, application_data, info_request, tenant_reply, decision_note, tenant_interest_at, tenant_inspected')
+      .select('id, status, message, created_at, listing_id, tenant_id, landlord_id, application_data, info_request, tenant_reply, decision_note, tenant_interest_at, tenant_inspected, case_ref, decided_by, landlord_recommendation, landlord_recommendation_note')
       .eq('landlord_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -128,25 +137,28 @@ export default function LandlordApplicationsPage() {
   const setError = (id: string, message: string) =>
     setActionErrors((prev) => ({ ...prev, [id]: message }))
 
-  const handleDecision = async (
-    id: string,
-    newStatus: 'approved' | 'rejected' | 'info_requested',
-    extra: Record<string, any> = {}
-  ) => {
-    if (newStatus === 'rejected' && !window.confirm('Decline this application? This cannot be undone.')) return
-    if (newStatus === 'approved' && !window.confirm('Accept this application? This does not create a tenancy or record any payment.')) return
-
-    setBusyId(id)
-    setError(id, '')
-    const patch = { status: newStatus, updated_at: new Date().toISOString(), ...extra }
-    const { error } = await supabase.from('applications').update(patch).eq('id', id)
+  // Landlords can only add a recommendation. EboHomes records every decision.
+  const handleRecommend = async (app: ApplicationRow) => {
+    const choice = recChoice[app.id] ?? app.landlord_recommendation ?? ''
+    if (!choice || busyId) return
+    setBusyId(app.id)
+    setError(app.id, '')
+    const note = (recNote[app.id] ?? app.landlord_recommendation_note ?? '').trim()
+    const { data, error } = await supabase
+      .from('applications')
+      .update({ landlord_recommendation: choice, landlord_recommendation_note: note === '' ? null : note })
+      .eq('id', app.id)
+      .in('status', ['pending', 'info_requested'])
+      .select('id')
 
     if (error) {
-      setError(id, error.message)
+      setError(app.id, error.message)
+    } else if (!data || data.length === 0) {
+      setError(app.id, 'This application has already been decided. The page has been refreshed.')
+      await load(true)
     } else {
-      setInfoOpenId(null)
-      setInfoText('')
-      setDeclineNotes((prev) => ({ ...prev, [id]: '' }))
+      setRecChoice((prev) => ({ ...prev, [app.id]: '' }))
+      setRecNote((prev) => ({ ...prev, [app.id]: '' }))
       await load(true)
     }
     setBusyId(null)
@@ -159,7 +171,7 @@ export default function LandlordApplicationsPage() {
     if (status === 'approved')
       return (
         <span className="flex items-center gap-1 text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded-full">
-          <CheckCircle2 size={12} /> Accepted
+          <CheckCircle2 size={12} /> Approved
         </span>
       )
     if (status === 'rejected')
@@ -182,7 +194,7 @@ export default function LandlordApplicationsPage() {
       )
     return (
       <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground bg-secondary px-2 py-1 rounded-full">
-        <Clock size={12} /> Pending
+        <Clock size={12} /> With EboHomes
       </span>
     )
   }
@@ -190,7 +202,7 @@ export default function LandlordApplicationsPage() {
   return (
     <div className="max-w-3xl mx-auto w-full px-4 py-8">
       <h1 className="text-xl font-bold text-foreground mb-1">Applications</h1>
-      <p className="text-sm text-muted-foreground mb-6">Review tenants who applied to your properties.</p>
+      <p className="text-sm text-muted-foreground mb-6">Tenants who applied to your properties. EboHomes reviews every application and makes the final decision. You can add a recommendation to help.</p>
 
       <div className="flex gap-2 mb-6 border-b border-border overflow-x-auto">
         {TABS.map((tab) => (
@@ -237,6 +249,7 @@ export default function LandlordApplicationsPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="font-semibold text-foreground truncate">{app.listing?.title ?? 'Listing'}</p>
+                      {app.case_ref && <p className="text-xs text-muted-foreground">{app.case_ref}</p>}
                       <p className="text-xs text-muted-foreground truncate">{app.listing?.location_text}</p>
                     </div>
                     {statusBadge(app.status)}
@@ -271,71 +284,55 @@ export default function LandlordApplicationsPage() {
 
                   {app.status === 'info_requested' && app.info_request && (
                     <p className="text-sm mt-2 bg-amber-50 border border-amber-300 rounded-md p-2">
-                      <span className="font-medium">You asked:</span> {app.info_request}
+                      <span className="font-medium">EboHomes asked:</span> {app.info_request}
                     </p>
                   )}
 
                   {app.status === 'rejected' && app.decision_note && (
                     <p className="text-sm mt-2 bg-secondary rounded-md p-2">
-                      <span className="font-medium">Your note:</span> {app.decision_note}
+                      <span className="font-medium">EboHomes' note:</span> {app.decision_note}
                     </p>
                   )}
 
                   {(app.status === 'pending' || app.status === 'info_requested') && (
                     <div className="mt-3 space-y-2">
-                      {infoOpenId === app.id && (
-                        <div className="space-y-2">
-                          <textarea
-                            rows={2}
-                            value={infoText}
-                            onChange={(e) => setInfoText(e.target.value)}
-                            placeholder="What do you need to know? e.g. Where do you work? How many people will live here?"
-                            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
-                          />
-                          <button
-                            disabled={busyId === app.id || !infoText.trim()}
-                            onClick={() => handleDecision(app.id, 'info_requested', { info_request: infoText.trim() })}
-                            className="text-sm font-semibold text-primary-foreground bg-primary rounded-md px-3 py-1.5 disabled:opacity-50"
-                          >
-                            Send question
-                          </button>
-                        </div>
+                      <p className="text-xs text-muted-foreground">
+                        {app.status === 'pending'
+                          ? 'EboHomes is reviewing this application and will make the final decision.'
+                          : 'EboHomes asked the tenant a question and is waiting for the answer.'}
+                      </p>
+                      {app.landlord_recommendation && (
+                        <p className="text-xs rounded-md border border-border p-2">
+                          <span className="font-medium">Your recommendation:</span>{' '}
+                          {RECOMMENDATION_LABELS[app.landlord_recommendation] ?? app.landlord_recommendation}
+                          {app.landlord_recommendation_note ? ` — ${app.landlord_recommendation_note}` : ''}
+                        </p>
                       )}
+                      <select
+                        value={recChoice[app.id] ?? app.landlord_recommendation ?? ''}
+                        onChange={(e) => setRecChoice((prev) => ({ ...prev, [app.id]: e.target.value }))}
+                        className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-xs"
+                      >
+                        <option value="">Add a recommendation for EboHomes…</option>
+                        <option value="recommend">{RECOMMENDATION_LABELS.recommend}</option>
+                        <option value="neutral">{RECOMMENDATION_LABELS.neutral}</option>
+                        <option value="not_recommend">{RECOMMENDATION_LABELS.not_recommend}</option>
+                      </select>
                       <input
-                        value={declineNotes[app.id] ?? ''}
-                        onChange={(e) => setDeclineNotes((prev) => ({ ...prev, [app.id]: e.target.value }))}
-                        placeholder="Optional note to the tenant if you decline"
+                        value={recNote[app.id] ?? app.landlord_recommendation_note ?? ''}
+                        onChange={(e) => setRecNote((prev) => ({ ...prev, [app.id]: e.target.value }))}
+                        placeholder="Optional note for EboHomes"
+                        maxLength={400}
                         className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-xs"
                       />
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => handleDecision(app.id, 'approved')}
-                          disabled={busyId === app.id}
-                          className="flex items-center gap-1 text-sm font-semibold text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 rounded-md px-3 py-1.5"
-                        >
-                          {busyId === app.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => {
-                            setInfoText('')
-                            setInfoOpenId(infoOpenId === app.id ? null : app.id)
-                          }}
-                          disabled={busyId === app.id}
-                          className="text-sm font-semibold border border-border hover:bg-secondary rounded-md px-3 py-1.5"
-                        >
-                          Request more info
-                        </button>
-                        <button
-                          onClick={() =>
-                            handleDecision(app.id, 'rejected', { decision_note: (declineNotes[app.id] ?? '').trim() || null })
-                          }
-                          disabled={busyId === app.id}
-                          className="flex items-center gap-1 text-sm font-semibold text-destructive border border-destructive hover:bg-destructive hover:text-white disabled:opacity-50 rounded-md px-3 py-1.5"
-                        >
-                          <XCircle size={14} /> Decline
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleRecommend(app)}
+                        disabled={busyId === app.id || !(recChoice[app.id] ?? app.landlord_recommendation)}
+                        className="flex items-center gap-1 text-sm font-semibold text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 rounded-md px-3 py-1.5"
+                      >
+                        {busyId === app.id && <Loader2 size={14} className="animate-spin" />}
+                        Send recommendation
+                      </button>
                       {actionErrors[app.id] && <p className="text-xs text-destructive">{actionErrors[app.id]}</p>}
                     </div>
                   )}
@@ -351,7 +348,7 @@ export default function LandlordApplicationsPage() {
                         </p>
                       ) : (
                         <p className="text-xs text-muted-foreground">
-                          Waiting for the tenant to confirm they want to proceed. Accepting an application is not a tenancy and does not record any payment.
+                          Waiting for the tenant to confirm they want to proceed. Approval is not a tenancy and does not record any payment.
                         </p>
                       )}
                     </div>

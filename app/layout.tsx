@@ -1,6 +1,5 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
 import { SplashScreen } from '@/components/splash-screen'
 import { BottomNav } from '@/components/bottom-nav'
 import './globals.css'
@@ -11,12 +10,6 @@ import { InstallSheet } from '@/components/install-sheet'
 import { NotificationProvider } from '@/components/notification-provider'
 import { PushSync } from '@/components/push-sync'
 import { PushPrompt } from '@/components/push-prompt'
-
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-})
 
 export const metadata: Metadata = {
   title: 'EboHomes - Find Your Perfect Home in Ebonyi',
@@ -58,7 +51,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} light`}>
+    <html lang="en" className="light">
       <head>
         <script
           dangerouslySetInnerHTML={{
