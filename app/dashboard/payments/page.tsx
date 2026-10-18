@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Home as HomeIcon, Wallet, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { RecordPaymentModal } from '@/components/record-payment-modal'
+import { paymentLabel } from '@/lib/payment-status'
 
 type TenancyRow = {
   id: string
@@ -26,6 +27,10 @@ type PaymentRow = {
   payment_method: string | null
   status: string
   confirmed_at: string | null
+  verified_by?: string | null
+  verified_at?: string | null
+  review_note?: string | null
+  created_at?: string | null
 }
 
 export default function LandlordPaymentsPage() {
@@ -84,7 +89,7 @@ export default function LandlordPaymentsPage() {
     const tenancyIds = merged.map((t) => t.id)
     const { data: payments } = await supabase
       .from('payments')
-      .select('id, tenancy_id, amount, type, payment_method, status, confirmed_at')
+      .select('id, tenancy_id, amount, type, payment_method, status, confirmed_at, verified_by, verified_at, review_note, created_at')
       .in('tenancy_id', tenancyIds)
       .order('confirmed_at', { ascending: false })
 
@@ -157,13 +162,20 @@ export default function LandlordPaymentsPage() {
                               ₦{p.amount?.toLocaleString()} — <span className="capitalize">{p.type}</span>
                             </p>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-0.5 capitalize">
-                            {methodLabel(p.payment_method)} · {p.status}
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {methodLabel(p.payment_method)} · {paymentLabel(p)}
                           </p>
-                          {p.confirmed_at && (
+                          {p.verified_by && p.verified_at ? (
                             <p className="text-xs text-muted-foreground">
-                              {new Date(p.confirmed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                              Verified {new Date(p.verified_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                             </p>
+                          ) : p.created_at ? (
+                            <p className="text-xs text-muted-foreground">
+                              Recorded {new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                            </p>
+                          ) : null}
+                          {p.status === 'rejected' && p.review_note && (
+                            <p className="text-xs text-foreground">Reason: {p.review_note}</p>
                           )}
                         </div>
                       ))}

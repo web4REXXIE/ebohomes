@@ -69,17 +69,24 @@ export default function AdminDashboardPage() {
         ? supabase.from('support_messages').select('id', { count: 'exact', head: true }).eq('sender_kind', 'customer').is('read_at', null)
         : Promise.resolve({ count: 0 }),
       supabase.from('listings').select('id, title, location_text, price_monthly, status, created_at, photos').order('created_at', { ascending: false }).limit(5),
-      // ⚠️ assumes a column called `amount` — adjust once you confirm the real column name
-      supabase.from('payments').select('amount, created_at').order('created_at', { ascending: true }),
+      // Verified revenue only: status = confirmed AND a real verified_by.
+      supabase
+        .from('payments')
+        .select('id, amount, created_at, verified_at')
+        .eq('status', 'confirmed')
+        .not('verified_by', 'is', null)
+        .order('created_at', { ascending: true }),
       supabase.from('bookings').select('status, created_at').order('created_at', { ascending: false }).limit(200),
     ])
 
-    const totalRevenue = (payments ?? []).reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0)
+    // One entry per payment id, so a payment can never be counted twice.
+    const verifiedPayments = Array.from(new Map((payments ?? []).map((p: any) => [p.id, p])).values())
+    const totalRevenue = verifiedPayments.reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0)
 
-    // Group revenue by day for the bar chart
+    // Group verified revenue by the day it was verified (falls back to the recorded day)
     const byDay = new Map<string, number>()
-    ;(payments ?? []).forEach((p: any) => {
-      const day = new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    verifiedPayments.forEach((p: any) => {
+      const day = new Date(p.verified_at ?? p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       byDay.set(day, (byDay.get(day) ?? 0) + (Number(p.amount) || 0))
     })
     setRevenueTrend(Array.from(byDay.entries()).map(([date, amount]) => ({ date, amount })).slice(-14))
@@ -100,8 +107,8 @@ export default function AdminDashboardPage() {
     ;(bookings ?? []).slice(0, 3).forEach((b: any) =>
       activity.push({ type: 'booking', text: `Booking ${b.status ?? 'pending'}`, at: b.created_at })
     )
-    ;(payments ?? []).slice(-3).forEach((p: any) =>
-      activity.push({ type: 'payment', text: `Payment received: ₦${Number(p.amount || 0).toLocaleString()}`, at: p.created_at })
+    verifiedPayments.slice(-3).forEach((p: any) =>
+      activity.push({ type: 'payment', text: `Verified payment: ₦${Number(p.amount || 0).toLocaleString()}`, at: p.verified_at ?? p.created_at })
     )
     activity.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
     setRecentActivity(activity.slice(0, 6))
@@ -149,7 +156,7 @@ export default function AdminDashboardPage() {
     { label: 'Total Users', value: stats.totalUsers, icon: Users, tint: 'text-primary bg-primary/10', href: '/admin/users' },
     { label: 'Active Listings', value: stats.totalListings, icon: Home, tint: 'text-emerald-600 bg-emerald-50', href: '/admin/property-review' },
     { label: 'Total Bookings', value: stats.totalBookings, icon: ClipboardCheck, tint: 'text-blue-600 bg-blue-50', href: '/admin/reports' },
-    { label: 'Total Revenue', value: `₦${stats.totalRevenue.toLocaleString()}`, icon: Wallet, tint: 'text-amber-600 bg-amber-50', href: '/admin' },
+    { label: 'Verified Revenue', value: `₦${stats.totalRevenue.toLocaleString()}`, icon: Wallet, tint: 'text-amber-600 bg-amber-50', href: '/admin' },
     { label: 'Pending Actions', value: pendingActionsTotal, icon: AlertTriangle, tint: 'text-purple-600 bg-purple-50', href: '/admin/property-review' },
   ]
 
@@ -194,9 +201,9 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* Revenue — CSS bar chart, no library */}
         <div className="lg:col-span-2 bg-card border border-border rounded-xl p-5">
-          <h2 className="font-semibold text-foreground mb-4">Revenue Overview</h2>
+          <h2 className="font-semibold text-foreground mb-4">Verified Revenue Overview</h2>
           {revenueTrend.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-12">No payment records yet.</p>
+            <p className="text-sm text-muted-foreground text-center py-12">No verified payments yet.</p>
           ) : (
             <div className="flex items-end gap-2 h-48">
               {revenueTrend.map((r) => (

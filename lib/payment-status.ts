@@ -11,6 +11,7 @@ export type PaymentState =
   | 'legacy_confirmed'
   | 'awaiting_verification'
   | 'pending'
+  | 'rejected'
   | 'other'
 
 export function isVerified(p: PaymentLike): boolean {
@@ -22,6 +23,7 @@ export function getPaymentState(p: PaymentLike): PaymentState {
   if (p.status === 'confirmed') return 'legacy_confirmed'
   if (p.status === 'recorded') return 'awaiting_verification'
   if (p.status === 'pending') return 'pending'
+  if (p.status === 'rejected') return 'rejected'
   return 'other'
 }
 
@@ -30,6 +32,7 @@ export const PAYMENT_STATE_LABEL: Record<PaymentState, string> = {
   legacy_confirmed: 'Recorded (not verified by EboHomes)',
   awaiting_verification: 'Recorded, awaiting EboHomes verification',
   pending: 'Pending',
+  rejected: 'Rejected by EboHomes',
   other: 'Not verified',
 }
 
@@ -40,6 +43,7 @@ export const PAYMENT_STATE_NOTE: Record<PaymentState, string> = {
   awaiting_verification:
     'This payment was recorded by the landlord. EboHomes has not verified it yet.',
   pending: 'This payment record has not been completed.',
+  rejected: 'An EboHomes administrator reviewed this payment record and rejected it.',
   other: 'EboHomes has not verified this payment.',
 }
 

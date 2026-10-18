@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Loader2, Receipt } from 'lucide-react'
+import { paymentLabel } from '@/lib/payment-status'
 import { supabase } from '@/lib/supabase'
 
 type Props = { role: 'tenant' | 'landlord' }
@@ -63,7 +64,7 @@ export function TenancyList({ role }: Props) {
 
       const { data: pay } = await supabase
         .from('payments')
-        .select('id, tenancy_id, amount, type, status, receipt_code, created_at, confirmed_at')
+        .select('id, tenancy_id, amount, type, status, receipt_code, created_at, confirmed_at, verified_by, review_note')
         .in('tenancy_id', ids)
         .order('created_at', { ascending: false })
       const pm: Record<string, any[]> = {}
@@ -380,8 +381,8 @@ export function TenancyList({ role }: Props) {
                           <div key={p.id} className="flex items-center justify-between text-sm">
                             <span>
                               ₦{Number(p.amount).toLocaleString()}{' '}
-                              <span className="text-muted-foreground capitalize">
-                                {p.type} · {p.status}
+                              <span className="text-muted-foreground">
+                                <span className="capitalize">{p.type}</span> · {paymentLabel(p)}
                               </span>
                             </span>
                             {p.receipt_code && (
@@ -393,7 +394,7 @@ export function TenancyList({ role }: Props) {
                         ))}
                       </div>
                       <p className="text-xs text-muted-foreground mt-2">
-                        A payment record is not proof of cleared funds unless its status shows it as confirmed.
+                        A payment record is not proof of cleared funds. Only a payment marked &ldquo;Verified by EboHomes&rdquo; has been checked by EboHomes.
                       </p>
                     </>
                   )}
