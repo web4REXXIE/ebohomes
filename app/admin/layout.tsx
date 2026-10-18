@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
   { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
   { href: '/admin/users', label: 'Manage Users', icon: Users },
+  { href: '/admin/viewings', label: 'Viewings', icon: ClipboardList },
   { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
   { href: '/admin/support', label: 'Support Inbox', icon: MessageSquare },
