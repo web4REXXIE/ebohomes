@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
+import { AdminNeedsAttention } from '@/components/admin-needs-attention'
 
 type Stats = {
   totalUsers: number
@@ -177,7 +178,9 @@ export default function AdminDashboardPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold text-foreground mb-1">Dashboard</h1>
-      <p className="text-sm text-muted-foreground mb-6">Overview of platform activity.</p>
+      <p className="text-sm text-muted-foreground mb-6">What needs your attention first, then an overview of platform activity.</p>
+
+      <AdminNeedsAttention />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">

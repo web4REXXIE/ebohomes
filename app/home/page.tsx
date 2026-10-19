@@ -6,8 +6,8 @@ import {
   Search,
   Home as HomeIcon,
   MessageCircle,
-  Star,
-  Eye,
+  CalendarClock,
+  FileText,
   ChevronRight,
   Bed,
   Bath,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
+import { TenantNextStep } from '@/components/tenant-next-step'
 
 type Listing = {
   id: string
@@ -49,10 +50,7 @@ export default function TenantHomePage() {
   const [fullName, setFullName] = useState('')
   const [loading, setLoading] = useState(true)
 
-  const [savedCount, setSavedCount] = useState(0)
   const [unreadMsgCount, setUnreadMsgCount] = useState(0)
-  const [searchCount, setSearchCount] = useState(0)
-  const [viewCount, setViewCount] = useState(0)
 
   const [recommended, setRecommended] = useState<Listing[]>([])
   const [landlordVerified, setLandlordVerified] = useState<Record<string, boolean>>({})
@@ -75,21 +73,7 @@ export default function TenantHomePage() {
       .single()
     setFullName(profile?.full_name ?? 'there')
 
-    const [
-      { count: saved },
-      { count: unreadMsgs },
-      { count: searches },
-      { count: views },
-    ] = await Promise.all([
-      supabase.from('saved_properties').select('*', { count: 'exact', head: true }).eq('tenant_id', user.id),
-      getUnreadMessageCount().then((n) => ({ count: n })),
-      supabase.from('search_history').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-      supabase.from('property_views').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-    ])
-    setSavedCount(saved ?? 0)
-    setUnreadMsgCount(unreadMsgs ?? 0)
-    setSearchCount(searches ?? 0)
-    setViewCount(views ?? 0)
+    setUnreadMsgCount(await getUnreadMessageCount())
 
     // Recommended For You
     const { data: recs } = await supabase
@@ -190,9 +174,9 @@ export default function TenantHomePage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
       {/* Greeting */}
       <div className="mb-6">
-        <p className="text-sm text-muted-foreground">Good morning,</p>
+        <p className="text-sm text-muted-foreground">{greeting()},</p>
         <h1 className="text-2xl font-extrabold text-foreground flex items-center gap-2">{fullName} 👋</h1>
-        <p className="text-sm text-muted-foreground mb-3">Ready to find your next home?</p>
+        <p className="text-sm text-muted-foreground mb-3">Here is what needs your attention.</p>
         <Link
           href="/search"
           className="inline-flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2.5 rounded-full"
@@ -202,12 +186,14 @@ export default function TenantHomePage() {
         </Link>
       </div>
 
-      {/* Stat cards */}
+      <TenantNextStep />
+
+      {/* Where to find things */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard icon={HomeIcon} value={savedCount} label="Saved Homes" href="/saved" />
-        <StatCard icon={MessageCircle} value={unreadMsgCount} label="Unread Messages" href="/messages" />
-        <StatCard icon={Star} value={searchCount} label="Recent Searches" href="#recent-searches" />
-        <StatCard icon={Eye} value={viewCount} label="Properties Viewed" href="#continue-browsing" />
+        <StatCard icon={CalendarClock} title="My Viewings" text="Requests and appointments" href="/viewings" />
+        <StatCard icon={FileText} title="My Applications" text="Status of each application" href="/applications" />
+        <StatCard icon={HomeIcon} title="My Tenancy & Payments" text="Rent terms, payments, receipts" href="/tenancies" />
+        <StatCard icon={MessageCircle} title="Messages" text={unreadMsgCount > 0 ? `${unreadMsgCount} unread` : 'No unread messages'} href="/messages" />
       </div>
 
       {/* Recommended For You */}
@@ -298,7 +284,7 @@ export default function TenantHomePage() {
           )}
         </Section>
 
-        <Section title="Notifications" href="/home" compact>
+        <Section title="Notifications" href="/notifications" compact>
           {notifications.length === 0 ? (
             <EmptyRow text="You're all caught up." />
           ) : (
@@ -323,16 +309,21 @@ export default function TenantHomePage() {
   )
 }
 
-function StatCard({ icon: Icon, value, label, href }: { icon: any; value: number; label: string; href: string }) {
+function StatCard({ icon: Icon, title, text, href }: { icon: any; title: string; text: string; href: string }) {
   return (
     <Link href={href} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors">
       <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
         <Icon size={17} className="text-primary" />
       </div>
-      <p className="text-2xl font-extrabold text-foreground">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-sm font-bold text-foreground">{title}</p>
+      <p className="text-xs text-muted-foreground">{text}</p>
     </Link>
   )
+}
+
+function greeting() {
+  const h = new Date().getHours()
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
 
 function Section({

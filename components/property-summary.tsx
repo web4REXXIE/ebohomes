@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { PropertyGallery } from '@/components/property-gallery'
 import { plainUrl } from '@/lib/watermark'
 import { naira } from '@/lib/case-status'
+import { displayTitle, listingIsLive } from '@/lib/property-display'
 
 export type PropertyLite = {
   id: string
@@ -90,21 +91,28 @@ export function PropertySummary({
   listing,
   inspected,
   full = false,
+  compact = false,
+  href,
 }: {
   listing: PropertyLite | undefined
   inspected: boolean
   full?: boolean
+  // compact: a small row (photo, name, place, rent, status) for lists and dashboards.
+  compact?: boolean
+  // href: makes the compact row tappable, e.g. the public listing or the page that explains this property.
+  href?: string
 }) {
   if (!listing) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-secondary p-4 text-sm text-muted-foreground">
-        Property details are not available right now. EboHomes has been notified in the logs.
+        Property details are not available right now.
       </div>
     )
   }
   const photos = Array.isArray(listing.photos) ? listing.photos.filter(Boolean) : []
   const ref = publicId(listing)
-  const listed = listing.status === 'approved'
+  const listed = listingIsLive(listing.status)
+  const title = displayTitle(listing)
 
   const facts = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -131,18 +139,51 @@ export function PropertySummary({
     </div>
   )
 
+  if (compact) {
+    const row = (
+      <div className="flex gap-3">
+        <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg bg-secondary">
+          {photos[0] ? (
+            <img src={plainUrl(photos[0], 300)} alt={title} className="h-full w-full object-cover" loading="lazy" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-muted-foreground"><ImageOff size={18} /></div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-foreground">{title}</p>
+          {listing.location_text && (
+            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin size={11} />{listing.location_text}</p>
+          )}
+          <p className="text-sm font-bold text-foreground">{naira(listing.price_monthly)} <span className="text-xs font-normal text-muted-foreground">per month</span></p>
+          <p className="truncate text-xs text-muted-foreground">
+            {[
+              listing.bedrooms != null ? `${listing.bedrooms} bed` : null,
+              listing.bathrooms != null ? `${listing.bathrooms} bath` : null,
+              ref ? `Ref ${ref}` : null,
+            ].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+      </div>
+    )
+    return href ? (
+      <Link href={href} className="block rounded-lg transition hover:bg-secondary/60">{row}</Link>
+    ) : (
+      row
+    )
+  }
+
   if (!full) {
     return (
       <div className="flex gap-3">
         <div className="h-24 w-28 shrink-0 overflow-hidden rounded-lg bg-secondary">
           {photos[0] ? (
-            <img src={plainUrl(photos[0], 400)} alt={listing.title ?? 'Property'} className="h-full w-full object-cover" loading="lazy" />
+            <img src={plainUrl(photos[0], 400)} alt={title} className="h-full w-full object-cover" loading="lazy" />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-muted-foreground"><ImageOff size={20} /></div>
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-1">
-          <p className="truncate text-sm font-bold text-foreground">{listing.title ?? 'Property'}</p>
+          <p className="truncate text-sm font-bold text-foreground">{title}</p>
           {listing.location_text && (
             <p className="flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin size={12} />{listing.location_text}</p>
           )}
@@ -161,9 +202,9 @@ export function PropertySummary({
 
   return (
     <div className="space-y-4">
-      <PropertyGallery images={photos} title={listing.title ?? 'Property'} />
+      <PropertyGallery images={photos} title={title} />
       <div className="space-y-2">
-        <h3 className="text-lg font-bold text-foreground">{listing.title ?? 'Property'}</h3>
+        <h3 className="text-lg font-bold text-foreground">{title}</h3>
         {listing.location_text && (
           <p className="flex items-center gap-1 text-sm text-muted-foreground"><MapPin size={14} />{listing.location_text}</p>
         )}
@@ -193,7 +234,11 @@ export function PropertySummary({
       {listing.video_url && (
         <video src={listing.video_url} controls preload="metadata" className="w-full rounded-lg bg-black" />
       )}
-      <Link href={`/listing/${listing.id}`} className="inline-block text-sm font-semibold text-primary hover:underline">Open the public listing</Link>
+      {listed ? (
+        <Link href={`/listing/${listing.id}`} className="inline-block text-sm font-semibold text-primary hover:underline">Open the public listing</Link>
+      ) : (
+        <p className="text-xs text-muted-foreground">This property is not live to the public right now.</p>
+      )}
     </div>
   )
 }

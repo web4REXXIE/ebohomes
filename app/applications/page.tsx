@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Clock, CheckCircle2, XCircle, FileText, HelpCircle, MessageCircle, Eye } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
+import { PropertySummary, usePropertyData } from '@/components/property-summary'
+import { displayTitle, listingIsLive } from '@/lib/property-display'
 
 type ApplicationRow = {
   id: string
@@ -20,15 +22,35 @@ type ApplicationRow = {
   tenant_interest_at: string | null
   tenant_inspected: boolean | null
   case_ref: string | null
-  listing?: { title: string; location_text: string; price_monthly: number; photos: string[]; status: string; properties?: { public_id: string } | null }
 }
 
+type TenancyLite = { id: string; application_id: string; status: string | null }
+
 const BADGES: Record<string, { label: string; cls: string; icon: any }> = {
-  approved: { label: 'Approved', cls: 'text-primary bg-primary/10', icon: CheckCircle2 },
-  rejected: { label: 'Declined', cls: 'text-destructive bg-destructive/10', icon: XCircle },
-  info_requested: { label: 'More info needed', cls: 'text-amber-700 bg-amber-100', icon: HelpCircle },
-  withdrawn: { label: 'Withdrawn', cls: 'text-muted-foreground bg-secondary', icon: XCircle },
-  pending: { label: 'Awaiting EboHomes review', cls: 'text-muted-foreground bg-secondary', icon: Clock },
+  approved: { label: 'APPROVED', cls: 'text-emerald-900 bg-emerald-50 border border-emerald-300', icon: CheckCircle2 },
+  rejected: { label: 'NOT APPROVED', cls: 'text-red-900 bg-red-50 border border-red-300', icon: XCircle },
+  info_requested: { label: 'ACTION NEEDED: MORE INFORMATION', cls: 'text-amber-900 bg-amber-50 border border-amber-300', icon: HelpCircle },
+  withdrawn: { label: 'WITHDRAWN', cls: 'text-slate-800 bg-slate-100 border border-slate-300', icon: XCircle },
+  pending: { label: 'WAITING FOR EBOHOMES', cls: 'text-amber-900 bg-amber-50 border border-amber-300', icon: Clock },
+}
+
+// What each saved status means, in plain words, and what the tenant should do next.
+function meaning(a: ApplicationRow, tenancy: TenancyLite | undefined): { title: string; body: string; next: string } {
+  if (a.status === 'pending')
+    return { title: 'EboHomes is reviewing your application', body: 'Nothing is approved yet, and you do not need to pay anything.', next: 'Nothing to do. This page updates when EboHomes decides.' }
+  if (a.status === 'info_requested')
+    return { title: 'EboHomes needs more information', body: 'Your application is paused until you answer.', next: 'Type your answer in the box below and send it.' }
+  if (a.status === 'rejected')
+    return { title: 'EboHomes did not approve this application', body: 'No payment was taken.', next: 'You can apply again for this property, or search for another one.' }
+  if (a.status === 'withdrawn')
+    return { title: 'You withdrew this application', body: 'It is closed.', next: 'Apply again if you change your mind.' }
+  if (a.status === 'approved' && tenancy)
+    return { title: 'Your tenancy has been created', body: 'Your rental terms, payments and receipts are on your tenancy page.', next: 'Open your tenancy and review the rental terms.' }
+  if (a.status === 'approved' && a.tenant_interest_at)
+    return { title: 'You confirmed you want to proceed', body: 'The landlord sets up your tenancy and rental terms next. Nothing is due from you yet.', next: 'Wait for the landlord. Check My Tenancy & Payments.' }
+  if (a.status === 'approved')
+    return { title: 'Your application is approved. This is not a tenancy yet.', body: 'The property is not reserved and no payment has been taken.', next: 'See the property in person, then confirm below that you want to proceed.' }
+  return { title: 'Application received', body: '', next: 'Nothing to do.' }
 }
 
 export default function MyApplicationsPage() {
@@ -40,6 +62,7 @@ export default function MyApplicationsPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [tenancies, setTenancies] = useState<Record<string, TenancyLite>>({})
 
   const load = async () => {
     const {
@@ -66,13 +89,11 @@ export default function MyApplicationsPage() {
       setLoading(false)
       return
     }
-    const listingIds = [...new Set(apps.map((a) => a.listing_id))]
-    const { data: listings } = await supabase
-      .from('listings')
-      .select('id, title, location_text, price_monthly, photos, status, properties(public_id)')
-      .in('id', listingIds)
+    setApplications(apps as ApplicationRow[])
 
-    setApplications(apps.map((a) => ({ ...a, listing: listings?.find((l: any) => l.id === a.listing_id) as any })))
+    // Which of these applications already have a tenancy? Failing to load this only hides the shortcut.
+    const { data: ten } = await supabase.from('tenancies').select('id, application_id, status').in('application_id', apps.map((a) => a.id))
+    setTenancies(Object.fromEntries((ten ?? []).map((t: any) => [t.application_id, t])))
     setLoading(false)
   }
 
@@ -80,6 +101,8 @@ export default function MyApplicationsPage() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const { listings, inspected } = usePropertyData(useMemo(() => applications.map((a) => a.listing_id), [applications]))
 
   // Returns true only if the change was actually saved.
   const update = async (
@@ -114,7 +137,7 @@ export default function MyApplicationsPage() {
   }
 
   const whatsapp = (app: ApplicationRow) => {
-    const code = app.listing?.properties?.public_id ?? app.listing?.title ?? 'my application'
+    const code = app.case_ref ?? displayTitle(listings[app.listing_id])
     const params = new URLSearchParams({
       new: '1',
       category: 'application',
@@ -129,10 +152,10 @@ export default function MyApplicationsPage() {
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8">
-        <h1 className="text-xl font-bold text-foreground mb-1">My Applications</h1>
-        <p className="text-sm text-muted-foreground mb-6">Track the status of properties you've applied to.</p>
+        <h1 className="text-2xl font-bold text-foreground mb-1">My Applications</h1>
+        <p className="text-sm text-muted-foreground mb-6">Each card shows the property, where your application stands and what to do next.</p>
         {error && <p className="text-sm text-destructive bg-destructive/10 rounded-md p-3 mb-3">{error}</p>}
-        {notice && <p className="text-sm text-primary bg-primary/10 rounded-md p-3 mb-3">{notice}</p>}
+        {notice && <p role="status" className="text-sm text-emerald-900 bg-emerald-50 border border-emerald-300 rounded-md p-3 mb-3 font-medium">{notice}</p>}
 
         {loading ? (
           <div className="space-y-3 animate-pulse">
@@ -152,25 +175,36 @@ export default function MyApplicationsPage() {
             {applications.map((app) => {
               const b = BADGES[app.status] ?? BADGES.pending
               const Icon = b.icon
-              const code = app.listing?.properties?.public_id
-              const listingOpen = app.listing?.status === 'approved'
+              const listing = listings[app.listing_id]
+              const listingOpen = listingIsLive(listing?.status)
+              const tenancy = tenancies[app.id]
+              const m = meaning(app, tenancy)
               return (
                 <div key={app.id} className="bg-card border border-border rounded-lg p-4">
-                  <div className="flex items-start gap-4">
-                    <img src={app.listing?.photos?.[0] || '/placeholder.jpg'} alt={app.listing?.title ?? 'Listing'} className="w-16 h-16 rounded-md object-cover shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-foreground truncate">{app.listing?.title ?? 'Listing'}</p>
-                      <p className="text-xs text-muted-foreground truncate">{app.listing?.location_text}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {app.case_ref ? `${app.case_ref} · ` : ''}{code ? `${code} · ` : ''}Applied {new Date(app.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full shrink-0 ${b.cls}`}>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <span className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${b.cls}`}>
                       <Icon size={12} /> {b.label}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {app.case_ref ? `${app.case_ref} · ` : ''}Applied {new Date(app.created_at).toLocaleDateString()}
                     </span>
                   </div>
 
-                  {app.listing && !listingOpen && (app.status === 'pending' || app.status === 'info_requested' || app.status === 'approved') && (
+                  <PropertySummary compact listing={listing} inspected={inspected.has(app.listing_id)} href={listingOpen ? `/listing/${app.listing_id}` : undefined} />
+
+                  <div className="mt-3 rounded-lg bg-secondary p-3 text-sm space-y-1">
+                    <p className="font-bold text-foreground">{m.title}</p>
+                    {m.body && <p className="text-foreground">{m.body}</p>}
+                    <p className="font-bold text-foreground">Next: <span className="font-normal">{m.next}</span></p>
+                  </div>
+
+                  {tenancy && (
+                    <Link href={`/tenancies/${tenancy.id}`} className="mt-3 inline-flex min-h-10 items-center rounded-full bg-primary px-4 text-xs font-bold text-primary-foreground">
+                      Open my tenancy
+                    </Link>
+                  )}
+
+                  {listing && !listingOpen && (app.status === 'pending' || app.status === 'info_requested' || app.status === 'approved') && (
                     <p className="mt-3 text-xs text-muted-foreground bg-secondary rounded-md p-2">
                       This property is not currently listed. Contact EboHomes if you need help.
                     </p>
@@ -193,7 +227,7 @@ export default function MyApplicationsPage() {
                           const saved = await update(
                             app.id,
                             { tenant_reply: (replies[app.id] ?? '').trim(), status: 'pending' },
-                            'Your answer was sent. EboHomes will review your application again.',
+                            'Your answer was sent to EboHomes. They will review your application again.',
                             ['info_requested']
                           )
                           // Keep what the tenant typed if sending failed.
@@ -218,12 +252,13 @@ export default function MyApplicationsPage() {
 
                   {app.status === 'approved' && (
                     <div className="mt-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm space-y-3">
-                      <p className="font-semibold text-foreground">EboHomes has approved your application.</p>
-                      <p className="text-muted-foreground">
-                        Approval is not a tenancy and no payment has been taken. Next step: see the property
-                        yourself. Even if EboHomes inspected it, check the condition, location, utilities, the landlord or
-                        agent, the rent and the agreement before you pay anything.
-                      </p>
+                      <details>
+                        <summary className="cursor-pointer font-semibold text-foreground">What to check before you pay anything</summary>
+                        <p className="mt-1 text-muted-foreground">
+                          Even if EboHomes inspected the property, check the condition, location, utilities, the landlord or agent,
+                          the rent and the agreement yourself.
+                        </p>
+                      </details>
                       {app.tenant_inspected && (
                         <p className="text-primary font-medium">Your viewing has been marked as completed.</p>
                       )}
@@ -240,7 +275,7 @@ export default function MyApplicationsPage() {
                       </div>
                       {app.tenant_interest_at ? (
                         <p className="text-primary font-medium">
-                          You confirmed you want to proceed on {new Date(app.tenant_interest_at).toLocaleDateString()}. EboHomes will guide you from here. To change your mind, talk to EboHomes.
+                          You confirmed you want to proceed on {new Date(app.tenant_interest_at).toLocaleDateString()}. To change your mind, talk to EboHomes.
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -254,7 +289,7 @@ export default function MyApplicationsPage() {
                               update(
                                 app.id,
                                 { tenant_interest_at: new Date().toISOString() },
-                                'Thanks. Your interest is confirmed and EboHomes will guide you on the agreement and payment.',
+                                'Confirmed. You told EboHomes you want to proceed. The landlord sets up your tenancy next. Nothing is reserved or charged yet.',
                                 ['approved']
                               )
                             }
