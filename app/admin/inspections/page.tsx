@@ -136,25 +136,17 @@ export default function AdminInspectionsPage() {
 
   const review = async (insp: any, decision: 'approved' | 'rejected' | 'reinspect') => {
     if (insp.inspected_by === me) return flash('You cannot review your own inspection.')
+    if (decision === 'approved' && insp.verdict !== 'pass') return flash('Only a PASS inspection can be approved.')
     const note = (notes[insp.id] ?? '').trim()
     if (decision !== 'approved' && !note) return flash('Add a note explaining the decision.')
-    const { error } = await supabase
-      .from('property_inspections')
-      .update({ review_status: decision, review_note: note || null })
-      .eq('id', insp.id)
+    // One database call does everything together: the decision, the listing update and any new job.
+    const { data, error } = await supabase.rpc('admin_review_inspection', {
+      p_inspection_id: insp.id,
+      p_decision: decision,
+      p_note: note || null,
+    })
     if (error) return flash('Failed: ' + error.message)
-
-    if (decision === 'approved' && insp.verdict === 'pass') {
-      await supabase.from('listings').update({ status: 'pending' }).eq('id', insp.listing_id).eq('status', 'inspection_required')
-    }
-    if (decision === 'reinspect') {
-      await supabase.from('inspection_jobs').insert({
-        listing_id: insp.listing_id,
-        reason: 'reinspection',
-        needs_second_inspector: true,
-        created_by: me,
-      })
-    }
+    if (data !== 'ok') return flash(String(data))
     flash('Saved.')
     loadInspections()
   }
@@ -333,7 +325,13 @@ export default function AdminInspectionsPage() {
                       <p className="text-xs text-destructive">You submitted this inspection, so someone else must review it.</p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        <Button onClick={() => review(i, 'approved')}>Approve</Button>
+                        {i.verdict === 'pass' ? (
+                          <Button onClick={() => review(i, 'approved')}>Approve</Button>
+                        ) : (
+                          <p className="w-full text-xs text-amber-700">
+                            This inspection is not a PASS, so it cannot be approved. You can reject it or ask for another inspection.
+                          </p>
+                        )}
                         <Button variant="outline" onClick={() => review(i, 'reinspect')}>Another inspection</Button>
                         <Button variant="outline" className="text-destructive border-destructive" onClick={() => review(i, 'rejected')}>Reject</Button>
                       </div>
