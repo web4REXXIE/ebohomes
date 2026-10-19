@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PayOnlinePanel } from '@/components/pay-online-panel'
-import { fmtDate, fmtDateTime, label, naira, refundPreview } from '@/lib/case-status'
+import { fmtDate, fmtDateTime, label, naira, refundPreview, tenancyPath } from '@/lib/case-status'
+import { classifyTenancyLoad, TENANCY_LOAD_ERROR_TEXT, TENANCY_NOT_FOUND_TEXT } from '@/lib/tenancy-access'
 
 type Role = 'tenant' | 'landlord'
 const input = 'w-full bg-input border border-border rounded-md px-3 py-2 text-sm'
@@ -26,6 +27,8 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
   const [events, setEvents] = useState<any[]>([])
   const [settlement, setSettlement] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [otherRole, setOtherRole] = useState<Role | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [f, setF] = useState<Record<string, string>>({})
@@ -37,10 +40,21 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
     setMe(user.id)
-    const { data: mine } = await supabase.rpc('my_tenancies', { p_as: role })
-    const row = (mine ?? []).find((x: any) => x.id === tenancyId)
-    if (!row) { setT(null); setLoading(false); return }
-    setT(row)
+    const mine = await supabase.rpc('my_tenancies', { p_as: role })
+    const found = classifyTenancyLoad(mine, tenancyId)
+    if (found.kind === 'error') {
+      console.error('Tenancy load failed:', mine.error?.message)
+      setT(null); setOtherRole(null); setLoadFailed(true); setLoading(false); return
+    }
+    setLoadFailed(false)
+    if (found.kind === 'not_found') {
+      const alt: Role = role === 'tenant' ? 'landlord' : 'tenant'
+      const altRes = await supabase.rpc('my_tenancies', { p_as: alt })
+      setOtherRole(classifyTenancyLoad(altRes, tenancyId).kind === 'ok' ? alt : null)
+      setT(null); setLoading(false); return
+    }
+    setOtherRole(null)
+    setT(found.row)
     const [a, b, c, d, e, g] = await Promise.all([
       supabase.from('rental_terms').select('*').eq('tenancy_id', tenancyId).order('version', { ascending: false }),
       supabase.from('handover_records').select('*').eq('tenancy_id', tenancyId),
