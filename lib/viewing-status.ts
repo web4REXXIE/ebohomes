@@ -60,16 +60,89 @@ export type ViewingLike = {
   tenant_decision?: string | null
 }
 
+// The tenant's application, when known. Optional so the helper still works from the viewing alone.
+export type ApplicationLike = {
+  status?: string | null
+  tenant_interest_at?: string | null
+}
+
 export type Panel = {
   tone: Tone
   heading: string
   body: string
   next: string
   owner: 'tenant' | 'ebohomes' | 'none'
+  href?: string
+  cta?: string
+}
+
+// What the tenant sees after choosing "I'm interested", based on where the application really is.
+function interestedPanel(app: ApplicationLike | undefined): Panel {
+  if (app && app.status === 'approved' && app.tenant_interest_at) {
+    return {
+      tone: 'blue',
+      heading: 'YOU WANT TO PROCEED — YOUR APPLICATION IS APPROVED',
+      body: 'Your decision is recorded and your application is approved. The landlord now sets up your tenancy and rental terms. Nothing is reserved or charged yet.',
+      next: 'Wait for your tenancy to be created. You will be notified, and it will appear under My Tenancy.',
+      owner: 'none',
+      href: '/tenancies',
+      cta: 'Open My Tenancy',
+    }
+  }
+  if (app && app.status === 'approved') {
+    return {
+      tone: 'amber',
+      heading: 'ONE MORE STEP — CONFIRM YOU WANT TO PROCEED',
+      body: 'Your application is approved and you told us you are interested. Please confirm on My Applications so the landlord can set up your tenancy.',
+      next: 'Open My Applications and tap "Proceed with EboHomes".',
+      owner: 'tenant',
+      href: '/applications',
+      cta: 'Open My Applications',
+    }
+  }
+  if (app && app.status === 'info_requested') {
+    return {
+      tone: 'amber',
+      heading: 'EBOHOMES NEEDS MORE INFORMATION',
+      body: 'Your decision is recorded, but EboHomes has a question about your application.',
+      next: 'Answer the question on My Applications.',
+      owner: 'tenant',
+      href: '/applications',
+      cta: 'Answer on My Applications',
+    }
+  }
+  if (app && app.status === 'pending') {
+    return {
+      tone: 'amber',
+      heading: 'YOU WANT TO CONTINUE — EBOHOMES IS REVIEWING YOUR APPLICATION',
+      body: 'Your decision is recorded. EboHomes is reviewing your application. When it is approved, your wish to proceed is applied automatically. Nothing is reserved or approved yet.',
+      next: 'Wait for EboHomes to review your application.',
+      owner: 'ebohomes',
+      href: '/applications',
+      cta: 'View my application',
+    }
+  }
+  if (app && app.status) {
+    return {
+      tone: 'grey',
+      heading: 'THIS APPLICATION IS CLOSED',
+      body: 'Your decision is recorded, but this application is no longer open, so nothing more will happen on it.',
+      next: 'Browse other properties if you are still looking.',
+      owner: 'none',
+    }
+  }
+  // No application information: the original wording.
+  return {
+    tone: 'amber',
+    heading: 'YOU WANT TO CONTINUE — EBOHOMES IS REVIEWING',
+    body: 'Your decision is recorded. EboHomes is reviewing your application and confirming the property and rental terms. Nothing is reserved or approved yet.',
+    next: 'Wait for EboHomes to review your application.',
+    owner: 'ebohomes',
+  }
 }
 
 // The tenant-facing message for the viewing's real state. `fmt` formats an ISO date for display.
-export function tenantPanel(v: ViewingLike, fmt: (iso: string | null | undefined) => string): Panel {
+export function tenantPanel(v: ViewingLike, fmt: (iso: string | null | undefined) => string, app?: ApplicationLike): Panel {
   switch (v.status) {
     case 'requested':
       return {
@@ -104,15 +177,7 @@ export function tenantPanel(v: ViewingLike, fmt: (iso: string | null | undefined
         owner: 'tenant',
       }
     case 'completed':
-      if (v.tenant_decision === 'interested') {
-        return {
-          tone: 'amber',
-          heading: 'YOU WANT TO CONTINUE — EBOHOMES IS REVIEWING',
-          body: 'Your decision is recorded. EboHomes is reviewing your application and confirming the property and rental terms. Nothing is reserved or approved yet.',
-          next: 'Wait for EboHomes to review your application.',
-          owner: 'ebohomes',
-        }
-      }
+      if (v.tenant_decision === 'interested') return interestedPanel(app)
       if (v.tenant_decision === 'not_interested') {
         return {
           tone: 'grey',
@@ -166,7 +231,7 @@ export function staffNext(v: ViewingLike): string {
     case 'reschedule_proposed': return 'Waiting for the tenant to accept or decline the proposed time.'
     case 'scheduled': return 'Contact the tenant, then record the outcome after the visit.'
     case 'completed':
-      if (v.tenant_decision === 'interested') return 'Tenant wants to continue. Review the application and confirm property and terms.'
+      if (v.tenant_decision === 'interested') return 'Tenant wants to proceed. Open Applications to approve, ask a question or decline. Once approved, the landlord sets up the tenancy.'
       if (v.tenant_decision === 'not_interested') return 'Tenant is no longer interested. No action needed.'
       return 'Waiting for the tenant to say whether they want to continue.'
     default: return 'Closed.'

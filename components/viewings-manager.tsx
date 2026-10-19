@@ -93,7 +93,7 @@ export function ViewingsManager({ role }: Props) {
       const { data: auth } = await supabase.auth.getUser()
       const uid = auth.user?.id
       const [{ data: a }, { data: p }, { data: c }] = await Promise.all([
-        supabase.from('applications').select('id, status, listing_id').in('status', ['pending', 'info_requested', 'approved']),
+        supabase.from('applications').select('id, status, listing_id, tenant_interest_at').in('status', ['pending', 'info_requested', 'approved']),
         uid ? supabase.from('profiles').select('phone').eq('id', uid).maybeSingle() : Promise.resolve({ data: null } as any),
         supabase.from('viewing_contacts').select('viewing_id, phone'),
       ])
@@ -149,7 +149,8 @@ export function ViewingsManager({ role }: Props) {
   const iso = toIso(when)
 
   const renderViewing = (v: any) => {
-    const panel = tenantPanel(v, fmtDateTime)
+    const app = role === 'tenant' && v.application_id ? (apps.find((a) => a.id === v.application_id) ?? { status: 'closed' }) : undefined
+const panel = tenantPanel(v, fmtDateTime, app)
     const ref = 'VW-' + String(v.id).slice(0, 8).toUpperCase()
     const mine = role === 'tenant'
     return (
@@ -173,6 +174,9 @@ export function ViewingsManager({ role }: Props) {
             )}
             <p className="text-sm font-bold">NEXT STEP: {panel.next}</p>
             <p className="text-xs">{panel.owner === 'tenant' ? 'Action needed from you.' : panel.owner === 'ebohomes' ? 'Action needed from EboHomes.' : 'No action needed.'}</p>
+            {panel.href && panel.cta && (
+  <Link href={panel.href} className="inline-flex min-h-11 items-center rounded-md border border-current px-4 text-sm font-semibold">{panel.cta}</Link>
+)}
           </div>
         ) : (
           <div className={`border-b p-4 flex flex-wrap items-center justify-between gap-2 ${TONE_CLASS[viewingTone(v.status)]}`}>

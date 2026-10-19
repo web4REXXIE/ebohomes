@@ -7,6 +7,7 @@ import { fmtDateTime, toIso } from '@/lib/case-status'
 import { TONE_CLASS, staffNext, viewingTone } from '@/lib/viewing-status'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { History, StatusBadge } from '@/components/viewings-manager'
+import Link from 'next/link'
 
 const TABS: [string, string, (v: any) => boolean][] = [
   ['respond', 'Needs response', (v) => v.status === 'requested'],
@@ -136,6 +137,9 @@ export default function AdminViewingsPage() {
                 </div>
 
                 <p className={`text-sm font-semibold rounded-md border p-2 ${TONE_CLASS[viewingTone(v.status)]}`}>Next: {staffNext(v)}</p>
+                {v.tenant_decision === 'interested' && (
+  <Link href="/admin/applications" className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground">Open application review</Link>
+)}
 
                 {open && (
                   <div className="space-y-2">
