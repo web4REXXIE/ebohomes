@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useInspectedIds } from '@/lib/use-inspected-ids'
 import {
   Home,
   CheckCircle2,
@@ -37,7 +38,8 @@ export default function DashboardOverview() {
   const [activity, setActivity] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
-
+  const inspected = useInspectedIds(listings.map((l) => l.id))
+  
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()

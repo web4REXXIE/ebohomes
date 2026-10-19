@@ -14,6 +14,19 @@ const REASONS = [
   { v: 'reinspection', l: 'Re-inspection' },
 ]
 
+// These fields become public once the inspection has a reviewed public summary.
+const PUBLIC_FIELDS: [string, string][] = [
+  ['road_condition', 'Road'],
+  ['water_source', 'Water'],
+  ['electricity_notes', 'Electricity'],
+  ['network_notes', 'Network'],
+  ['security_notes', 'Security'],
+  ['condition_notes', 'Condition'],
+  ['environment_notes', 'Environment'],
+  ['neighborhood_type', 'Neighbourhood'],
+  ['nearby_landmarks', 'Nearby landmarks'],
+]
+
 type Tab = 'jobs' | 'review' | 'inspectors'
 
 export default function AdminInspectionsPage() {
@@ -34,6 +47,7 @@ export default function AdminInspectionsPage() {
   const [inspections, setInspections] = useState<any[]>([])
   const [evidenceUrls, setEvidenceUrls] = useState<Record<string, string[]>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [summaries, setSummaries] = useState<Record<string, string>>({})
 
   // inspectors
   const [email, setEmail] = useState('')
@@ -52,7 +66,7 @@ export default function AdminInspectionsPage() {
 
   const flash = (m: string) => {
     setMsg(m)
-    setTimeout(() => setMsg(''), 4000)
+    setTimeout(() => setMsg(''), 5000)
   }
 
   const loadInspectors = async () => {
@@ -138,16 +152,30 @@ export default function AdminInspectionsPage() {
     if (insp.inspected_by === me) return flash('You cannot review your own inspection.')
     if (decision === 'approved' && insp.verdict !== 'pass') return flash('Only a PASS inspection can be approved.')
     const note = (notes[insp.id] ?? '').trim()
+    const summary = (summaries[insp.id] ?? '').trim()
     if (decision !== 'approved' && !note) return flash('Add a note explaining the decision.')
-    // One database call does everything together: the decision, the listing update and any new job.
+    if (decision === 'approved' && !summary) return flash('Write the public summary before approving.')
+    // One database call does everything together: the decision, the summary, the listing update and any new job.
     const { data, error } = await supabase.rpc('admin_review_inspection', {
       p_inspection_id: insp.id,
       p_decision: decision,
       p_note: note || null,
+      p_public_summary: decision === 'approved' ? summary : null,
     })
     if (error) return flash('Failed: ' + error.message)
     if (data !== 'ok') return flash(String(data))
     flash('Saved.')
+    loadInspections()
+  }
+
+  const saveSummary = async (insp: any) => {
+    const summary = (summaries[insp.id] ?? insp.public_summary ?? '').trim()
+    const { error } = await supabase
+      .from('property_inspections')
+      .update({ public_summary: summary || null })
+      .eq('id', insp.id)
+    if (error) return flash('Failed: ' + error.message)
+    flash(summary ? 'Public summary saved.' : 'Public summary cleared. Detailed notes are now hidden.')
     loadInspections()
   }
 
@@ -175,8 +203,11 @@ export default function AdminInspectionsPage() {
       <h1 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2">
         <ClipboardCheck size={22} /> Inspections
       </h1>
-      <p className="text-sm text-muted-foreground mb-4">
+      <p className="text-sm text-muted-foreground mb-1">
         Inspectors submit evidence. A different reviewer approves it. Inspectors are paid for completing an inspection, never for passing a property.
+      </p>
+      <p className="text-xs text-amber-700 mb-4">
+        A physical inspection does not prove ownership, authority to rent, rental terms or availability. Never describe it that way.
       </p>
 
       {msg && <div className="mb-4 text-sm rounded-lg border border-border bg-secondary px-3 py-2">{msg}</div>}
@@ -277,69 +308,113 @@ export default function AdminInspectionsPage() {
           </div>
           {inspections.length === 0 && <p className="text-sm text-muted-foreground">Nothing here.</p>}
           <div className="space-y-4">
-            {inspections.map((i) => (
-              <div key={i.id} className="bg-card border border-border rounded-lg p-4 text-sm space-y-2">
-                <div className="flex justify-between gap-2">
-                  <div>
-                    <p className="font-semibold">{i.listing?.title ?? 'Listing'}</p>
-                    <p className="text-xs text-muted-foreground">{i.listing?.location_text} · {new Date(i.inspected_at).toLocaleString()}</p>
+            {inspections.map((i) => {
+              const publicFields = PUBLIC_FIELDS.filter(([key]) => i[key])
+              return (
+                <div key={i.id} className="bg-card border border-border rounded-lg p-4 text-sm space-y-2">
+                  <div className="flex justify-between gap-2">
+                    <div>
+                      <p className="font-semibold">{i.listing?.title ?? 'Listing'}</p>
+                      <p className="text-xs text-muted-foreground">{i.listing?.location_text} · {new Date(i.inspected_at).toLocaleString()}</p>
+                    </div>
+                    <span className={`text-xs font-bold uppercase px-2 py-1 rounded-full h-fit ${
+                      i.verdict === 'pass' ? 'bg-emerald-100 text-emerald-700' : i.verdict === 'fail' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                    }`}>{i.verdict ?? 'legacy'}</span>
                   </div>
-                  <span className={`text-xs font-bold uppercase px-2 py-1 rounded-full h-fit ${
-                    i.verdict === 'pass' ? 'bg-emerald-100 text-emerald-700' : i.verdict === 'fail' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                  }`}>{i.verdict ?? 'legacy'}</span>
-                </div>
-                {i.verdict_reason && <p><span className="text-muted-foreground">Reason:</span> {i.verdict_reason}</p>}
-                <p className="text-xs text-muted-foreground">
-                  Inspector: {nameOf(i.inspected_by)}
-                  {i.gps_lat ? ` · GPS ${i.gps_lat.toFixed(5)}, ${i.gps_lng.toFixed(5)}` : ' · no GPS'}
-                </p>
-                <p className="text-xs">
-                  Claimant: {i.claimant_name ?? '—'} ({i.claimant_relationship ?? '—'}) · ID seen: {i.claimant_id_seen ? 'yes' : 'no'}
-                </p>
-                <p className="text-xs">
-                  Rent matches: {i.rent_matches == null ? '—' : i.rent_matches ? 'yes' : 'NO'} · Photos/video match: {i.listing_matches == null ? '—' : i.listing_matches ? 'yes' : 'NO'}
-                </p>
-                {(i.evidence_paths ?? []).length > 0 && (
-                  <div>
-                    <button onClick={() => showEvidence(i)} className="text-xs text-primary font-medium hover:underline">
-                      View {i.evidence_paths.length} evidence file(s)
-                    </button>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {(evidenceUrls[i.id] ?? []).map((u, idx) => (
-                        <a key={idx} href={u} target="_blank" rel="noreferrer" className="text-xs border border-border rounded px-2 py-1 hover:bg-secondary">File {idx + 1}</a>
+                  {i.verdict_reason && <p><span className="text-muted-foreground">Reason:</span> {i.verdict_reason}</p>}
+                  <p className="text-xs text-muted-foreground">
+                    Inspector: {nameOf(i.inspected_by)}
+                    {i.gps_lat ? ` · GPS ${i.gps_lat.toFixed(5)}, ${i.gps_lng.toFixed(5)}` : ' · no GPS'}
+                  </p>
+                  <p className="text-xs">
+                    Claimant: {i.claimant_name ?? '—'} ({i.claimant_relationship ?? '—'}) · ID seen: {i.claimant_id_seen ? 'yes' : 'no'}
+                  </p>
+                  <p className="text-xs">
+                    Rent matches: {i.rent_matches == null ? '—' : i.rent_matches ? 'yes' : 'NO'} · Photos/video match: {i.listing_matches == null ? '—' : i.listing_matches ? 'yes' : 'NO'}
+                  </p>
+
+                  {i.overall_notes && (
+                    <p className="text-xs rounded border border-border bg-secondary px-2 py-1.5">
+                      <span className="font-semibold">Inspector&apos;s private notes (never published):</span> {i.overall_notes}
+                    </p>
+                  )}
+
+                  {publicFields.length > 0 && (
+                    <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs space-y-0.5">
+                      <p className="font-semibold text-emerald-900">Published once this inspection has a public summary:</p>
+                      {publicFields.map(([key, label]) => (
+                        <p key={key}><span className="text-emerald-800">{label}:</span> {i[key]}</p>
                       ))}
                     </div>
-                  </div>
-                )}
-                {i.review_note && <p className="text-xs text-muted-foreground">Review note: {i.review_note}</p>}
-                {i.review_status === 'submitted' && (
-                  <div className="pt-2 space-y-2">
-                    <textarea
-                      value={notes[i.id] ?? ''}
-                      onChange={(e) => setNotes((p) => ({ ...p, [i.id]: e.target.value }))}
-                      rows={2}
-                      placeholder="Note (required to reject or ask for another inspection)"
-                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
-                    />
-                    {i.inspected_by === me ? (
-                      <p className="text-xs text-destructive">You submitted this inspection, so someone else must review it.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {i.verdict === 'pass' ? (
-                          <Button onClick={() => review(i, 'approved')}>Approve</Button>
-                        ) : (
-                          <p className="w-full text-xs text-amber-700">
-                            This inspection is not a PASS, so it cannot be approved. You can reject it or ask for another inspection.
-                          </p>
-                        )}
-                        <Button variant="outline" onClick={() => review(i, 'reinspect')}>Another inspection</Button>
-                        <Button variant="outline" className="text-destructive border-destructive" onClick={() => review(i, 'rejected')}>Reject</Button>
+                  )}
+
+                  {(i.evidence_paths ?? []).length > 0 && (
+                    <div>
+                      <button onClick={() => showEvidence(i)} className="text-xs text-primary font-medium hover:underline">
+                        View {i.evidence_paths.length} evidence file(s)
+                      </button>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {(evidenceUrls[i.id] ?? []).map((u, idx) => (
+                          <a key={idx} href={u} target="_blank" rel="noreferrer" className="text-xs border border-border rounded px-2 py-1 hover:bg-secondary">File {idx + 1}</a>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+                    </div>
+                  )}
+                  {i.review_note && <p className="text-xs text-muted-foreground">Review note: {i.review_note}</p>}
+
+                  {i.review_status === 'submitted' && (
+                    <div className="pt-2 space-y-2">
+                      {i.verdict === 'pass' && i.inspected_by !== me && (
+                        <textarea
+                          value={summaries[i.id] ?? ''}
+                          onChange={(e) => setSummaries((p) => ({ ...p, [i.id]: e.target.value }))}
+                          rows={3}
+                          maxLength={600}
+                          placeholder="Public summary shown on the listing (required to approve, max 600 characters). Describe the physical condition only. Do not claim ownership or authority to rent."
+                          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                        />
+                      )}
+                      <textarea
+                        value={notes[i.id] ?? ''}
+                        onChange={(e) => setNotes((p) => ({ ...p, [i.id]: e.target.value }))}
+                        rows={2}
+                        placeholder="Note (required to reject or ask for another inspection)"
+                        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                      />
+                      {i.inspected_by === me ? (
+                        <p className="text-xs text-destructive">You submitted this inspection, so someone else must review it.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {i.verdict === 'pass' ? (
+                            <Button onClick={() => review(i, 'approved')}>Approve</Button>
+                          ) : (
+                            <p className="w-full text-xs text-amber-700">
+                              This inspection is not a PASS, so it cannot be approved. You can reject it or ask for another inspection.
+                            </p>
+                          )}
+                          <Button variant="outline" onClick={() => review(i, 'reinspect')}>Another inspection</Button>
+                          <Button variant="outline" className="text-destructive border-destructive" onClick={() => review(i, 'rejected')}>Reject</Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {i.review_status === 'approved' && (
+                    <div className="pt-2 space-y-2">
+                      <textarea
+                        value={summaries[i.id] ?? i.public_summary ?? ''}
+                        onChange={(e) => setSummaries((p) => ({ ...p, [i.id]: e.target.value }))}
+                        rows={3}
+                        maxLength={600}
+                        placeholder="Public summary. Without one, detailed notes stay hidden on the listing."
+                        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                      />
+                      <Button variant="outline" onClick={() => saveSummary(i)}>Save public summary</Button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

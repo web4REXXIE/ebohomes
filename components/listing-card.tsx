@@ -17,10 +17,12 @@ import {
   Send,
   MessageCircle,
   X,
+  ShieldCheck,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { EBOHOMES_WHATSAPP } from '@/lib/contact'
 import { getSiteUrl } from '@/lib/site-url'
+import { useInspectedIds } from '@/lib/use-inspected-ids'
 
 type ListingCardProps = {
   id: string
@@ -225,6 +227,7 @@ export function ListingCard({
   const isList = layout === 'list'
   const displayTitle = title || property_type
   const added = addedLabel(created_at)
+  const inspected = useInspectedIds([id]).has(id)
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
@@ -311,6 +314,13 @@ export function ListingCard({
             <div className="absolute left-0 top-0 flex items-center gap-1 rounded-br-xl bg-gradient-to-r from-amber-300 to-amber-500 px-2.5 py-1 text-[10px] font-bold text-amber-950 shadow sm:text-[11px]">
               <Star size={11} className="fill-current" />
               FEATURED
+            </div>
+          )}
+
+          {inspected && (
+            <div className="absolute left-0 bottom-9 flex items-center gap-1 rounded-r-lg bg-emerald-700 px-2 py-1 text-[10px] font-semibold text-white shadow sm:text-[11px]">
+              <ShieldCheck size={11} />
+              Physically inspected
             </div>
           )}
 

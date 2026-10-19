@@ -843,7 +843,7 @@ export default function ListingDetailPage() {
                 {inspection && (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
                     <CheckCircle2 size={14} />
-                    EboHomes inspected
+                    Physically inspected by EboHomes.
                   </span>
                 )}
               </div>
@@ -864,7 +864,7 @@ export default function ListingDetailPage() {
 
                     <div className="min-w-0">
                       <p className="font-extrabold text-emerald-900 leading-tight">
-                        EboHomes Inspected
+                        Physically inspected by EboHomes.
                       </p>
 
                       <p className="text-xs text-emerald-700 truncate">
@@ -997,6 +997,14 @@ export default function ListingDetailPage() {
                       </div>
                     )}
 
+                  
+                 <div className="px-5 pb-3">
+                      <p className="text-[11px] text-emerald-800">
+                        This is a physical inspection of the property only. It does not confirm ownership, the
+                        right to rent it out, the rental terms or availability.
+                      </p>
+                    </div>
+                    
                     {inspection.nearby_landmarks && (
                       <div className="px-5 pb-4">
                         <p className="text-sm text-emerald-800">

@@ -64,8 +64,16 @@ export default function InspectorPage() {
     )
   }
 
+  // Removes files uploaded by this attempt when the submission fails, so no orphans are left.
+  // Storage only allows this for files that no submitted inspection references.
+  const removeUploaded = async (paths: string[]) => {
+    if (paths.length === 0) return
+    const { error } = await supabase.storage.from('inspection-evidence').remove(paths)
+    if (error) console.error('Could not remove unsubmitted evidence files:', error.message)
+  }
+
   const submit = async () => {
-    if (!job) return
+    if (!job || busy) return
     if (!gps) return setMsg('Capture your GPS location first.')
     if (files.length < 3) return setMsg('Add at least 3 photos or videos as evidence.')
     if (!form.verdict) return setMsg('Choose PASS, FAIL or UNCERTAIN.')
@@ -82,8 +90,9 @@ export default function InspectorPage() {
       const path = `${uid}/${job.job_id}/${Date.now()}-${safe}`
       const { error } = await supabase.storage.from('inspection-evidence').upload(path, f, { contentType: f.type })
       if (error) {
+        await removeUploaded(paths)
         setBusy(false)
-        return setMsg('Upload failed: ' + error.message)
+        return setMsg('Upload failed: ' + error.message + '. Nothing was submitted. Please try again.')
       }
       paths.push(path)
     }
@@ -111,8 +120,12 @@ export default function InspectorPage() {
       payload[c.match] = form[c.match] ?? null
     }
     const { error } = await supabase.from('property_inspections').insert(payload)
+    if (error) {
+      await removeUploaded(paths)
+      setBusy(false)
+      return setMsg('Could not submit: ' + error.message + '. Your uploaded files were removed. Please try again.')
+    }
     setBusy(false)
-    if (error) return setMsg('Could not submit: ' + error.message)
     setJob(null)
     setForm({})
     setFiles([])

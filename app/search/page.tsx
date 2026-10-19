@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { RecentSearches, saveRecentSearch } from '@/components/recent-searches'
 import { SearchAlertBar } from '@/components/search-alert-bar'
+import { useInspectedIds } from '@/lib/use-inspected-ids'
 
 // Values must match what is stored in listings.property_type (same list as /list-property)
 const PROPERTY_TYPES = [
@@ -266,13 +267,16 @@ function PropertyCard({
   const featured = !!listing.featured
   const added = addedLabel(listing.created_at)
 
-  function requestViewing() {
+  const inspected = useInspectedIds([String(listing.id)]).has(String(listing.id))
+
+ function requestViewing() {
     const params = new URLSearchParams({
       new: '1',
       category: 'viewing',
       listing: String(listing.id),
       subject: `Viewing: ${String(listing.title || listing.property_type || 'Property').slice(0, 90)}`,
     })
+
     window.location.assign(`/messages?${params.toString()}`)
   }
 
@@ -307,6 +311,13 @@ function PropertyCard({
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-bold text-amber-950 shadow sm:text-xs">
               <Star size={11} className="fill-current" />
               Featured
+            </span>
+          )}
+
+          {inspected && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-700 px-2 py-0.5 text-[10px] font-semibold text-white shadow sm:text-xs">
+              <ShieldCheck size={11} />
+              Physically inspected
             </span>
           )}
           {listing.verified && (

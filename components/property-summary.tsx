@@ -82,7 +82,7 @@ export function InspectionBadge({ inspected }: { inspected: boolean }) {
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-900">
-      <Hourglass size={13} /> INSPECTION IN PROGRESS
+      <Hourglass size={13} />  with NOT YET INSPECTED
     </span>
   )
 }
