@@ -5,13 +5,27 @@ import Link from 'next/link'
 import { Loader2, CheckCircle2, ArrowRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
-import { QUEUE_META, QUEUE_ORDER, buildQueues, type QueueInput, type QueueKey } from '@/lib/admin-queues'
+import { QUEUE_META, QUEUE_ORDER, buildQueues, type QueueInput, type QueueItem, type QueueKey, type QueueMeta } from '@/lib/admin-queues'
+import { readyForTenancy } from '@/lib/admin-ready'
 
 const LIMIT = 300
 const SHOW_FIRST = 3
 
+type Key = QueueKey | 'ready'
+
+const READY_META: QueueMeta = {
+  title: 'Tenant confirmed, tenancy not created',
+  help: 'The application is approved and the tenant wants to proceed. The landlord now creates the tenancy.',
+  href: '/admin/applications',
+  urgent: false,
+}
+
+// "Tenant confirmed" sits right after "Applications to review" so the whole story reads in order.
+const ORDER: Key[] = [...QUEUE_ORDER.slice(0, 5), 'ready', ...QUEUE_ORDER.slice(5)]
+
 export function AdminNeedsAttention() {
   const [data, setData] = useState<QueueInput | null>(null)
+  const [ready, setReady] = useState<QueueItem[]>([])
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState<string[]>([])
   const [capped, setCapped] = useState(false)
@@ -32,7 +46,7 @@ export function AdminNeedsAttention() {
       return rows
     }
 
-    const [lRes, vRes, aRes, tRes, pRes, dRes, sRes] = await Promise.all([
+    const [lRes, vRes, aRes, tRes, pRes, dRes, sRes, rRes] = await Promise.all([
       supabase.from('listings').select('id, created_at').or('status.eq.pending,status.is.null').order('created_at', { ascending: true }).limit(LIMIT),
       supabase.from('viewings').select('id, listing_id, tenant_id, application_id, status, tenant_decision, created_at')
         .or('status.in.(requested,approved),and(status.eq.completed,tenant_decision.eq.interested)').order('created_at', { ascending: true }).limit(LIMIT),
@@ -43,6 +57,8 @@ export function AdminNeedsAttention() {
         .in('status', ['recorded', 'pending']).order('created_at', { ascending: true }).limit(LIMIT),
       supabase.from('tenancy_disputes').select('id, tenancy_id, category, status, created_at').in('status', ['open', 'under_review']).limit(LIMIT),
       supabase.from('tenancy_settlements').select('id, tenancy_id, status, updated_at').in('status', ['agreed', 'disputed']).limit(LIMIT),
+      supabase.from('applications').select('id, case_ref, status, listing_id, tenant_id, tenant_interest_at')
+        .eq('status', 'approved').not('tenant_interest_at', 'is', null).order('tenant_interest_at', { ascending: true }).limit(LIMIT),
     ])
 
     const listings = take('listings', lRes as any)
@@ -52,14 +68,18 @@ export function AdminNeedsAttention() {
     const payments = take('payments', pRes as any)
     const disputes = take('disputes', dRes as any)
     const settlements = take('settlements', sRes as any)
+    const readyApps = take('confirmed tenants', rRes as any)
 
     // Second step: which tenancies already exist, and who the people are.
-    const interestedAppIds = Array.from(new Set(viewings.filter((v) => v.tenant_decision === 'interested' && v.application_id).map((v) => v.application_id as string)))
+    const appIds = Array.from(new Set([
+      ...viewings.filter((v) => v.tenant_decision === 'interested' && v.application_id).map((v) => v.application_id as string),
+      ...readyApps.map((a) => a.id as string),
+    ]))
     const tenancyIds = Array.from(new Set([...terms, ...disputes, ...settlements, ...payments].map((x) => x.tenancy_id).filter(Boolean) as string[]))
-    const personIds = Array.from(new Set([...viewings, ...applications].map((x) => x.tenant_id).filter(Boolean) as string[]))
+    const personIds = Array.from(new Set([...viewings, ...applications, ...readyApps].map((x) => x.tenant_id).filter(Boolean) as string[]))
 
     const [byApp, byId, people] = await Promise.all([
-      interestedAppIds.length ? supabase.from('tenancies').select('id, application_id, listing_id').in('application_id', interestedAppIds) : Promise.resolve({ data: [], error: null } as any),
+      appIds.length ? supabase.from('tenancies').select('id, application_id, listing_id').in('application_id', appIds) : Promise.resolve({ data: [], error: null } as any),
       tenancyIds.length ? supabase.from('tenancies').select('id, application_id, listing_id').in('id', tenancyIds) : Promise.resolve({ data: [], error: null } as any),
       personIds.length ? supabase.from('profiles').select('id, full_name').in('id', personIds) : Promise.resolve({ data: [], error: null } as any),
     ])
@@ -67,12 +87,16 @@ export function AdminNeedsAttention() {
     const tenB = take('tenancies', byId as any)
     const profs = take('names', people as any)
 
+    const tenancyApplicationIds = tenA.map((t) => t.application_id).filter(Boolean)
+    const names = Object.fromEntries(profs.map((p) => [p.id, p.full_name || 'Applicant']))
+
     setData({
       listings, viewings, applications, terms, payments, disputes, settlements,
-      tenancyApplicationIds: tenA.map((t) => t.application_id).filter(Boolean),
+      tenancyApplicationIds,
       tenancyListing: Object.fromEntries(tenB.map((t) => [t.id, t.listing_id])),
-      names: Object.fromEntries(profs.map((p) => [p.id, p.full_name || 'Applicant'])),
+      names,
     })
+    setReady(readyForTenancy({ applications: readyApps, tenancyApplicationIds, names }))
     setFailed(Array.from(new Set(bad)))
     setCapped(hitCap)
     setLoading(false)
@@ -80,9 +104,9 @@ export function AdminNeedsAttention() {
 
   useEffect(() => { load() }, [load])
 
-  const queues = useMemo(() => (data ? buildQueues(data) : null), [data])
+  const queues = useMemo<Record<Key, QueueItem[]> | null>(() => (data ? { ...buildQueues(data), ready } : null), [data, ready])
   const listingIds = useMemo(
-    () => (queues ? QUEUE_ORDER.flatMap((k) => queues[k].map((i) => i.listingId).filter(Boolean) as string[]) : []),
+    () => (queues ? ORDER.flatMap((k) => queues[k].map((i) => i.listingId).filter(Boolean) as string[]) : []),
     [queues],
   )
   const { listings, inspected } = usePropertyData(listingIds)
@@ -95,7 +119,8 @@ export function AdminNeedsAttention() {
     )
   }
 
-  const active = QUEUE_ORDER.filter((k) => queues[k].length > 0)
+  const metaOf = (k: Key): QueueMeta => (k === 'ready' ? READY_META : QUEUE_META[k])
+  const active = ORDER.filter((k) => queues[k].length > 0)
   const total = active.reduce((n, k) => n + queues[k].length, 0)
 
   return (
@@ -130,16 +155,16 @@ export function AdminNeedsAttention() {
       {active.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
           {active.map((k) => (
-            <a key={k} href={`#queue-${k}`} className={`rounded-full border px-3 py-1.5 text-xs font-bold ${QUEUE_META[k].urgent ? 'border-red-300 bg-red-50 text-red-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}>
-              {QUEUE_META[k].title} ({queues[k].length})
+            <a key={k} href={`#queue-${k}`} className={`rounded-full border px-3 py-1.5 text-xs font-bold ${metaOf(k).urgent ? 'border-red-300 bg-red-50 text-red-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}>
+              {metaOf(k).title} ({queues[k].length})
             </a>
           ))}
         </div>
       )}
 
       <div className="space-y-6">
-        {active.map((k: QueueKey) => {
-          const meta = QUEUE_META[k]
+        {active.map((k) => {
+          const meta = metaOf(k)
           const items = queues[k]
           const shown = open[k] ? items : items.slice(0, SHOW_FIRST)
           return (
