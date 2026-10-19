@@ -1,0 +1,50 @@
+-- ============================ DRAFT. DO NOT RUN. ============================
+-- The first statement below raises an error on purpose, so running this file by accident changes nothing.
+-- Remove it ONLY after I have reviewed Q5, Q8 and Q9 from 20261024_00 and rewritten this file to match them.
+do $$ begin raise exception 'DRAFT: blocked until the payments table, payments_guard and admin_review_payment definitions are reviewed (Q5, Q8, Q9).'; end $$;
+
+-- WHAT: eb_link_paystack_payment(reference) turns a PAID Paystack transaction into ONE row in public.payments.
+--   * Called only by the server (service role). Not callable from the browser.
+--   * Idempotent: it locks the paystack_transactions row and returns the existing payment if already linked.
+--   * The new payment is created as 'recorded' (awaiting EboHomes verification), NOT 'confirmed'. Paystack proof is shown to
+--     the admin, but "Verified by EboHomes" keeps meaning a person at EboHomes checked it. Auto-verification would need your approval.
+-- UNKNOWN (why this is blocked):
+--   1. Does payments_guard allow an insert when auth.uid() is null (service role)? What does it set for status, recorded_by,
+--      source and receipt_code, and can it be given source = 'paystack'?
+--   2. Is payment_method = 'card' allowed, and type = 'fee' (the UI uses rent, deposit, fee, other)?
+--   3. Is there a unique index on payments.reference, and does the receipt code need the status to be confirmed?
+-- ROLLBACK: drop function if exists public.eb_link_paystack_payment(text);
+
+begin;
+
+create or replace function public.eb_link_paystack_payment(p_reference text)
+ returns uuid language plpgsql security definer
+ set search_path to 'public', 'pg_temp'
+as $function$
+declare x record; t record; v_payment uuid;
+begin
+  select * into x from public.paystack_transactions where reference = p_reference for update;
+  if not found then raise exception 'Unknown Paystack reference'; end if;
+  if x.reconciled_payment_id is not null then return x.reconciled_payment_id; end if;
+  if x.status <> 'paid' then raise exception 'This Paystack transaction is not paid (status: %)', x.status; end if;
+
+  select id, listing_id, tenant_id into t from public.tenancies where id = x.tenancy_id;
+  if not found then raise exception 'Tenancy not found'; end if;
+
+  insert into public.payments (tenancy_id, listing_id, user_id, type, amount, payment_method, reference)
+  values (x.tenancy_id, t.listing_id, t.tenant_id,
+          case x.purpose when 'fees' then 'fee' else x.purpose end,
+          x.amount_kobo / 100.0, 'card', x.reference)
+  returning id into v_payment;
+
+  update public.paystack_transactions
+     set reconciled_payment_id = v_payment, updated_at = now()
+   where id = x.id;
+  return v_payment;
+end;
+$function$;
+
+revoke all on function public.eb_link_paystack_payment(text) from public, anon, authenticated;
+grant execute on function public.eb_link_paystack_payment(text) to service_role;
+
+commit;

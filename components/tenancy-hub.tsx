@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { PayOnlinePanel } from '@/components/pay-online-panel'
 import { fmtDate, fmtDateTime, label, naira, refundPreview } from '@/lib/case-status'
 
 type Role = 'tenant' | 'landlord'
@@ -116,6 +117,7 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
         ) : (
           <p className="text-sm text-muted-foreground">{terms[0] ? `The last proposed terms were ${terms[0].status}.` : 'No terms have been proposed yet.'}</p>
         )}
+        {role === 'tenant' && live?.status === 'signed' && <PayOnlinePanel tenancyId={tenancyId} />}
         {role === 'landlord' && (!live || live.status !== 'signed') && (
           open === 'terms' ? (
             <div className={card}>
