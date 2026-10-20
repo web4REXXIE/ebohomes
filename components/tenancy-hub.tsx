@@ -32,6 +32,7 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
   const [settlement, setSettlement] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [journeyApp, setJourneyApp] = useState<string | null>(null)
   const [otherRole, setOtherRole] = useState<Role | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
@@ -59,6 +60,10 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
     }
     setOtherRole(null)
     setT(found.row)
+    if (role === 'tenant') {
+      const j = await supabase.from('tenancies').select('application_id').eq('id', tenancyId).maybeSingle()
+      setJourneyApp((j.data as any)?.application_id ?? null)
+    }
     const [a, b, c, d, e] = await Promise.all([
       supabase.from('rental_terms').select('*').eq('tenancy_id', tenancyId).order('version', { ascending: false }),
       supabase.from('handover_records').select('*').eq('tenancy_id', tenancyId),
@@ -129,7 +134,12 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
 
   return (
     <div className="max-w-3xl mx-auto w-full px-4 py-6 space-y-6">
-      <Link href={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground"><ArrowLeft size={14} /> Tenancies</Link>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link href={back} className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground"><ArrowLeft size={14} /> Tenancies</Link>
+        {role === 'tenant' && journeyApp && (
+          <Link href={`/journey/${journeyApp}`} className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary hover:underline"><ArrowLeft size={14} aria-hidden /> Back to my rental journey</Link>
+        )}
+      </div>
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="space-y-3 p-4">
           <div className="flex items-start justify-between gap-3">

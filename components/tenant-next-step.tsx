@@ -6,6 +6,8 @@ import { ArrowRight, CheckCircle2, Clock, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { buildSteps, splitSteps, type NextStepInput, type Step } from '@/lib/next-step'
+import { buildJourney, pickTenancy } from '@/lib/rental-journey'
+import { TONE_CLASS } from '@/lib/viewing-status'
 
 type Loaded = Omit<NextStepInput, 'now'>
 
@@ -76,7 +78,27 @@ export function TenantNextStep() {
 
   const steps = useMemo(() => (data ? buildSteps({ ...data, now: Date.now() }) : []), [data])
   const { action, waiting } = useMemo(() => splitSteps(steps), [steps])
-  const { listings, inspected } = usePropertyData(steps.map((s) => s.listingId).filter(Boolean) as string[])
+  // One journey summary per open application, built from the records already loaded above.
+  const journeys = useMemo(() => {
+    if (!data) return []
+    return data.applications
+      .map((a) => {
+        const t = pickTenancy(data.tenancies.filter((x) => x.application_id === a.id) as any[])
+        const live = t ? data.terms.find((x) => x.tenancy_id === t.id && ['proposed', 'accepted', 'signed'].includes(x.status)) ?? null : null
+        const j = buildJourney({
+          app: a,
+          viewings: data.viewings.filter((v) => v.application_id === a.id) as any[],
+          tenancy: t ? { id: t.id, status: t.status } : null,
+          terms: live,
+        })
+        return { a, j }
+      })
+      .filter(({ j }) => j.phase !== 'withdrawn' && j.phase !== 'rejected')
+  }, [data])
+  const { listings, inspected } = usePropertyData([
+    ...(steps.map((s) => s.listingId).filter(Boolean) as string[]),
+    ...journeys.map(({ a }) => a.listing_id),
+  ])
 
   if (loading) {
     return (
@@ -157,6 +179,31 @@ export function TenantNextStep() {
             ))}
           </div>
         </details>
+      )}
+
+      {journeys.length > 0 && (
+        <div className="mt-6">
+          <h3 className="mb-1 text-base font-bold text-foreground">Your rental journey</h3>
+          <p className="mb-3 text-xs text-muted-foreground">Application, decision, viewing, tenancy setup and active tenancy, all in one place.</p>
+          <div className="space-y-3">
+            {journeys.map(({ a, j }) => {
+              const cur = j.steps.find((s) => s.key === j.currentKey)!
+              return (
+                <div key={a.id} className="rounded-xl border border-border bg-card p-4">
+                  <PropertySummary compact listing={listings[a.listing_id]} inspected={inspected.has(a.listing_id)} />
+                  <p className="mt-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Stage {cur.number} of 05 · {cur.title}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className={`inline-block whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${TONE_CLASS[cur.tone]}`}>{cur.label}</span>
+                    {cur.needsYou && <span className="text-xs font-bold text-amber-900">Your action needed</span>}
+                  </div>
+                  <Link href={`/journey/${a.id}`} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-bold text-primary-foreground">
+                    Open rental journey <ArrowRight size={15} aria-hidden />
+                  </Link>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
     </section>
   )

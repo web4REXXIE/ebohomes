@@ -26,6 +26,6 @@ export function dashboardLinks(role: string | null | undefined): DashboardLink[]
 
 // True when the page belongs to the dashboard, so the Dashboard tab can be highlighted.
 export function isDashboardPath(pathname: string): boolean {
-  return ['/home', '/dashboard', '/applications', '/tenancies', '/viewings', '/messages', '/notifications']
+  return ['/home', '/dashboard', '/applications', '/tenancies', '/viewings', '/journey', '/messages', '/notifications']
     .some((p) => pathname === p || pathname.startsWith(p + '/'))
 }

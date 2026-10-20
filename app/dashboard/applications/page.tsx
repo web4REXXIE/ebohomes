@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Clock, CheckCircle2, XCircle, FileText, Loader2, Home, Undo2, ArrowRight } from 'lucide-react'
+import Link from 'next/link'
+import { Clock, CheckCircle2, XCircle, FileText, HelpCircle, MessageCircle, Eye, ArrowRight } from 'lucide-react'
+import { Header } from '@/components/header'
+import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
-import { CreateTenancyModal } from '@/components/create-tenancy-modal'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
-import { tenancyPath, fmtDate, naira } from '@/lib/case-status'
+import { displayTitle, listingIsLive } from '@/lib/property-display'
 
 type ApplicationRow = {
   id: string
@@ -15,94 +16,107 @@ type ApplicationRow = {
   message: string | null
   created_at: string
   listing_id: string
-  tenant_id: string
-  landlord_id: string
-  application_data: any
   info_request: string | null
   tenant_reply: string | null
   decision_note: string | null
   tenant_interest_at: string | null
   tenant_inspected: boolean | null
   case_ref: string | null
-  decided_by: string | null
-  landlord_recommendation: string | null
-  landlord_recommendation_note: string | null
-  listing?: { id: string; title: string; location_text: string; price_monthly: number; photos: string[] }
-  tenant?: { full_name: string; phone: string }
 }
 
-type TenancyRow = {
-  id: string
-  application_id: string
-  status: string
-  rent_amount: number
-  rent_period: string
-  start_date: string
-}
-
-const TABS = ['pending', 'info_requested', 'approved', 'rejected', 'withdrawn'] as const
-const TAB_LABELS: Record<string, string> = {
-  pending: 'With EboHomes',
-  info_requested: 'Waiting for tenant',
-  approved: 'Approved',
-  rejected: 'Declined',
-  withdrawn: 'Withdrawn',
-}
-
-const RECOMMENDATION_LABELS: Record<string, string> = {
-  recommend: 'I recommend this applicant',
-  neutral: 'No preference',
-  not_recommend: 'I do not recommend this applicant',
-}
+type TenancyLite = { id: string; application_id: string; status: string | null }
 
 const BADGES: Record<string, { label: string; cls: string; icon: any }> = {
-  approved: { label: 'Approved', cls: 'border-emerald-300 bg-emerald-50 text-emerald-900', icon: CheckCircle2 },
-  rejected: { label: 'Declined', cls: 'border-red-300 bg-red-50 text-red-900', icon: XCircle },
-  withdrawn: { label: 'Withdrawn', cls: 'border-slate-300 bg-slate-100 text-slate-800', icon: Undo2 },
-  info_requested: { label: 'Waiting for tenant', cls: 'border-amber-300 bg-amber-50 text-amber-900', icon: Clock },
-  pending: { label: 'With EboHomes', cls: 'border-slate-300 bg-slate-100 text-slate-800', icon: Clock },
+  approved: { label: 'Approved', cls: 'text-emerald-900 bg-emerald-50 border border-emerald-300', icon: CheckCircle2 },
+  rejected: { label: 'Not approved', cls: 'text-red-900 bg-red-50 border border-red-300', icon: XCircle },
+  info_requested: { label: 'More information needed', cls: 'text-amber-900 bg-amber-50 border border-amber-300', icon: HelpCircle },
+  withdrawn: { label: 'Withdrawn', cls: 'text-slate-800 bg-slate-100 border border-slate-300', icon: XCircle },
+  pending: { label: 'Waiting for EboHomes', cls: 'text-amber-900 bg-amber-50 border border-amber-300', icon: Clock },
 }
 
-const field = 'w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm'
+const JOURNEY = ['Applied', 'Review', 'Approved', 'Tenancy']
 
-export default function LandlordApplicationsPage() {
+// How far the application has really got, from saved data only.
+// 0-based index of the current step. 4 means every step is done (a tenancy exists).
+function journeyPosition(a: ApplicationRow, tenancy: TenancyLite | undefined): number | null {
+  if (a.status === 'rejected' || a.status === 'withdrawn') return null
+  if (tenancy) return 4
+  if (a.status === 'approved') return 3
+  return 1
+}
+
+// True when the tenant has something to do on this application.
+function needsTenant(a: ApplicationRow, tenancy: TenancyLite | undefined): boolean {
+  if (a.status === 'info_requested') return true
+  if (a.status === 'approved' && tenancy) return true
+  if (a.status === 'approved' && !a.tenant_interest_at) return true
+  return false
+}
+
+// What each saved status means, in plain words, and what the tenant should do next.
+function meaning(a: ApplicationRow, tenancy: TenancyLite | undefined): { title: string; body: string; next: string } {
+  if (a.status === 'pending')
+    return { title: 'EboHomes is reviewing your application', body: 'Nothing is approved yet, and you do not need to pay anything.', next: 'Nothing to do. This page updates when EboHomes decides.' }
+  if (a.status === 'info_requested')
+    return { title: 'EboHomes needs more information', body: 'Your application is paused until you answer.', next: 'Type your answer in the box below and send it.' }
+  if (a.status === 'rejected')
+    return { title: 'EboHomes did not approve this application', body: 'No payment was taken.', next: 'You can apply again for this property, or search for another one.' }
+  if (a.status === 'withdrawn')
+    return { title: 'You withdrew this application', body: 'It is closed.', next: 'Apply again if you change your mind.' }
+  if (a.status === 'approved' && tenancy)
+    return { title: 'Your tenancy has been created', body: 'Your rental terms, payments and receipts are on your tenancy page.', next: 'Open your tenancy and review the rental terms.' }
+  if (a.status === 'approved' && a.tenant_interest_at)
+    return { title: 'You confirmed you want to proceed', body: 'The landlord sets up your tenancy and rental terms next. Nothing is due from you yet.', next: 'Wait for the landlord. Check My Tenancy & Payments.' }
+  if (a.status === 'approved')
+    return { title: 'Your application is approved. This is not a tenancy yet.', body: 'The property is not reserved and no payment has been taken.', next: 'See the property in person, then confirm below that you want to proceed.' }
+  return { title: 'Application received', body: '', next: 'Nothing to do.' }
+}
+
+function Progress({ position }: { position: number }) {
+  const shown = Math.min(position, JOURNEY.length - 1)
+  return (
+    <div className="mt-3" role="group" aria-label="Application progress">
+      <div className="flex gap-1" aria-hidden>
+        {JOURNEY.map((label, i) => (
+          <span key={label} className={`h-1.5 flex-1 rounded-full ${i < position ? 'bg-primary' : i === position ? 'bg-primary/40' : 'bg-border'}`} />
+        ))}
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {position >= JOURNEY.length
+          ? 'All steps complete: your tenancy has been created.'
+          : <>Step {shown + 1} of {JOURNEY.length}: <span className="font-semibold text-foreground">{JOURNEY[shown]}</span></>}
+      </p>
+    </div>
+  )
+}
+
+export default function MyApplicationsPage() {
   const router = useRouter()
   const [applications, setApplications] = useState<ApplicationRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>('pending')
+  const [replies, setReplies] = useState<Record<string, string>>({})
+  const [ready, setReady] = useState<Record<string, boolean>>({})
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [tenanciesByApp, setTenanciesByApp] = useState<Record<string, TenancyRow>>({})
-  const [tenancyModalApp, setTenancyModalApp] = useState<ApplicationRow | null>(null)
-  const [recChoice, setRecChoice] = useState<Record<string, string>>({})
-  const [recNote, setRecNote] = useState<Record<string, string>>({})
-  const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [tenancies, setTenancies] = useState<Record<string, TenancyLite>>({})
 
-  useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const load = async (silent = false) => {
-    if (!silent) setLoading(true)
-    setLoadError('')
+  const load = async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser()
-
     if (!user) {
-      router.push('/login')
+      router.push('/login?redirect=/applications')
       return
     }
-
     const { data: apps, error: appsError } = await supabase
       .from('applications')
-      .select('id, status, message, created_at, listing_id, tenant_id, landlord_id, application_data, info_request, tenant_reply, decision_note, tenant_interest_at, tenant_inspected, case_ref, decided_by, landlord_recommendation, landlord_recommendation_note')
-      .eq('landlord_id', user.id)
+      .select('id, status, message, created_at, listing_id, info_request, tenant_reply, decision_note, tenant_interest_at, tenant_inspected, case_ref')
+      .eq('tenant_id', user.id)
       .order('created_at', { ascending: false })
 
     if (appsError) {
-      setLoadError('Could not load applications. Please refresh and try again.')
+      setError('Could not load your applications. Please refresh and try again.')
       setLoading(false)
       return
     }
@@ -112,310 +126,285 @@ export default function LandlordApplicationsPage() {
       setLoading(false)
       return
     }
+    setApplications(apps as ApplicationRow[])
 
-    const listingIds = [...new Set(apps.map((a) => a.listing_id))]
-    const tenantIds = [...new Set(apps.map((a) => a.tenant_id))]
-
-    const [{ data: listings }, { data: tenants }] = await Promise.all([
-      supabase.from('listings').select('id, title, location_text, price_monthly, photos').in('id', listingIds),
-      supabase.from('profiles').select('id, full_name, phone').in('id', tenantIds),
-    ])
-
-    const merged = apps.map((a) => ({
-      ...a,
-      listing: listings?.find((l) => l.id === a.listing_id),
-      tenant: tenants?.find((t) => t.id === a.tenant_id),
-    }))
-
-    setApplications(merged)
-
-    const approvedIds = merged.filter((a) => a.status === 'approved').map((a) => a.id)
-    if (approvedIds.length > 0) {
-      const { data: tenancies } = await supabase
-        .from('tenancies')
-        .select('id, application_id, status, rent_amount, rent_period, start_date')
-        .in('application_id', approvedIds)
-
-      const map: Record<string, TenancyRow> = {}
-      tenancies?.forEach((t) => {
-        map[t.application_id] = t
-      })
-      setTenanciesByApp(map)
-    } else {
-      setTenanciesByApp({})
-    }
-
+    // Which of these applications already have a tenancy? Failing to load this only hides the shortcut.
+    const { data: ten } = await supabase.from('tenancies').select('id, application_id, status').in('application_id', apps.map((a) => a.id))
+    setTenancies(Object.fromEntries((ten ?? []).map((t: any) => [t.application_id, t])))
     setLoading(false)
   }
 
-  const { listings: summaries, inspected } = usePropertyData(
-    useMemo(() => applications.map((a) => a.listing_id), [applications]),
-  )
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  const setError = (id: string, message: string) => setActionErrors((prev) => ({ ...prev, [id]: message }))
+  const { listings, inspected } = usePropertyData(useMemo(() => applications.map((a) => a.listing_id), [applications]))
 
-  // Landlords can only add a recommendation. EboHomes records every decision.
-  const handleRecommend = async (app: ApplicationRow) => {
-    const choice = recChoice[app.id] ?? app.landlord_recommendation ?? ''
-    if (!choice || busyId) return
-    setBusyId(app.id)
-    setError(app.id, '')
-    const note = (recNote[app.id] ?? app.landlord_recommendation_note ?? '').trim()
-    const { data, error } = await supabase
+  // Applications that need the tenant come first. Order within each group stays newest first.
+  const sorted = useMemo(() => {
+    const mine = applications.filter((a) => needsTenant(a, tenancies[a.id]))
+    const rest = applications.filter((a) => !needsTenant(a, tenancies[a.id]))
+    return [...mine, ...rest]
+  }, [applications, tenancies])
+
+  // Returns true only if the change was actually saved.
+  const update = async (
+    id: string,
+    patch: Record<string, any>,
+    successMessage: string,
+    onlyWhenStatus: string[]
+  ): Promise<boolean> => {
+    if (busyId) return false
+    setBusyId(id)
+    setError('')
+    setNotice('')
+    const { data, error: err } = await supabase
       .from('applications')
-      .update({ landlord_recommendation: choice, landlord_recommendation_note: note === '' ? null : note })
-      .eq('id', app.id)
-      .in('status', ['pending', 'info_requested'])
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .in('status', onlyWhenStatus)
       .select('id')
 
-    if (error) {
-      setError(app.id, error.message)
+    let saved = false
+    if (err) {
+      setError(err.message)
     } else if (!data || data.length === 0) {
-      setError(app.id, 'This application has already been decided. The page has been refreshed.')
-      await load(true)
+      setError('That change could not be saved because the application has changed. The page has been refreshed.')
     } else {
-      setRecChoice((prev) => ({ ...prev, [app.id]: '' }))
-      setRecNote((prev) => ({ ...prev, [app.id]: '' }))
-      await load(true)
+      setNotice(successMessage)
+      saved = true
     }
     setBusyId(null)
+    await load()
+    return saved
   }
 
-  const needsLandlord = (a: ApplicationRow) =>
-    a.status === 'approved' && !!a.tenant_interest_at && !tenanciesByApp[a.id]
+  const whatsapp = (app: ApplicationRow) => {
+    const code = app.case_ref ?? displayTitle(listings[app.listing_id])
+    const params = new URLSearchParams({
+      new: '1',
+      category: 'application',
+      application: app.id,
+      listing: app.listing_id,
+      subject: `Application: ${String(code).slice(0, 90)}`,
+    })
+    return `/messages?${params.toString()}`
+  }
 
-  const countFor = (tab: string) => applications.filter((a) => a.status === tab).length
-  const filtered = applications.filter((a) => a.status === activeTab)
-  const actionCount = applications.filter(needsLandlord).length
+  const actionCount = applications.filter((a) => needsTenant(a, tenancies[a.id])).length
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8">
-      <h1 className="mb-1 text-2xl font-bold text-foreground">Applications</h1>
-      <p className="mb-2 text-sm text-muted-foreground">
-        Tenants who applied to your properties. EboHomes reviews every application and makes the final decision. You can add a recommendation to help.
-      </p>
-      {!loading && actionCount > 0 && (
-        <p className="mb-4 text-sm font-semibold text-amber-900">
-          {actionCount} approved {actionCount === 1 ? 'applicant is' : 'applicants are'} ready for you to create a tenancy.
+    <div className="flex min-h-screen flex-col bg-background">
+      <Header />
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+        <h1 className="mb-1 text-2xl font-bold text-foreground">My Applications</h1>
+        <p className="mb-6 text-sm text-muted-foreground">
+          Each card shows the property, where your application stands and what to do next.
+          {!loading && actionCount > 0 && (
+            <span className="mt-1 block font-semibold text-amber-900">
+              {actionCount} {actionCount === 1 ? 'application needs' : 'applications need'} something from you.
+            </span>
+          )}
         </p>
-      )}
+        {error && <p role="alert" className="mb-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+        {notice && <p role="status" className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">{notice}</p>}
 
-      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border" role="tablist" aria-label="Application status">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            role="tab"
-            aria-selected={activeTab === tab}
-            onClick={() => setActiveTab(tab)}
-            className={`-mb-px min-h-11 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors ${
-              activeTab === tab
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {TAB_LABELS[tab]}
-            {!loading && <span className="ml-1 text-xs">({countFor(tab)})</span>}
-          </button>
-        ))}
-      </div>
-
-      {loadError && (
-        <p role="alert" className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-900">
-          {loadError}
-        </p>
-      )}
-
-      {loading ? (
-        <div className="space-y-4" aria-busy="true" aria-label="Loading applications">
-          {[0, 1].map((i) => (
-            <div key={i} className="animate-pulse space-y-3 rounded-xl border border-border bg-card p-4">
-              <div className="h-5 w-32 rounded-full bg-secondary" />
-              <div className="flex gap-3">
-                <div className="h-16 w-20 rounded-lg bg-secondary" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-2/3 rounded bg-secondary" />
-                  <div className="h-3 w-1/2 rounded bg-secondary" />
+        {loading ? (
+          <div className="space-y-4" aria-busy="true" aria-label="Loading your applications">
+            {[0, 1].map((i) => (
+              <div key={i} className="animate-pulse space-y-3 rounded-xl border border-border bg-card p-4">
+                <div className="h-5 w-32 rounded-full bg-secondary" />
+                <div className="flex gap-3">
+                  <div className="h-16 w-20 rounded-lg bg-secondary" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-2/3 rounded bg-secondary" />
+                    <div className="h-3 w-1/2 rounded bg-secondary" />
+                    <div className="h-3 w-1/3 rounded bg-secondary" />
+                  </div>
                 </div>
+                <div className="h-16 rounded-lg bg-secondary" />
               </div>
-            </div>
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border py-14 text-center">
-          <FileText size={30} className="mx-auto mb-3 text-muted-foreground" aria-hidden />
-          <p className="text-sm text-muted-foreground">No {TAB_LABELS[activeTab].toLowerCase()} applications.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {filtered.map((app) => {
-            const b = BADGES[app.status] ?? BADGES.pending
-            const Icon = b.icon
-            const tenancy = tenanciesByApp[app.id]
-            const mine = needsLandlord(app)
-            return (
-              <section
-                key={app.id}
-                className={`overflow-hidden rounded-xl border bg-card ${mine ? 'border-amber-300' : 'border-border'}`}
-              >
-                <div className="space-y-3 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${b.cls}`}>
+            ))}
+          </div>
+        ) : applications.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border py-16 text-center">
+            <FileText size={32} className="mx-auto mb-3 text-muted-foreground" aria-hidden />
+            <p className="mb-4 text-sm text-muted-foreground">You haven&apos;t applied to any properties yet.</p>
+            <Link href="/search" className="inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground">
+              Browse properties
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {sorted.map((app) => {
+              const b = BADGES[app.status] ?? BADGES.pending
+              const Icon = b.icon
+              const listing = listings[app.listing_id]
+              const listingOpen = listingIsLive(listing?.status)
+              const tenancy = tenancies[app.id]
+              const m = meaning(app, tenancy)
+              const mine = needsTenant(app, tenancy)
+              const position = journeyPosition(app, tenancy)
+              return (
+                <div key={app.id} className={`rounded-xl border bg-card p-4 ${mine ? 'border-amber-300' : 'border-border'}`}>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${b.cls}`}>
                       <Icon size={12} aria-hidden /> {b.label}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {app.case_ref ? `${app.case_ref} · ` : ''}Applied {fmtDate(app.created_at)}
+                      {app.case_ref ? `${app.case_ref} · ` : ''}Applied {new Date(app.created_at).toLocaleDateString('en-NG')}
                     </span>
                   </div>
 
-                  <PropertySummary compact listing={summaries[app.listing_id]} inspected={inspected.has(app.listing_id)} />
+                  <PropertySummary compact listing={listing} inspected={inspected.has(app.listing_id)} href={listingOpen ? `/listing/${app.listing_id}` : undefined} />
 
-                  <dl className="grid grid-cols-2 gap-3 rounded-lg bg-secondary/60 p-3 text-sm">
-                    <div>
-                      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Applicant</dt>
-                      <dd className="truncate font-medium text-foreground">{app.tenant?.full_name ?? 'Tenant'}</dd>
+                  {position !== null && <Progress position={position} />}
+
+                  <div className={`mt-3 space-y-1 rounded-lg p-3 text-sm ${mine ? 'bg-amber-50' : 'bg-secondary'}`}>
+                    {mine && <p className="text-xs font-semibold text-amber-900">Your action</p>}
+                    <p className="font-bold text-foreground">{m.title}</p>
+                    {m.body && <p className="text-foreground">{m.body}</p>}
+                    <p className="flex items-start gap-1.5 font-semibold text-foreground">
+                      <ArrowRight size={14} className="mt-1 shrink-0" aria-hidden />
+                      <span>Next: <span className="font-normal">{m.next}</span></span>
+                    </p>
+                  </div>
+
+                  <Link href={`/journey/${app.id}`} className={`mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold ${tenancy ? 'border border-border bg-card text-foreground hover:bg-secondary' : 'bg-primary text-primary-foreground'}`}>
+                    Open rental journey
+                    <ArrowRight size={15} aria-hidden />
+                  </Link>
+
+                  {tenancy && (
+                    <Link href={`/tenancies/${tenancy.id}`} className="mt-3 inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground">
+                      Open my tenancy
+                    </Link>
+                  )}
+
+                  {listing && !listingOpen && (app.status === 'pending' || app.status === 'info_requested' || app.status === 'approved') && (
+                    <p className="mt-3 rounded-md bg-secondary p-2 text-xs text-muted-foreground">
+                      This property is not currently listed. Contact EboHomes if you need help.
+                    </p>
+                  )}
+
+                  {app.status === 'info_requested' && (
+                    <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+                      <p className="font-semibold text-amber-900">EboHomes asked:</p>
+                      <p className="mt-1 text-amber-900">{app.info_request}</p>
+                      <textarea
+                        rows={3}
+                        aria-label="Your answer to EboHomes"
+                        value={replies[app.id] ?? ''}
+                        onChange={(e) => setReplies((p) => ({ ...p, [app.id]: e.target.value }))}
+                        placeholder="Type your answer"
+                        className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      />
+                      <button
+                        disabled={busyId === app.id || !(replies[app.id] ?? '').trim()}
+                        onClick={async () => {
+                          const saved = await update(
+                            app.id,
+                            { tenant_reply: (replies[app.id] ?? '').trim(), status: 'pending' },
+                            'Your answer was sent to EboHomes. They will review your application again.',
+                            ['info_requested']
+                          )
+                          // Keep what the tenant typed if sending failed.
+                          if (saved) setReplies((p) => ({ ...p, [app.id]: '' }))
+                        }}
+                        className="mt-2 min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                      >
+                        {busyId === app.id ? 'Sending…' : 'Send answer'}
+                      </button>
                     </div>
-                    {app.application_data?.move_in_date && (
-                      <div>
-                        <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Preferred move-in</dt>
-                        <dd className="font-medium text-foreground">{app.application_data.move_in_date}</dd>
-                      </div>
-                    )}
-                    {app.status === 'approved' && app.tenant?.phone && (
-                      <div>
-                        <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Phone</dt>
-                        <dd className="font-medium text-foreground">{app.tenant.phone}</dd>
-                      </div>
-                    )}
-                  </dl>
-
-                  {app.message && (
-                    <p className="rounded-md bg-secondary p-3 text-sm text-foreground">{app.message}</p>
-                  )}
-
-                  {app.tenant_reply && app.status !== 'info_requested' && (
-                    <p className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
-                      <span className="font-semibold">Tenant replied:</span> {app.tenant_reply}
-                    </p>
-                  )}
-
-                  {app.status === 'info_requested' && app.info_request && (
-                    <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                      <span className="font-semibold">EboHomes asked:</span> {app.info_request}
-                    </p>
                   )}
 
                   {app.status === 'rejected' && app.decision_note && (
-                    <p className="rounded-md bg-secondary p-3 text-sm">
-                      <span className="font-semibold">EboHomes&apos; note:</span> {app.decision_note}
-                    </p>
+                    <p className="mt-3 rounded-md bg-secondary p-2 text-sm text-muted-foreground">EboHomes&apos; note: {app.decision_note}</p>
                   )}
 
-                  {(app.status === 'pending' || app.status === 'info_requested') && (
-                    <div className="space-y-2 rounded-lg border border-border p-3">
-                      <p className="text-xs text-muted-foreground">
-                        {app.status === 'pending'
-                          ? 'EboHomes is reviewing this application and will make the final decision.'
-                          : 'EboHomes asked the tenant a question and is waiting for the answer.'}
-                      </p>
-                      {app.landlord_recommendation && (
-                        <p className="rounded-md bg-secondary p-2 text-xs">
-                          <span className="font-semibold">Your recommendation:</span>{' '}
-                          {RECOMMENDATION_LABELS[app.landlord_recommendation] ?? app.landlord_recommendation}
-                          {app.landlord_recommendation_note ? `: ${app.landlord_recommendation_note}` : ''}
-                        </p>
-                      )}
-                      <select
-                        aria-label="Your recommendation for EboHomes"
-                        value={recChoice[app.id] ?? app.landlord_recommendation ?? ''}
-                        onChange={(e) => setRecChoice((prev) => ({ ...prev, [app.id]: e.target.value }))}
-                        className={field}
-                      >
-                        <option value="">Add a recommendation for EboHomes…</option>
-                        <option value="recommend">{RECOMMENDATION_LABELS.recommend}</option>
-                        <option value="neutral">{RECOMMENDATION_LABELS.neutral}</option>
-                        <option value="not_recommend">{RECOMMENDATION_LABELS.not_recommend}</option>
-                      </select>
-                      <input
-                        aria-label="Optional note for EboHomes"
-                        value={recNote[app.id] ?? app.landlord_recommendation_note ?? ''}
-                        onChange={(e) => setRecNote((prev) => ({ ...prev, [app.id]: e.target.value }))}
-                        placeholder="Optional note for EboHomes"
-                        maxLength={400}
-                        className={field}
-                      />
-                      <button
-                        onClick={() => handleRecommend(app)}
-                        disabled={busyId === app.id || !(recChoice[app.id] ?? app.landlord_recommendation)}
-                        className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        {busyId === app.id && <Loader2 size={14} className="animate-spin" aria-hidden />}
-                        Send recommendation
-                      </button>
-                      {actionErrors[app.id] && (
-                        <p role="alert" className="text-xs font-medium text-red-800">{actionErrors[app.id]}</p>
-                      )}
-                    </div>
+                  {(app.status === 'rejected' || app.status === 'withdrawn') && listingOpen && (
+                    <Link href={`/apply/${app.listing_id}`} className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline">
+                      Apply again →
+                    </Link>
                   )}
 
                   {app.status === 'approved' && (
-                    <div className="space-y-1 rounded-lg bg-secondary/60 p-3 text-sm">
-                      {mine && <p className="text-xs font-semibold text-amber-900">Your action</p>}
+                    <div className="mt-4 space-y-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+                      <details>
+                        <summary className="cursor-pointer font-semibold text-foreground">What to check before you pay anything</summary>
+                        <p className="mt-1 text-muted-foreground">
+                          Even if EboHomes inspected the property, check the condition, location, utilities, the landlord or agent,
+                          the rent and the agreement yourself.
+                        </p>
+                      </details>
                       {app.tenant_inspected && (
-                        <p className="font-medium text-primary">Viewing has been marked as completed.</p>
+                        <p className="font-medium text-primary">Your viewing has been marked as completed.</p>
                       )}
+                      <div className="flex flex-wrap gap-2">
+                        {listingOpen && (
+                          <Link href={`/listing/${app.listing_id}`} className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-semibold hover:bg-secondary">
+                            <Eye size={14} aria-hidden /> View property
+                          </Link>
+                        )}
+                        <Link href={whatsapp(app)} className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-semibold hover:bg-secondary">
+                          <MessageCircle size={14} aria-hidden /> Talk to EboHomes
+                        </Link>
+                        <Link href="/viewings" className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-semibold hover:bg-secondary">Request a viewing</Link>
+                      </div>
                       {app.tenant_interest_at ? (
                         <p className="font-medium text-primary">
-                          Tenant confirmed they want to proceed on {fmtDate(app.tenant_interest_at)}.
+                          You confirmed you want to proceed on {new Date(app.tenant_interest_at).toLocaleDateString('en-NG')}. To change your mind, talk to EboHomes.
                         </p>
                       ) : (
-                        <p className="text-muted-foreground">
-                          Waiting for the tenant to confirm they want to proceed. Approval is not a tenancy and does not record any payment.
-                        </p>
+                        <div className="space-y-2">
+                          <label className="flex items-start gap-2">
+                            <input type="checkbox" className="mt-1 h-4 w-4" checked={!!ready[app.id]} onChange={(e) => setReady((p) => ({ ...p, [app.id]: e.target.checked }))} />
+                            <span>I have seen this property in person and want to proceed.</span>
+                          </label>
+                          <button
+                            disabled={busyId === app.id || !ready[app.id]}
+                            onClick={() =>
+                              update(
+                                app.id,
+                                { tenant_interest_at: new Date().toISOString() },
+                                'Confirmed. You told EboHomes you want to proceed. The landlord sets up your tenancy next. Nothing is reserved or charged yet.',
+                                ['approved']
+                              )
+                            }
+                            className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                          >
+                            Proceed with EboHomes
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}
 
-                  {app.status === 'approved' &&
-                    (tenancy ? (
-                      <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm">
-                        <p className="font-semibold capitalize text-primary">Tenancy: {tenancy.status}</p>
-                        <p className="text-muted-foreground">
-                          {naira(tenancy.rent_amount)} / {tenancy.rent_period} · from {fmtDate(tenancy.start_date)}
-                        </p>
-                        <Link
-                          href={tenancyPath('landlord', tenancy.id)}
-                          className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border bg-background px-4 text-sm font-semibold hover:bg-secondary"
-                        >
-                          Open tenancy <ArrowRight size={14} aria-hidden />
-                        </Link>
-                      </div>
-                    ) : app.tenant_interest_at ? (
-                      <button
-                        onClick={() => setTenancyModalApp(app)}
-                        className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-                      >
-                        <Home size={14} aria-hidden /> Create tenancy
-                      </button>
-                    ) : null)}
+                  {(app.status === 'pending' || app.status === 'info_requested' || (app.status === 'approved' && !app.tenant_interest_at)) && (
+                    <button
+                      disabled={busyId === app.id}
+                      onClick={() => {
+                        if (window.confirm('Withdraw this application?')) {
+                          update(app.id, { status: 'withdrawn' }, 'Your application was withdrawn.', [
+                            'pending',
+                            'info_requested',
+                            'approved',
+                          ])
+                        }
+                      }}
+                      className="mt-3 min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline"
+                    >
+                      Withdraw application
+                    </button>
+                  )}
                 </div>
-              </section>
-            )
-          })}
-        </div>
-      )}
-
-      {tenancyModalApp && (
-        <CreateTenancyModal
-          application={tenancyModalApp}
-          listing={tenancyModalApp.listing!}
-          landlordId={tenancyModalApp.landlord_id}
-          onClose={() => setTenancyModalApp(null)}
-          onCreated={(tenancy) => {
-            setTenanciesByApp((prev) => ({ ...prev, [tenancy.application_id]: tenancy }))
-            setTenancyModalApp(null)
-          }}
-        />
-      )}
+              )
+            })}
+          </div>
+        )}
+      </main>
+      <Footer />
     </div>
   )
 }

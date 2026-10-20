@@ -261,6 +261,12 @@ export function ViewingsManager({ role }: Props) {
             <button disabled={busy} onClick={() => call('cancel_viewing', { p_viewing: v.id, p_note: null }, `Viewing of "${nameOf(v.listing_id)}" cancelled.`, 'Cancel this viewing?')} className="min-h-11 text-sm text-muted-foreground underline hover:text-destructive">Cancel this viewing</button>
           )}
 
+          {mine && v.application_id && (
+            <Link href={`/journey/${v.application_id}`} className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary hover:underline">
+              View my rental journey <ArrowRight size={14} aria-hidden />
+            </Link>
+          )}
+
           <History events={events[v.id] ?? []} />
         </div>
       </section>
