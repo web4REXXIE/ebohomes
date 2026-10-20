@@ -1,9 +1,13 @@
 'use client'
 
-import { useParams } from 'next/navigation'
-import { TenancyHub } from '@/components/tenancy-hub'
+import { TenancyList } from '@/components/tenancy-list'
+import { TenancyHubLinks } from '@/components/tenancy-hub-links'
 
-export default function TenantTenancyPage() {
-  const params = useParams()
-  return <TenancyHub role="tenant" tenancyId={String(params?.id ?? '')} />
+export default function TenantTenanciesPage() {
+  return (
+    <>
+      <TenancyHubLinks role="tenant" />
+      <TenancyList role="tenant" />
+    </>
+  )
 }
