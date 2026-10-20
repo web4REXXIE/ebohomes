@@ -2,17 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, CheckCircle2, Clock, Loader2 } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Clock, Heart, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { buildSteps, splitSteps, type NextStepInput, type Step } from '@/lib/next-step'
 
 type Loaded = Omit<NextStepInput, 'now'>
 
-export function TenantNextStep() {
+const FIRST_VISIBLE = 3
+
+// "Continue your rental journey". Same data and rules as before (lib/next-step.ts); only the look changed.
+// savedCount is optional: when the page passes it, a card links to the tenant's saved homes.
+export function TenantNextStep({ savedCount = 0 }: { savedCount?: number }) {
   const [data, setData] = useState<Loaded | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState<string[]>([])
+  const [showAll, setShowAll] = useState(false)
 
   const load = useCallback(async () => {
     const { data: auth } = await supabase.auth.getUser()
@@ -78,9 +83,27 @@ export function TenantNextStep() {
   const { action, waiting } = useMemo(() => splitSteps(steps), [steps])
   const { listings, inspected } = usePropertyData(steps.map((s) => s.listingId).filter(Boolean) as string[])
 
+  const shell = (children: React.ReactNode) => (
+    <section
+      aria-labelledby="journey-title"
+      className="rounded-2xl border border-emerald-200/70 bg-emerald-50/70 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20 sm:p-6"
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 id="journey-title" className="text-lg font-bold text-foreground sm:text-xl">Continue your rental journey</h2>
+          <p className="text-sm text-muted-foreground">Pick up where you left off and complete your next step.</p>
+        </div>
+        <Link href="/applications" className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary">
+          View all <ArrowRight size={14} />
+        </Link>
+      </div>
+      {children}
+    </section>
+  )
+
   if (loading) {
-    return (
-      <div className="mb-6 flex items-center gap-2 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+    return shell(
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
         <Loader2 className="animate-spin text-primary" size={18} /> Checking what you need to do…
       </div>
     )
@@ -94,70 +117,93 @@ export function TenantNextStep() {
       <p className="text-sm font-bold text-foreground">{s.label}</p>
     ) : null
 
-  const first = action[0]
-  const more = action.slice(1)
+  const ordered = [...action, ...waiting]
+  const visible = showAll ? ordered : ordered.slice(0, FIRST_VISIBLE)
+  const hiddenCount = ordered.length - visible.length
 
-  return (
-    <section className="mb-8" aria-labelledby="next-step-title">
-      <h2 id="next-step-title" className="mb-3 text-lg font-bold text-foreground">Your next step</h2>
+  const stepCard = (s: Step) => {
+    const mine = s.owner === 'you'
+    return (
+      <div
+        key={s.key}
+        className={`flex flex-col rounded-xl border bg-card p-4 ${mine ? 'border-amber-300 dark:border-amber-500/60' : 'border-border'}`}
+      >
+        <span
+          className={`mb-3 inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+            mine
+              ? 'border-amber-400 bg-amber-50 text-amber-900'
+              : 'border-blue-200 bg-blue-50 text-blue-900'
+          }`}
+        >
+          {mine ? 'ACTION NEEDED FROM YOU' : (<><Clock size={11} aria-hidden /> WAITING</>)}
+        </span>
+        {property(s)}
+        <p className="mt-3 text-sm font-extrabold text-foreground">{s.title}</p>
+        <p className="mt-1 flex-1 text-xs leading-relaxed text-muted-foreground">{s.body}</p>
+        {s.cta && (
+          <Link
+            href={s.href}
+            className="mt-3 inline-flex min-h-10 w-fit items-center gap-2 rounded-full bg-primary px-4 text-sm font-bold text-primary-foreground hover:bg-primary/90"
+          >
+            {s.cta} <ArrowRight size={14} />
+          </Link>
+        )}
+      </div>
+    )
+  }
 
+  const savedCard =
+    savedCount > 0 ? (
+      <div key="saved" className="flex flex-col rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-50 text-rose-600 dark:bg-rose-950/40">
+            <Heart size={20} />
+          </span>
+          <p className="text-sm font-extrabold text-foreground">
+            {savedCount} saved {savedCount === 1 ? 'home' : 'homes'}
+          </p>
+        </div>
+        <p className="mt-2 flex-1 text-xs leading-relaxed text-muted-foreground">Shortlist your favourites and compare them.</p>
+        <Link href="/saved" className="mt-3 inline-flex w-fit items-center gap-1 text-sm font-bold text-primary underline-offset-2 hover:underline">
+          View saved homes <ArrowRight size={14} />
+        </Link>
+      </div>
+    ) : null
+
+  return shell(
+    <>
       {failed.length > 0 && (
         <div className="mb-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           Some of your information could not load ({failed.join(', ')}), so this list may be incomplete. Please refresh.
         </div>
       )}
 
-      {first ? (
-        <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-4">
-          <span className="inline-block rounded-full border border-amber-400 bg-white px-2.5 py-1 text-xs font-bold text-amber-900">ACTION NEEDED FROM YOU</span>
-          <div className="mt-3 rounded-lg bg-white p-3">{property(first)}</div>
-          <p className="mt-3 text-base font-extrabold text-foreground">{first.title}</p>
-          <p className="mt-1 text-sm text-foreground">{first.body}</p>
-          {first.cta && (
-            <Link href={first.href} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-bold text-primary-foreground">
-              {first.cta} <ArrowRight size={15} />
-            </Link>
-          )}
-        </div>
-      ) : failed.length === 0 ? (
-        <div className="flex items-start gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900">
+      {ordered.length === 0 && failed.length === 0 && (
+        <div className="mb-3 flex items-start gap-3 rounded-xl border border-emerald-300 bg-card p-4 text-sm text-emerald-900 dark:text-emerald-200">
           <CheckCircle2 className="mt-0.5 shrink-0" size={20} />
           <div>
             <p className="font-bold">Nothing to do right now.</p>
-            <p>{waiting.length > 0 ? 'EboHomes is working on the items below.' : 'When you apply for a property or book a viewing, your next step shows here.'}</p>
-            {waiting.length === 0 && <Link href="/search" className="mt-1 inline-block font-bold underline">Search homes</Link>}
+            <p className="text-muted-foreground">When you apply for a property or book a viewing, your next step shows here.</p>
+            <Link href="/search" className="mt-1 inline-block font-bold text-primary underline">Search homes</Link>
           </div>
-        </div>
-      ) : null}
-
-      {more.length > 0 && (
-        <div className="mt-4 space-y-3">
-          <p className="text-sm font-bold text-foreground">Also needs you ({more.length})</p>
-          {more.map((s) => (
-            <div key={s.key} className="rounded-xl border border-amber-300 bg-card p-4">
-              {property(s)}
-              <p className="mt-2 text-sm font-bold text-foreground">{s.title}</p>
-              <p className="text-xs text-muted-foreground">{s.body}</p>
-              {s.cta && <Link href={s.href} className="mt-2 inline-flex min-h-10 items-center rounded-full bg-primary px-4 text-xs font-bold text-primary-foreground">{s.cta}</Link>}
-            </div>
-          ))}
         </div>
       )}
 
-      {waiting.length > 0 && (
-        <details className="mt-4 rounded-xl border border-border bg-card p-4" open={action.length === 0}>
-          <summary className="cursor-pointer text-sm font-bold text-foreground">Waiting on EboHomes or the landlord ({waiting.length})</summary>
-          <div className="mt-3 space-y-3">
-            {waiting.map((s) => (
-              <div key={s.key} className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                {property(s)}
-                <p className="mt-2 flex items-start gap-1.5 text-sm font-bold text-blue-900"><Clock size={14} className="mt-0.5 shrink-0" /> {s.title}</p>
-                <p className="text-xs text-blue-900">{s.body}</p>
-              </div>
-            ))}
-          </div>
-        </details>
+      {(visible.length > 0 || savedCard) && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {visible.map(stepCard)}
+          {savedCard}
+        </div>
       )}
-    </section>
+
+      {ordered.length > FIRST_VISIBLE && (
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-3 text-sm font-bold text-primary underline-offset-2 hover:underline"
+        >
+          {showAll ? 'Show fewer' : `Show ${hiddenCount} more`}
+        </button>
+      )}
+    </>
   )
 }
