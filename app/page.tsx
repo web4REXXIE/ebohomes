@@ -48,6 +48,7 @@ import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { InstallButton, InstallPromoSection } from '@/components/install-button'
 import { ListingCard } from '@/components/listing-card'
+import { SignedInHome } from '@/components/signed-in-home'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import useEmblaCarousel from 'embla-carousel-react'
@@ -1075,6 +1076,9 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Signed-in dashboard: tenant or landlord sections (nothing for visitors) */}
+        <SignedInHome />
+
         {/* Safety strip */}
         <section className="mx-auto max-w-5xl px-4 pt-5 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
@@ -1190,26 +1194,36 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* See More Properties CTA */}
+        {/* A safer way to find and rent homes (replaces "See More Properties") */}
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-5 text-center md:text-left">
-            <div className="flex flex-col md:flex-row items-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <Search size={26} className="text-primary" />
+          <div className="relative isolate overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 text-white">
+            <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.2fr_2fr_auto] lg:items-center">
+              <h3 className="text-2xl font-extrabold leading-tight sm:text-3xl">A safer way to find and rent homes.</h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {[
+                  { icon: BadgeCheck, title: 'Reviewed listings', text: 'Checked before they go live' },
+                  { icon: ShieldCheck, title: 'Inspected homes', text: 'Look for the Inspected badge' },
+                  { icon: Headphones, title: 'Support', text: 'Message EboHomes any time' },
+                ].map((p) => (
+                  <div key={p.title} className="flex items-start gap-2.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
+                      <p.icon size={18} />
+                    </span>
+                    <div>
+                      <p className="text-sm font-bold">{p.title}</p>
+                      <p className="text-xs text-white/70">{p.text}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div>
-                <h3 className="text-lg md:text-xl font-extrabold text-foreground uppercase tracking-wide">
-                  See More Properties
-                </h3>
-                <p className="text-muted-foreground text-sm">Browse verified properties across Ebonyi State</p>
-              </div>
+              <button
+                type="button"
+                onClick={() => router.push('/search')}
+                className="inline-flex w-fit items-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-emerald-950 hover:bg-amber-300"
+              >
+                <Search size={16} /> Search properties
+              </button>
             </div>
-            <Button
-              onClick={() => router.push('/search')}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-8 py-3 rounded-full text-base whitespace-nowrap"
-            >
-              See More Properties →
-            </Button>
           </div>
         </section>
 
