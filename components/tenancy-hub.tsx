@@ -55,15 +55,22 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
     }
     setOtherRole(null)
     setT(found.row)
-    const [a, b, c, d, e, g] = await Promise.all([
+    const [a, b, c, d, e] = await Promise.all([
       supabase.from('rental_terms').select('*').eq('tenancy_id', tenancyId).order('version', { ascending: false }),
       supabase.from('handover_records').select('*').eq('tenancy_id', tenancyId),
       supabase.from('maintenance_requests').select('*').eq('tenancy_id', tenancyId).order('created_at', { ascending: false }),
       supabase.from('tenancy_disputes').select('*').eq('tenancy_id', tenancyId).order('created_at', { ascending: false }),
       supabase.from('tenancy_settlements').select('*').eq('tenancy_id', tenancyId).maybeSingle(),
-      supabase.from('tenancy_dispute_events').select('*').order('created_at', { ascending: true }),
-    ])
-    if (a.error) setMsg({ text: 'Some sections could not load. Run the batch 5 SQL first, then refresh.', ok: false })
+      ])
+    const disputeIds = (d.data ?? []).map((x: any) => x.id)
+    const g = disputeIds.length
+      ? await supabase.from('tenancy_dispute_events').select('*').in('dispute_id', disputeIds).order('created_at', { ascending: true })
+      : { data: [] as any[], error: null }
+    const failedParts = [a, b, c, d, e, g].filter((r: any) => r.error)
+    if (failedParts.length) {
+      console.error('Tenancy sections failed to load:', failedParts.map((r: any) => r.error?.message))
+      setMsg({ text: 'Some sections of this tenancy could not load. Please refresh the page. If it keeps happening, contact EboHomes support.', ok: false })
+    }
     setTerms(a.data ?? []); setHandovers(b.data ?? []); setRequests(c.data ?? [])
     setDisputes(d.data ?? []); setSettlement(e.data ?? null); setEvents(g.data ?? [])
     setLoading(false)
@@ -83,9 +90,34 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
   }
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" size={26} /></div>
-  if (!t) return <p className="text-center py-16 text-sm text-muted-foreground">Tenancy not found, or it is not yours to view.</p>
-
   const back = role === 'tenant' ? '/tenancies' : '/dashboard/tenancies'
+  if (loadFailed) {
+    return (
+      <div className="max-w-3xl mx-auto w-full px-4 py-16 text-center space-y-3">
+        <p className="text-sm text-muted-foreground">{TENANCY_LOAD_ERROR_TEXT}</p>
+        <div className="flex justify-center gap-2">
+          <button className={primary} onClick={() => { setLoading(true); load() }}>Try again</button>
+          <Link href={back} className={outline}>Back to tenancies</Link>
+        </div>
+      </div>
+    )
+  }
+  if (!t) {
+    return (
+      <div className="max-w-3xl mx-auto w-full px-4 py-16 text-center space-y-3">
+        <p className="font-semibold text-foreground">Tenancy not found</p>
+        {otherRole ? (
+          <>
+            <p className="text-sm text-muted-foreground">This tenancy is on your {otherRole} side, not your {role} side.</p>
+            <Link href={tenancyPath(otherRole, tenancyId)} className={primary}>Open it as {otherRole}</Link>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">{TENANCY_NOT_FOUND_TEXT}</p>
+        )}
+        <div><Link href={back} className={outline}>Back to tenancies</Link></div>
+      </div>
+    )
+  }
   const live = terms.find((x) => ['proposed', 'accepted', 'signed'].includes(x.status))
   const other = role === 'tenant' ? 'landlord' : 'tenant'
   const myAccepted = live && (role === 'tenant' ? live.tenant_accepted_at : live.landlord_accepted_at)
@@ -97,7 +129,12 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
       <div className={card}>
         <p className="font-semibold text-foreground text-base">{t.title ?? 'Property'}</p>
         <p className="text-xs text-muted-foreground">{t.location_text ?? ''} {t.tenancy_code ? `· ${t.tenancy_code}` : ''}</p>
-        <p>{naira(t.rent_amount)} / {t.rent_period} · {fmtDate(t.start_date)} to {fmtDate(t.end_date)} · <span className="capitalize">{t.status}</span></p>
+        <p>
+  {naira(live?.status === 'signed' ? live.rent_amount : t.rent_amount)}
+  {' / '}{t.rent_period}
+  {' · '}{fmtDate(t.start_date)} to {fmtDate(t.end_date)}
+  {' · '}<span className="capitalize">{t.status}</span>
+</p>
         <p className="text-xs text-muted-foreground">{role === 'tenant' ? 'Landlord' : 'Tenant'}: {t.other_party ?? '—'}</p>
       </div>
       {msg && <p className={`text-sm rounded-md p-3 ${msg.ok ? 'text-primary bg-primary/10' : 'text-destructive bg-destructive/10'}`}>{msg.text}</p>}
@@ -131,7 +168,7 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
         ) : (
           <p className="text-sm text-muted-foreground">{terms[0] ? `The last proposed terms were ${terms[0].status}.` : 'No terms have been proposed yet.'}</p>
         )}
-        {role === 'tenant' && live?.status === 'signed' && <PayOnlinePanel tenancyId={tenancyId} />}
+        {role === 'tenant' && live?.status === 'signed' && <PayOnlinePanel tenancyId={tenancyId} terms={live} title={t.title} reference={t.tenancy_code} period={t.rent_period} />}
         {role === 'landlord' && (!live || live.status !== 'signed') && (
           open === 'terms' ? (
             <div className={card}>
