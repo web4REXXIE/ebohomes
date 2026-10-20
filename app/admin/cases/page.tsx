@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fmtDate, fmtDateTime, label, naira, toIso } from '@/lib/case-status'
+import { PropertySummary, usePropertyData } from '@/components/property-summary'
 
 const TABS = [
   ['legacy', 'Old decisions'],
@@ -16,16 +17,35 @@ const TABS = [
 ] as const
 type Tab = (typeof TABS)[number][0]
 
-const box = 'bg-card border border-border rounded-lg p-4 text-sm space-y-2'
-const inp = 'w-full bg-input border border-border rounded-md px-3 py-2 text-xs'
-const btn = 'px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-50'
-const btn2 = 'px-3 py-1.5 rounded-md border border-border text-xs disabled:opacity-50'
+const box = 'bg-card border border-border rounded-xl p-4 text-sm space-y-3'
+const inp = 'w-full bg-input border border-border rounded-md px-3 py-2.5 text-sm'
+const btn = 'min-h-11 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50'
+const btn2 = 'min-h-11 px-4 py-2 rounded-md border border-border text-sm font-semibold disabled:opacity-50'
+
+const GREEN = ['completed', 'resolved', 'approved', 'signed', 'applied', 'accepted']
+const BLUE = ['scheduled']
+const AMBER = ['open', 'requested', 'proposed', 'under_review', 'acknowledged', 'in_progress', 'agreed', 'disputed', 'offered']
+
+function pillTone(status: string | null | undefined) {
+  const s = status ?? ''
+  if (GREEN.includes(s)) return 'border-emerald-300 bg-emerald-50 text-emerald-900'
+  if (BLUE.includes(s)) return 'border-blue-300 bg-blue-50 text-blue-900'
+  if (AMBER.includes(s)) return 'border-amber-300 bg-amber-50 text-amber-900'
+  return 'border-slate-300 bg-slate-100 text-slate-800'
+}
+
+function Pill({ status, text }: { status: string | null | undefined; text: string }) {
+  return (
+    <span className={`h-fit shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${pillTone(status)}`}>
+      {text}
+    </span>
+  )
+}
 
 export default function AdminCasesPage() {
   const [tab, setTab] = useState<Tab>('legacy')
   const [rows, setRows] = useState<any[]>([])
   const [codes, setCodes] = useState<Record<string, string>>({})
-  const [titles, setTitles] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
@@ -59,11 +79,6 @@ export default function AdminCasesPage() {
       const { data: t } = await supabase.from('tenancies').select('id, tenancy_code').in('id', tIds)
       setCodes(Object.fromEntries((t ?? []).map((x: any) => [x.id, x.tenancy_code])))
     }
-    const lIds = Array.from(new Set(list.map((r: any) => r.listing_id).filter(Boolean)))
-    if (lIds.length) {
-      const { data: l } = await supabase.from('listings').select('id, title').in('id', lIds)
-      setTitles(Object.fromEntries((l ?? []).map((x: any) => [x.id, x.title])))
-    }
     if (tab === 'disputes' && list.length) {
       const { data: e } = await supabase.from('tenancy_dispute_events').select('*').order('created_at')
       setEvents(e ?? [])
@@ -80,6 +95,11 @@ export default function AdminCasesPage() {
     load()
   }, [load])
 
+  // Property photos and details for the lists that show a property (old decisions and viewings).
+  const { listings, inspected } = usePropertyData(
+    useMemo(() => rows.map((r) => r.listing_id).filter(Boolean) as string[], [rows])
+  )
+
   const call = async (fn: string, args: Record<string, any>, ok: string, confirmText?: string) => {
     if (busy) return
     if (confirmText && !window.confirm(confirmText)) return
@@ -88,6 +108,7 @@ export default function AdminCasesPage() {
     const { error } = await supabase.rpc(fn, args)
     setMsg(error ? { text: error.message, ok: false } : { text: ok, ok: true })
     setBusy(false)
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
     if (!error) await load()
   }
 
@@ -96,37 +117,88 @@ export default function AdminCasesPage() {
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold text-foreground mb-1">Cases</h1>
-      <p className="text-sm text-muted-foreground mb-4">Viewings, agreements, repairs, disputes, deposit settlements and renewals. EboHomes records decisions here. It does not move money.</p>
-      <div className="flex gap-2 mb-4 overflow-x-auto border-b border-border">
+      <p className="text-sm text-muted-foreground mb-4">
+        Viewings, agreements, repairs, disputes, deposit settlements and renewals. EboHomes records decisions here. It does not move money.
+      </p>
+
+      <div className="flex gap-1 mb-4 overflow-x-auto border-b border-border" role="tablist" aria-label="Case type">
         {TABS.map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === k ? 'border-primary text-primary font-medium' : 'border-transparent text-muted-foreground'}`}>{l}</button>
+          <button
+            key={k}
+            role="tab"
+            aria-selected={tab === k}
+            onClick={() => setTab(k)}
+            className={`min-h-11 px-3 text-sm whitespace-nowrap border-b-2 -mb-px ${
+              tab === k ? 'border-primary text-primary font-semibold' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {l}
+          </button>
         ))}
       </div>
-      {msg && <p className={`text-sm rounded-md p-3 mb-3 ${msg.ok ? 'text-primary bg-primary/10' : 'text-destructive bg-destructive/10'}`}>{msg.text}</p>}
-      {loading ? <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" size={26} /></div> : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-12">Nothing here.</p>
+
+      {msg && (
+        <p
+          role={msg.ok ? 'status' : 'alert'}
+          className={`text-sm font-medium rounded-md border p-3 mb-3 ${
+            msg.ok ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-red-300 bg-red-50 text-red-900'
+          }`}
+        >
+          {msg.text}
+        </p>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="animate-spin text-primary" size={26} aria-label="Loading cases" />
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-12 border border-dashed border-border rounded-xl">Nothing here.</p>
       ) : (
         <div className="space-y-3">
           {rows.map((r) => (
-            <div key={r.id} className={box}>
+            <section key={r.id} className={box}>
               {tab === 'legacy' && (
                 <>
-                  <p className="font-semibold">{titles[r.listing_id] ?? 'Listing'} · <span className="capitalize">{r.status}</span></p>
-                  <p className="text-xs text-muted-foreground">Decided by the landlord before EboHomes review began. Applied {fmtDate(r.created_at)}.{r.decision_note ? ` Note: ${r.decision_note}` : ''}</p>
-                  <input className={inp} placeholder="Note (optional)" value={f[r.id] ?? ''} onChange={(e) => set(r.id, e.target.value)} />
-                  <div className="flex gap-2">
+                  <div className="flex justify-between gap-2">
+                    <p className="font-semibold text-foreground">Landlord decision</p>
+                    <Pill status={r.status} text={r.status} />
+                  </div>
+                  <PropertySummary compact listing={listings[r.listing_id]} inspected={inspected.has(r.listing_id)} />
+                  <p className="text-xs text-muted-foreground">
+                    Decided by the landlord before EboHomes review began. Applied {fmtDate(r.created_at)}.{r.decision_note ? ` Note: ${r.decision_note}` : ''}
+                  </p>
+                  <input
+                    aria-label="Note (optional)"
+                    className={inp}
+                    placeholder="Note (optional)"
+                    value={f[r.id] ?? ''}
+                    onChange={(e) => set(r.id, e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-2">
                     <button disabled={busy} className={btn} onClick={() => call('admin_review_legacy_decision', { p_application: r.id, p_action: 'ratify', p_note: f[r.id] ?? null }, 'Decision confirmed by EboHomes.', 'Confirm this landlord decision as EboHomes-reviewed?')}>Confirm decision</button>
                     <button disabled={busy} className={btn2} onClick={() => call('admin_review_legacy_decision', { p_application: r.id, p_action: 'reopen', p_note: null }, 'Application reopened for review.', 'Send this application back to the review queue? The tenant and landlord will be told.')}>Reopen for review</button>
                   </div>
                 </>
               )}
+
               {tab === 'viewings' && (
                 <>
-                  <div className="flex justify-between gap-2"><p className="font-semibold">{titles[r.listing_id] ?? 'Listing'}</p><span className="text-xs border border-border rounded-full px-2 py-1 capitalize h-fit">{label(r.status)}</span></div>
-                  <p className="text-xs text-muted-foreground">{r.scheduled_for ? `Set for ${fmtDateTime(r.scheduled_for)}` : r.preferred_at ? `Tenant prefers ${fmtDateTime(r.preferred_at)}` : 'No time chosen'}{r.tenant_note ? ` · ${r.tenant_note}` : ''}</p>
+                  <div className="flex justify-between gap-2">
+                    <p className="font-semibold text-foreground">Viewing</p>
+                    <Pill status={r.status} text={label(r.status)} />
+                  </div>
+                  <PropertySummary compact listing={listings[r.listing_id]} inspected={inspected.has(r.listing_id)} />
+                  <p className="text-xs text-muted-foreground">
+                    {r.scheduled_for ? `Set for ${fmtDateTime(r.scheduled_for)}` : r.preferred_at ? `Tenant prefers ${fmtDateTime(r.preferred_at)}` : 'No preferred time given'}
+                    {r.tenant_note ? ` · ${r.tenant_note}` : ''}
+                  </p>
                   {['requested', 'scheduled'].includes(r.status) && (
                     <div className="space-y-2">
-                      <input type="datetime-local" className={inp} value={f[r.id] ?? ''} onChange={(e) => set(r.id, e.target.value)} />
+                      <label className="block text-xs font-semibold text-foreground">
+                        Date and time
+                        <input type="datetime-local" className={`${inp} mt-1`} value={f[r.id] ?? ''} onChange={(e) => set(r.id, e.target.value)} />
+                      </label>
                       <div className="flex flex-wrap gap-2">
                         <button disabled={busy || !toIso(f[r.id] ?? '')} className={btn} onClick={() => call('schedule_viewing', { p_viewing: r.id, p_when: toIso(f[r.id] ?? ''), p_note: null }, 'Viewing scheduled.')}>{r.status === 'scheduled' ? 'Move' : 'Schedule'}</button>
                         {r.status === 'scheduled' && <button disabled={busy} className={btn2} onClick={() => call('complete_viewing', { p_viewing: r.id, p_outcome: 'completed', p_note: null }, 'Marked done.')}>Mark done</button>}
@@ -137,41 +209,89 @@ export default function AdminCasesPage() {
                   )}
                 </>
               )}
+
               {tab === 'terms' && (
                 <>
-                  <div className="flex justify-between gap-2"><p className="font-semibold">{code(r)} · version {r.version}</p><span className="text-xs border border-border rounded-full px-2 py-1 capitalize h-fit">{label(r.status)}</span></div>
-                  <p>Rent {naira(r.rent_amount)} · Deposit {naira(r.deposit_amount)} · Fees {naira(r.fees_amount)}</p>
-                  <p className="text-xs text-muted-foreground">Tenant {r.tenant_accepted_at ? `accepted ${fmtDate(r.tenant_accepted_at)}` : 'not yet'} · Landlord {r.landlord_accepted_at ? `accepted ${fmtDate(r.landlord_accepted_at)}` : 'not yet'}{r.signed_reference ? ` · Signed ref ${r.signed_reference}` : ''}</p>
+                  <div className="flex justify-between gap-2">
+                    <p className="font-semibold text-foreground">{code(r)} · version {r.version}</p>
+                    <Pill status={r.status} text={label(r.status)} />
+                  </div>
+                  <dl className="grid grid-cols-3 gap-2 rounded-lg bg-secondary/60 p-3">
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Rent</dt>
+                      <dd className="font-bold text-foreground">{naira(r.rent_amount)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Deposit</dt>
+                      <dd className="font-bold text-foreground">{naira(r.deposit_amount)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Fees</dt>
+                      <dd className="font-bold text-foreground">{naira(r.fees_amount)}</dd>
+                    </div>
+                  </dl>
+                  <p className="text-xs text-muted-foreground">
+                    Tenant {r.tenant_accepted_at ? `accepted ${fmtDate(r.tenant_accepted_at)}` : 'has not accepted yet'} · Landlord {r.landlord_accepted_at ? `accepted ${fmtDate(r.landlord_accepted_at)}` : 'has not accepted yet'}
+                    {r.signed_reference ? ` · Signed ref ${r.signed_reference}` : ''}
+                  </p>
                   {r.status === 'accepted' && (
-                    <div className="flex gap-2">
-                      <input className={inp} placeholder="Reference of the signed agreement you saw" value={f[r.id] ?? ''} onChange={(e) => set(r.id, e.target.value)} />
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        aria-label="Reference of the signed agreement"
+                        className={inp}
+                        placeholder="Reference of the signed agreement you saw"
+                        value={f[r.id] ?? ''}
+                        onChange={(e) => set(r.id, e.target.value)}
+                      />
                       <button disabled={busy || !(f[r.id] ?? '').trim()} className={btn} onClick={() => call('record_signed_agreement', { p_terms: r.id, p_reference: f[r.id] }, 'Signed agreement recorded.', 'Only record this after you have seen the signed document. Continue?')}>Record</button>
                     </div>
                   )}
                 </>
               )}
+
               {tab === 'maintenance' && (
                 <>
-                  <div className="flex justify-between gap-2"><p className="font-semibold">{r.title}</p><span className="text-xs border border-border rounded-full px-2 py-1 capitalize h-fit">{label(r.status)}</span></div>
+                  <div className="flex justify-between gap-2">
+                    <p className="font-semibold text-foreground">{r.title}</p>
+                    <Pill status={r.status} text={label(r.status)} />
+                  </div>
                   <p className="text-xs text-muted-foreground">{code(r)} · <span className="capitalize">{r.priority}</span> · {fmtDate(r.created_at)}</p>
-                  <p>{r.description}</p>
+                  <p className="text-foreground">{r.description}</p>
                   {['open', 'acknowledged', 'in_progress'].includes(r.status) && (
-                    <div className="flex gap-2">
-                      <input className={inp} placeholder="What was done (required)" value={f[r.id] ?? ''} onChange={(e) => set(r.id, e.target.value)} />
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        aria-label="What was done"
+                        className={inp}
+                        placeholder="What was done (required)"
+                        value={f[r.id] ?? ''}
+                        onChange={(e) => set(r.id, e.target.value)}
+                      />
                       <button disabled={busy} className={btn2} onClick={() => call('maintenance_action', { p_request: r.id, p_action: 'resolve', p_note: f[r.id] ?? '' }, 'Marked fixed.', 'Mark fixed on the landlord\'s behalf?')}>Mark fixed</button>
                     </div>
                   )}
                 </>
               )}
+
               {tab === 'disputes' && (
                 <>
-                  <div className="flex justify-between gap-2"><p className="font-semibold capitalize">{label(r.category)} · {code(r)}</p><span className="text-xs border border-border rounded-full px-2 py-1 capitalize h-fit">{label(r.status)}</span></div>
-                  <p>{r.summary}</p>
-                  {events.filter((e) => e.dispute_id === r.id && e.kind !== 'created').map((e) => <p key={e.id} className="text-xs bg-secondary rounded-md p-2">{fmtDateTime(e.created_at)}: {e.body}</p>)}
-                  {r.resolution && <p className="text-xs">Outcome: {r.resolution}</p>}
+                  <div className="flex justify-between gap-2">
+                    <p className="font-semibold capitalize text-foreground">{label(r.category)} · {code(r)}</p>
+                    <Pill status={r.status} text={label(r.status)} />
+                  </div>
+                  <p className="text-foreground">{r.summary}</p>
+                  {events.filter((e) => e.dispute_id === r.id && e.kind !== 'created').map((e) => (
+                    <p key={e.id} className="text-xs bg-secondary rounded-md p-2">{fmtDateTime(e.created_at)}: {e.body}</p>
+                  ))}
+                  {r.resolution && <p className="text-xs text-foreground"><span className="font-semibold">Outcome:</span> {r.resolution}</p>}
                   {['open', 'under_review'].includes(r.status) && (
                     <div className="space-y-2">
-                      <input className={inp} placeholder="Comment, or the outcome for both sides" value={f[r.id] ?? ''} onChange={(e) => set(r.id, e.target.value)} />
+                      <input
+                        aria-label="Comment, or the outcome for both sides"
+                        className={inp}
+                        placeholder="Comment, or the outcome for both sides"
+                        value={f[r.id] ?? ''}
+                        onChange={(e) => set(r.id, e.target.value)}
+                      />
                       <div className="flex flex-wrap gap-2">
                         <button disabled={busy || (f[r.id] ?? '').trim().length < 2} className={btn2} onClick={() => call('add_dispute_comment', { p_dispute: r.id, p_body: f[r.id] }, 'Comment added.')}>Comment</button>
                         {r.status === 'open' && <button disabled={busy} className={btn2} onClick={() => call('admin_update_dispute', { p_dispute: r.id, p_status: 'under_review', p_note: null }, 'Moved to review.')}>Start review</button>}
@@ -182,17 +302,36 @@ export default function AdminCasesPage() {
                   )}
                 </>
               )}
+
               {tab === 'settlements' && (
                 <>
-                  <div className="flex justify-between gap-2"><p className="font-semibold">{code(r)} · refund {naira(r.refund_due)}</p><span className="text-xs border border-border rounded-full px-2 py-1 capitalize h-fit">{label(r.status)}</span></div>
-                  <p>Deposit {naira(r.deposit_held)} · Deductions {naira(r.deductions)}</p>
+                  <div className="flex justify-between gap-2">
+                    <p className="font-semibold text-foreground">{code(r)} · refund {naira(r.refund_due)}</p>
+                    <Pill status={r.status} text={label(r.status)} />
+                  </div>
+                  <dl className="grid grid-cols-2 gap-2 rounded-lg bg-secondary/60 p-3">
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Deposit held</dt>
+                      <dd className="font-bold text-foreground">{naira(r.deposit_held)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Deductions</dt>
+                      <dd className="font-bold text-foreground">{naira(r.deductions)}</dd>
+                    </div>
+                  </dl>
                   {r.deduction_reason && <p className="bg-secondary rounded-md p-2 text-xs">{r.deduction_reason}</p>}
-                  {r.tenant_note && <p className="text-xs">Tenant: {r.tenant_note}</p>}
+                  {r.tenant_note && <p className="text-xs"><span className="font-semibold">Tenant:</span> {r.tenant_note}</p>}
                   {r.refund_reference && <p className="text-xs">Landlord says paid: {r.refund_reference} on {fmtDate(r.refund_paid_on)}</p>}
                   {['agreed', 'disputed'].includes(r.status) && (
                     <div className="space-y-2">
-                      <input className={inp} placeholder="Note (required to send back)" value={f[r.id] ?? ''} onChange={(e) => set(r.id, e.target.value)} />
-                      <div className="flex gap-2">
+                      <input
+                        aria-label="Note (required to send back)"
+                        className={inp}
+                        placeholder="Note (required to send back)"
+                        value={f[r.id] ?? ''}
+                        onChange={(e) => set(r.id, e.target.value)}
+                      />
+                      <div className="flex flex-wrap gap-2">
                         {r.status === 'agreed' && <button disabled={busy} className={btn} onClick={() => call('admin_review_settlement', { p_settlement: r.id, p_action: 'approve', p_note: f[r.id] ?? null }, 'Settlement approved.', 'Approve this settlement record? No money moves through EboHomes.')}>Approve record</button>}
                         <button disabled={busy} className={btn2} onClick={() => call('admin_review_settlement', { p_settlement: r.id, p_action: 'reopen', p_note: f[r.id] ?? '' }, 'Sent back to the landlord.')}>Send back</button>
                       </div>
@@ -200,16 +339,20 @@ export default function AdminCasesPage() {
                   )}
                 </>
               )}
+
               {tab === 'renewals' && (
                 <>
-                  <div className="flex justify-between gap-2"><p className="font-semibold">{code(r)} · new rent {naira(r.new_rent)}</p><span className="text-xs border border-border rounded-full px-2 py-1 capitalize h-fit">{applied.has(r.id) ? 'applied' : label(r.status)}</span></div>
+                  <div className="flex justify-between gap-2">
+                    <p className="font-semibold text-foreground">{code(r)} · new rent {naira(r.new_rent)}</p>
+                    <Pill status={applied.has(r.id) ? 'applied' : r.status} text={applied.has(r.id) ? 'Applied' : label(r.status)} />
+                  </div>
                   <p className="text-xs text-muted-foreground">Until {fmtDate(r.new_end_date)} · offered {fmtDate(r.created_at)}</p>
                   {r.status === 'accepted' && !applied.has(r.id) && (
                     <button disabled={busy} className={btn} onClick={() => call('admin_apply_renewal', { p_renewal: r.id }, 'Renewal applied to the tenancy.', 'Update the tenancy rent and end date to match this accepted renewal?')}>Apply to tenancy</button>
                   )}
                 </>
               )}
-            </div>
+            </section>
           ))}
         </div>
       )}

@@ -1,8 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Loader2, CheckCircle2, XCircle, HelpCircle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Loader2, CheckCircle2, XCircle, HelpCircle, Clock, Undo2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { PropertySummary, usePropertyData } from '@/components/property-summary'
+import { ApplicantFacts } from '@/components/application-ui'
+import { fmtDate } from '@/lib/case-status'
 
 type App = {
   id: string
@@ -39,10 +42,26 @@ const RECOMMENDATION: Record<string, string> = {
   not_recommend: 'Landlord does not recommend this applicant',
 }
 
+const REC_TONE: Record<string, string> = {
+  recommend: 'border-emerald-300 bg-emerald-50 text-emerald-900',
+  neutral: 'border-slate-300 bg-slate-100 text-slate-800',
+  not_recommend: 'border-amber-300 bg-amber-50 text-amber-900',
+}
+
+const BADGES: Record<string, { label: string; cls: string; icon: any }> = {
+  pending: { label: 'Needs review', cls: 'border-amber-300 bg-amber-50 text-amber-900', icon: Clock },
+  info_requested: { label: 'Waiting for tenant', cls: 'border-amber-300 bg-amber-50 text-amber-900', icon: HelpCircle },
+  approved: { label: 'Approved', cls: 'border-emerald-300 bg-emerald-50 text-emerald-900', icon: CheckCircle2 },
+  rejected: { label: 'Declined', cls: 'border-red-300 bg-red-50 text-red-900', icon: XCircle },
+  withdrawn: { label: 'Withdrawn', cls: 'border-slate-300 bg-slate-100 text-slate-800', icon: Undo2 },
+}
+
+const btnBase =
+  'inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 text-sm font-semibold disabled:opacity-60'
+
 export default function AdminApplicationsPage() {
   const [apps, setApps] = useState<App[]>([])
   const [names, setNames] = useState<Record<string, string>>({})
-  const [listings, setListings] = useState<Record<string, { title: string; status: string }>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -69,17 +88,14 @@ export default function AdminApplicationsPage() {
       const { data: people } = await supabase.from('profiles').select('id, full_name').in('id', peopleIds)
       setNames(Object.fromEntries((people ?? []).map((p: any) => [p.id, p.full_name || 'Unnamed'])))
     }
-    const listingIds = Array.from(new Set(list.map((a) => a.listing_id)))
-    if (listingIds.length > 0) {
-      const { data: ls } = await supabase.from('listings').select('id, title, status').in('id', listingIds)
-      setListings(Object.fromEntries((ls ?? []).map((l: any) => [l.id, { title: l.title, status: l.status }])))
-    }
     setLoading(false)
   }, [])
 
   useEffect(() => {
     load()
   }, [load])
+
+  const { listings, inspected } = usePropertyData(useMemo(() => apps.map((a) => a.listing_id), [apps]))
 
   const decide = async (app: App, action: 'request_info' | 'approve' | 'reject') => {
     if (busyId) return
@@ -124,62 +140,107 @@ export default function AdminApplicationsPage() {
   if (loading) {
     return (
       <div className="flex justify-center py-20">
-        <Loader2 className="animate-spin text-primary" size={28} />
+        <Loader2 className="animate-spin text-primary" size={28} aria-label="Loading applications" />
       </div>
     )
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-foreground mb-1">Application review</h1>
-      <p className="text-sm text-muted-foreground mb-4">
+    <div className="mx-auto w-full max-w-4xl p-4 md:p-6">
+      <h1 className="mb-1 text-2xl font-bold text-foreground">Application review</h1>
+      <p className="mb-4 text-sm text-muted-foreground">
         EboHomes makes every final decision. Landlords can only add a recommendation. Approving does not create a tenancy and does not mean any payment was made.
       </p>
 
-      <div className="flex gap-2 mb-4 overflow-x-auto border-b border-border">
+      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-border" role="tablist" aria-label="Application status">
         {TABS.map(([key, label]) => (
           <button
             key={key}
+            role="tab"
+            aria-selected={tab === key}
             onClick={() => setTab(key)}
-            className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === key ? 'border-primary text-primary font-medium' : 'border-transparent text-muted-foreground'}`}
+            className={`-mb-px min-h-11 whitespace-nowrap border-b-2 px-3 text-sm ${
+              tab === key ? 'border-primary font-semibold text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
           >
             {label} ({count(key)})
           </button>
         ))}
       </div>
 
-      {error && <p className="text-sm text-destructive bg-destructive/10 rounded-md p-3 mb-3">{error}</p>}
-      {notice && <p className="text-sm text-primary bg-primary/10 rounded-md p-3 mb-3">{notice}</p>}
+      {error && (
+        <p role="alert" className="mb-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-900">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
+          {notice}
+        </p>
+      )}
 
       {visible.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-12">Nothing in this list.</p>
+        <p className="py-12 text-center text-sm text-muted-foreground">Nothing in this list.</p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {visible.map((a) => {
-            const listing = listings[a.listing_id]
             const open = a.status === 'pending' || a.status === 'info_requested'
+            const b = BADGES[a.status] ?? BADGES.pending
+            const Icon = b.icon
+            const hasData =
+              a.application_data && typeof a.application_data === 'object' && Object.keys(a.application_data).length > 0
             return (
-              <div key={a.id} className="bg-card border border-border rounded-lg p-4 text-sm space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-foreground">{a.case_ref ?? '—'} · {listing?.title ?? 'Listing'}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Property status: {listing?.status ?? 'unknown'} · Applied {new Date(a.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
+              <section key={a.id} className="space-y-3 overflow-hidden rounded-xl border border-border bg-card p-4 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${b.cls}`}>
+                    <Icon size={12} aria-hidden /> {b.label}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {a.case_ref ? `${a.case_ref} · ` : ''}Applied {fmtDate(a.created_at)}
+                  </span>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Tenant: {names[a.tenant_id] ?? '—'} · Landlord: {names[a.landlord_id] ?? '—'}
-                </p>
 
-                {a.message && <p className="bg-secondary rounded-md p-2">{a.message}</p>}
+                <PropertySummary compact listing={listings[a.listing_id]} inspected={inspected.has(a.listing_id)} />
 
-                {a.application_data && typeof a.application_data === 'object' && Object.keys(a.application_data).length > 0 && (
+                <dl className="grid grid-cols-2 gap-3 rounded-lg bg-secondary/60 p-3">
+                  <div className="min-w-0">
+                    <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Tenant</dt>
+                    <dd className="truncate font-medium text-foreground">{names[a.tenant_id] ?? '—'}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Landlord</dt>
+                    <dd className="truncate font-medium text-foreground">{names[a.landlord_id] ?? '—'}</dd>
+                  </div>
+                </dl>
+
+                {a.landlord_recommendation ? (
+                  <p
+                    className={`rounded-md border p-3 ${
+                      REC_TONE[a.landlord_recommendation] ?? 'border-slate-300 bg-slate-100 text-slate-800'
+                    }`}
+                  >
+                    <span className="font-semibold">
+                      {RECOMMENDATION[a.landlord_recommendation] ?? a.landlord_recommendation}.
+                    </span>
+                    {a.landlord_recommendation_note ? ` ${a.landlord_recommendation_note}` : ''}
+                    {a.landlord_recommended_at && (
+                      <span className="mt-1 block text-xs opacity-80">Added {fmtDate(a.landlord_recommended_at)}</span>
+                    )}
+                  </p>
+                ) : (
+                  open && <p className="text-xs text-muted-foreground">The landlord has not added a recommendation.</p>
+                )}
+
+                {a.message && <p className="rounded-md bg-secondary p-3">{a.message}</p>}
+
+                <ApplicantFacts data={a.application_data} />
+
+                {hasData && (
                   <details className="text-xs">
-                    <summary className="cursor-pointer text-primary">Application details</summary>
-                    <div className="mt-1 space-y-0.5">
+                    <summary className="min-h-11 cursor-pointer py-3 font-semibold text-primary">All submitted details</summary>
+                    <div className="space-y-0.5 pb-1">
                       {Object.entries(a.application_data).map(([k, v]) => (
-                        <p key={k}>
+                        <p key={k} className="break-words">
                           <span className="text-muted-foreground">{k.replace(/_/g, ' ')}:</span>{' '}
                           {typeof v === 'object' ? JSON.stringify(v) : String(v)}
                         </p>
@@ -188,76 +249,79 @@ export default function AdminApplicationsPage() {
                   </details>
                 )}
 
-                {a.landlord_recommendation && (
-                  <p className="rounded-md border border-border p-2">
-                    <span className="font-medium">{RECOMMENDATION[a.landlord_recommendation] ?? a.landlord_recommendation}.</span>
-                    {a.landlord_recommendation_note ? ` ${a.landlord_recommendation_note}` : ''}
+                {a.info_request && (a.status === 'info_requested' || a.tenant_reply) && (
+                  <p className="text-xs">
+                    <span className="font-semibold">Question sent:</span> {a.info_request}
                   </p>
                 )}
-
-                {a.info_request && (a.status === 'info_requested' || a.tenant_reply) && (
-                  <p className="text-xs"><span className="font-medium">Question sent:</span> {a.info_request}</p>
-                )}
                 {a.tenant_reply && (
-                  <p className="text-xs bg-primary/5 border border-primary/20 rounded-md p-2">
-                    <span className="font-medium">Tenant replied:</span> {a.tenant_reply}
+                  <p className="rounded-md border border-primary/20 bg-primary/5 p-3 text-xs">
+                    <span className="font-semibold">Tenant replied:</span> {a.tenant_reply}
                   </p>
                 )}
 
                 {(a.status === 'approved' || a.status === 'rejected') && (
                   <p className="text-xs text-muted-foreground">
                     {a.decided_by
-                      ? `Decided by ${names[a.decided_by] ?? 'EboHomes staff'}${a.decided_at ? ` on ${new Date(a.decided_at).toLocaleDateString()}` : ''}.`
+                      ? `Decided by ${names[a.decided_by] ?? 'EboHomes staff'}${a.decided_at ? ` on ${fmtDate(a.decided_at)}` : ''}.`
                       : 'Decided by the landlord before EboHomes review began.'}
                     {a.decision_note ? ` Note: ${a.decision_note}` : ''}
                   </p>
                 )}
                 {a.status === 'approved' && (
                   <p className="text-xs text-muted-foreground">
-                    {a.tenant_interest_at ? `Tenant confirmed they want to proceed on ${new Date(a.tenant_interest_at).toLocaleDateString()}.` : 'Tenant has not yet confirmed they want to proceed.'}
+                    {a.tenant_interest_at
+                      ? `Tenant confirmed they want to proceed on ${fmtDate(a.tenant_interest_at)}.`
+                      : 'Tenant has not yet confirmed they want to proceed.'}
                   </p>
                 )}
 
                 {open && (
-                  <div className="pt-2 space-y-2">
-                    <textarea
-                      rows={2}
-                      value={notes[a.id] ?? ''}
-                      onChange={(e) => setNotes((n) => ({ ...n, [a.id]: e.target.value }))}
-                      placeholder="Question for the tenant, or reason / note for the decision"
-                      maxLength={600}
-                      className="w-full bg-input border border-border rounded-md px-3 py-2 text-xs"
-                    />
+                  <div className="space-y-2 border-t border-border pt-3">
+                    <label className="block text-xs font-semibold text-foreground">
+                      Note for the tenant
+                      <textarea
+                        rows={2}
+                        value={notes[a.id] ?? ''}
+                        onChange={(e) => setNotes((n) => ({ ...n, [a.id]: e.target.value }))}
+                        placeholder="Question for the tenant, or reason / note for the decision"
+                        maxLength={600}
+                        className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm font-normal"
+                      />
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      A note is required to ask a question or to decline. It is optional when approving.
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       {a.status === 'pending' && (
                         <button
                           onClick={() => decide(a, 'approve')}
                           disabled={busyId !== null}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-60"
+                          className={`${btnBase} bg-primary text-primary-foreground`}
                         >
-                          {busyId === a.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Approve
+                          {busyId === a.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <CheckCircle2 size={14} aria-hidden />} Approve
                         </button>
                       )}
                       {a.status === 'pending' && (
                         <button
                           onClick={() => decide(a, 'request_info')}
                           disabled={busyId !== null}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-border text-xs disabled:opacity-60"
+                          className={`${btnBase} border border-border`}
                         >
-                          <HelpCircle size={14} /> Ask tenant a question
+                          <HelpCircle size={14} aria-hidden /> Ask tenant a question
                         </button>
                       )}
                       <button
                         onClick={() => decide(a, 'reject')}
                         disabled={busyId !== null}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-destructive text-destructive text-xs disabled:opacity-60"
+                        className={`${btnBase} border border-red-300 text-red-800`}
                       >
-                        <XCircle size={14} /> Decline
+                        <XCircle size={14} aria-hidden /> Decline
                       </button>
                     </div>
                   </div>
                 )}
-              </div>
+              </section>
             )
           })}
         </div>

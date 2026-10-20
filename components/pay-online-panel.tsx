@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, CreditCard, Landmark, Copy, Receipt } from 'lucide-react'
+import { Loader2, CreditCard, Landmark, Copy, Check, Receipt, ShieldCheck, Info } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { paymentLabel, PAYMENT_STATE_NOTE, getPaymentState } from '@/lib/payment-status'
 import { BANK_TRANSFER, amountLines, transferReference, type SignedTermsLike } from '@/lib/payment-instructions'
@@ -20,6 +20,15 @@ type Method = 'bank' | 'online'
 const naira = (kobo: number) => '\u20A6' + (kobo / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 })
 const nairaN = (n: number) => '\u20A6' + n.toLocaleString('en-NG', { maximumFractionDigits: 2 })
 
+const PAY_TONE: Record<string, string> = {
+  verified: 'border-emerald-300 bg-emerald-50 text-emerald-900',
+  legacy_confirmed: 'border-amber-300 bg-amber-50 text-amber-900',
+  awaiting_verification: 'border-amber-300 bg-amber-50 text-amber-900',
+  pending: 'border-slate-300 bg-slate-100 text-slate-800',
+  rejected: 'border-red-300 bg-red-50 text-red-900',
+  other: 'border-slate-300 bg-slate-100 text-slate-800',
+}
+
 // The tenant's payment section. Two ways to pay are shown:
 //  - Bank transfer: works now. The tenant NEVER marks a payment as paid or verified. EboHomes records and verifies.
 //  - Pay online (Paystack): shown, but only usable when the server says it is switched on.
@@ -31,7 +40,7 @@ export function PayOnlinePanel({ tenancyId, terms, title, reference, period }: P
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
   const [payments, setPayments] = useState<any[]>([])
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'number' | 'ref' | null>(null)
   const checked = useRef(false)
 
   const lines = amountLines(terms, period)
@@ -102,101 +111,169 @@ export function PayOnlinePanel({ tenancyId, terms, title, reference, period }: P
     window.location.href = j.url
   }
 
-  const copyNumber = async () => {
+  const copy = async (what: 'number' | 'ref', value: string) => {
     try {
-      await navigator.clipboard.writeText(BANK_TRANSFER.accountNumber)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      await navigator.clipboard.writeText(value)
+      setCopied(what)
+      setTimeout(() => setCopied(null), 2000)
     } catch {
-      setCopied(false)
+      setCopied(null)
     }
   }
 
   const onlineReady = enabled === true
+  const hasAwaiting = payments.some((p) => getPaymentState(p) === 'awaiting_verification')
+  const hasVerified = payments.some((p) => getPaymentState(p) === 'verified')
   const tab = (active: boolean) =>
-    `flex-1 rounded-lg border-2 p-3 text-left text-sm transition ${active ? 'border-primary bg-primary/5' : 'border-border bg-card'}`
+    `flex-1 rounded-xl border-2 p-3 text-left text-sm transition min-h-14 ${active ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-secondary/60'}`
 
   return (
-    <div className="mt-3 space-y-3 rounded-lg border border-border bg-card p-3">
+    <div className="mt-3 space-y-4 rounded-xl border border-border bg-card p-4">
       <div>
-        <p className="text-sm font-bold text-foreground">Pay your rent</p>
+        <h3 className="text-base font-bold text-foreground">Pay for your tenancy</h3>
         <p className="text-xs text-muted-foreground">
           {title ?? 'Your tenancy'}{ref ? ` · ${ref}` : ''}
         </p>
       </div>
 
+      {/* What is due */}
       {lines.length > 0 ? (
-        <div className="rounded-md bg-secondary p-3 text-sm">
-          <p className="mb-1 text-xs font-semibold text-muted-foreground">Agreed in your signed agreement</p>
-          {lines.map((l) => (
-            <p key={l.key} className="flex justify-between"><span>{l.label}</span><span className="font-semibold">{nairaN(l.amount)}</span></p>
-          ))}
-          <p className="mt-2 text-xs text-muted-foreground">These figures come from your signed agreement, not the advertised listing price. EboHomes does not show a balance here because it cannot calculate one reliably yet.</p>
+        <div className="rounded-lg bg-secondary p-3 text-sm">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            <ShieldCheck size={14} aria-hidden /> Amounts in your signed agreement
+          </p>
+          <ul className="divide-y divide-border">
+            {lines.map((l) => (
+              <li key={l.key} className="flex items-center justify-between py-1.5">
+                <span className="text-foreground">{l.label}</span>
+                <span className="text-base font-bold text-foreground">{nairaN(l.amount)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted-foreground">
+            These figures come from your signed agreement, not the advertised listing price. EboHomes does not show a balance here because it cannot calculate one reliably yet.
+          </p>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">No payable amounts are recorded in your signed agreement.</p>
+        <p className="rounded-lg bg-secondary p-3 text-sm text-muted-foreground">No payable amounts are recorded in your signed agreement.</p>
       )}
 
-      <div className="flex gap-2" role="radiogroup" aria-label="Payment method">
-        <button type="button" role="radio" aria-checked={method === 'bank'} onClick={() => setMethod('bank')} className={tab(method === 'bank')}>
-          <span className="flex items-center gap-2 font-semibold"><Landmark size={15} /> Bank transfer</span>
-          <span className="block text-xs text-muted-foreground">Available now</span>
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={method === 'online'}
-          aria-disabled={!onlineReady}
-          onClick={() => setMethod('online')}
-          className={tab(method === 'online')}
-        >
-          <span className="flex items-center gap-2 font-semibold"><CreditCard size={15} /> Pay online</span>
-          <span className="block text-xs text-muted-foreground">{enabled === null ? 'Checking...' : onlineReady ? 'Card or bank, via Paystack' : 'Coming soon'}</span>
-        </button>
+      {/* Where the tenant stands, from real payment records only */}
+      {hasAwaiting && (
+        <p role="status" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <Info size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <span>A payment has been recorded and EboHomes has not verified it yet. You do not need to pay again. Check the history below.</span>
+        </p>
+      )}
+      {!hasAwaiting && hasVerified && (
+        <p role="status" className="flex items-start gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <ShieldCheck size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <span>EboHomes has verified at least one payment. Your receipts are in the history below.</span>
+        </p>
+      )}
+
+      {/* Method */}
+      <div>
+        <p className="mb-2 text-sm font-semibold text-foreground">Choose how to pay</p>
+        <div className="flex gap-2" role="radiogroup" aria-label="Payment method">
+          <button type="button" role="radio" aria-checked={method === 'bank'} onClick={() => setMethod('bank')} className={tab(method === 'bank')}>
+            <span className="flex items-center gap-2 font-semibold"><Landmark size={16} aria-hidden /> Bank transfer</span>
+            <span className="block text-xs text-muted-foreground">Available now</span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={method === 'online'}
+            aria-disabled={!onlineReady}
+            onClick={() => setMethod('online')}
+            className={tab(method === 'online')}
+          >
+            <span className="flex items-center gap-2 font-semibold"><CreditCard size={16} aria-hidden /> Pay online</span>
+            <span className="block text-xs text-muted-foreground">{enabled === null ? 'Checking...' : onlineReady ? 'Card or bank, via Paystack' : 'Coming soon'}</span>
+          </button>
+        </div>
       </div>
 
       {method === 'bank' && (
-        <div className="space-y-2 rounded-md border border-border p-3 text-sm">
+        <div className="space-y-3 rounded-lg border border-border p-3 text-sm">
           <p className="text-xs font-semibold text-muted-foreground">Transfer to this account</p>
-          <div className="space-y-0.5">
-            <p><span className="text-muted-foreground">Bank: </span><b>{BANK_TRANSFER.bankName}</b></p>
-            <p><span className="text-muted-foreground">Account name: </span><b>{BANK_TRANSFER.accountName}</b></p>
-            <p className="flex flex-wrap items-center gap-2">
-              <span><span className="text-muted-foreground">Account number: </span><b className="tracking-wide">{BANK_TRANSFER.accountNumber}</b></span>
-              <button type="button" onClick={copyNumber} className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-semibold">
-                <Copy size={12} /> {copied ? 'Copied' : 'Copy'}
-              </button>
-            </p>
-            {ref && <p><span className="text-muted-foreground">Reference to write in the transfer: </span><b>{ref}</b></p>}
-          </div>
+
+          <dl className="space-y-2">
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Bank</dt>
+              <dd className="font-bold text-foreground">{BANK_TRANSFER.bankName}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Account name</dt>
+              <dd className="font-bold text-foreground">{BANK_TRANSFER.accountName}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">Account number</dt>
+              <dd className="flex items-center gap-2">
+                <b className="text-base tracking-wider text-foreground">{BANK_TRANSFER.accountNumber}</b>
+                <button
+                  type="button"
+                  onClick={() => copy('number', BANK_TRANSFER.accountNumber)}
+                  className="inline-flex min-h-9 items-center gap-1 rounded-md border border-border px-2.5 text-xs font-semibold"
+                  aria-label="Copy account number"
+                >
+                  {copied === 'number' ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+                  {copied === 'number' ? 'Copied' : 'Copy'}
+                </button>
+              </dd>
+            </div>
+            {ref && (
+              <div className="flex items-center justify-between gap-3 rounded-md bg-primary/5 p-2">
+                <dt className="text-muted-foreground">Write this in the transfer</dt>
+                <dd className="flex items-center gap-2">
+                  <b className="text-foreground">{ref}</b>
+                  <button
+                    type="button"
+                    onClick={() => copy('ref', ref)}
+                    className="inline-flex min-h-9 items-center gap-1 rounded-md border border-border px-2.5 text-xs font-semibold"
+                    aria-label="Copy tenancy reference"
+                  >
+                    {copied === 'ref' ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+                    {copied === 'ref' ? 'Copied' : 'Copy'}
+                  </button>
+                </dd>
+              </div>
+            )}
+          </dl>
+
           <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
             <li>Transfer the amount from your signed agreement to the account above.</li>
             <li>Write your tenancy reference in the transfer description.</li>
             <li>EboHomes matches the transfer to your tenancy, records it and checks it.</li>
             <li>When it shows &ldquo;Verified by EboHomes&rdquo; below, your receipt is ready.</li>
           </ol>
-          <p className="text-xs font-semibold text-foreground">Your payment is not confirmed until it shows &ldquo;Verified by EboHomes&rdquo;. You cannot mark it as paid yourself, so there is nothing to press after you transfer. Keep your bank&rsquo;s transfer receipt.</p>
-          <p className="text-xs text-muted-foreground">Only trust account details shown here after you sign in. If anyone sends you different details, do not pay. Contact EboHomes.</p>
+
+          <p className="rounded-md bg-secondary p-2 text-xs font-semibold text-foreground">
+            Your payment is not confirmed until it shows &ldquo;Verified by EboHomes&rdquo;. You cannot mark it as paid yourself, so there is nothing to press after you transfer. Keep your bank&rsquo;s transfer receipt.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Only trust account details shown here after you sign in. If anyone sends you different details, do not pay. Contact EboHomes.
+          </p>
         </div>
       )}
 
       {method === 'online' && (
-        <div className="space-y-2 rounded-md border border-border p-3 text-sm">
+        <div className="space-y-3 rounded-lg border border-border p-3 text-sm">
           {enabled === null ? (
-            <p className="text-xs text-muted-foreground">Checking whether online payment is available...</p>
+            <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 size={14} className="animate-spin" aria-hidden /> Checking whether online payment is available...</p>
           ) : onlineReady ? (
             <>
               <p className="text-xs text-muted-foreground">Amounts come from your signed agreement.</p>
               {(options ?? []).length === 0 && !notice && <p className="text-xs text-muted-foreground">Nothing is due online for this agreement.</p>}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                 {(options ?? []).map((o) => (
                   <button
                     key={o.purpose}
                     disabled={!!busy || o.paid}
                     onClick={() => pay(o.purpose)}
-                    className="inline-flex min-h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
                   >
-                    {busy === o.purpose ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
+                    {busy === o.purpose ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <CreditCard size={14} aria-hidden />}
                     {o.paid ? `${o.label} paid` : `Pay ${o.label.toLowerCase()} ${naira(o.amount_kobo)}`}
                   </button>
                 ))}
@@ -205,30 +282,42 @@ export function PayOnlinePanel({ tenancyId, terms, title, reference, period }: P
           ) : (
             <p className="text-xs text-muted-foreground">Online payment is not switched on yet, so nothing can be charged here. Please pay by bank transfer for now. This option will open here once EboHomes switches it on.</p>
           )}
-          {notice && <p className={`text-xs ${notice.ok ? 'text-foreground' : 'text-destructive'}`}>{notice.text}</p>}
+          {notice && (
+            <p role={notice.ok ? 'status' : 'alert'} className={`rounded-md p-2 text-xs ${notice.ok ? 'bg-secondary text-foreground' : 'bg-red-50 text-red-900'}`}>
+              {notice.text}
+            </p>
+          )}
         </div>
       )}
 
+      {/* History */}
       <div>
-        <p className="mb-1 text-xs font-semibold text-muted-foreground">Payment history</p>
+        <h4 className="mb-2 text-sm font-bold text-foreground">Payment history</h4>
         {payments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+          <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">No payments recorded yet.</p>
         ) : (
-          <div className="space-y-2">
-            {payments.map((p) => (
-              <div key={p.id} className="rounded-md border border-border p-2 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span><b>{nairaN(Number(p.amount))}</b> <span className="capitalize text-muted-foreground">{p.type}</span></span>
-                  {p.receipt_code && getPaymentState(p) === 'verified' && (
-                    <Link href={`/receipt/${p.receipt_code}`} className="inline-flex items-center gap-1 text-primary"><Receipt size={14} /> {p.receipt_code}</Link>
+          <ul className="space-y-2">
+            {payments.map((p) => {
+              const state = getPaymentState(p)
+              return (
+                <li key={p.id} className="space-y-1.5 rounded-lg border border-border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-foreground">
+                      {nairaN(Number(p.amount))} <span className="text-xs font-normal capitalize text-muted-foreground">{p.type}</span>
+                    </span>
+                    <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${PAY_TONE[state]}`}>{paymentLabel(p)}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{PAYMENT_STATE_NOTE[state]}</p>
+                  {p.review_note && state === 'rejected' && <p className="text-xs font-medium text-red-800">Reason: {p.review_note}</p>}
+                  {p.receipt_code && state === 'verified' && (
+                    <Link href={`/receipt/${p.receipt_code}`} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-primary">
+                      <Receipt size={15} aria-hidden /> View receipt {p.receipt_code}
+                    </Link>
                   )}
-                </div>
-                <p className="text-xs font-semibold">{paymentLabel(p)}</p>
-                <p className="text-xs text-muted-foreground">{PAYMENT_STATE_NOTE[getPaymentState(p)]}</p>
-                {p.review_note && getPaymentState(p) === 'rejected' && <p className="text-xs text-destructive">Reason: {p.review_note}</p>}
-              </div>
-            ))}
-          </div>
+                </li>
+              )
+            })}
+          </ul>
         )}
       </div>
     </div>

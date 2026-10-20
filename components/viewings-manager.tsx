@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, Phone, CalendarClock, CheckCircle2 } from 'lucide-react'
+import { Loader2, Phone, CalendarClock, CheckCircle2, ArrowRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fmtDateTime, toIso } from '@/lib/case-status'
 import {
@@ -17,6 +17,15 @@ type Props = { role: 'tenant' | 'landlord' }
 const inp = 'w-full bg-input border border-border rounded-md px-3 py-2.5 text-sm'
 const btnP = 'min-h-11 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50'
 const btnS = 'min-h-11 px-4 py-2 rounded-md border border-border text-sm font-semibold disabled:opacity-50'
+
+// Some status text is stored in capitals. Show it in normal sentence case.
+// Text that is not entirely capitals is left exactly as written.
+function tidy(s: string | null | undefined): string {
+  if (!s) return ''
+  if (s !== s.toUpperCase() || !/[A-Z]/.test(s)) return s
+  const lower = s.toLowerCase().replace(/ebohomes/g, 'EboHomes')
+  return lower.charAt(0).toUpperCase() + lower.slice(1)
+}
 
 const GROUP_HELP: Record<'tenant' | 'landlord', Record<ViewingGroup, string>> = {
   tenant: {
@@ -35,7 +44,7 @@ const GROUP_HELP: Record<'tenant' | 'landlord', Record<ViewingGroup, string>> = 
 
 export function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-block rounded-full border px-2.5 py-1 text-xs font-bold ${TONE_CLASS[viewingTone(status)]}`}>
+    <span className={`inline-block whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${TONE_CLASS[viewingTone(status)]}`}>
       {viewingLabel(status)}
     </span>
   )
@@ -138,7 +147,7 @@ export function ViewingsManager({ role }: Props) {
 
   const groups = useMemo(() => groupViewings(viewings), [viewings])
 
-  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" size={26} /></div>
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" size={26} aria-label="Loading viewings" /></div>
 
   const openFor = (appId: string) => viewings.some((v) => v.application_id === appId && OPEN_STATUSES.includes(v.status))
   const requestable = apps.filter((a) => !openFor(a.id))
@@ -150,42 +159,56 @@ export function ViewingsManager({ role }: Props) {
 
   const renderViewing = (v: any) => {
     const app = role === 'tenant' && v.application_id ? (apps.find((a) => a.id === v.application_id) ?? { status: 'closed' }) : undefined
-const panel = tenantPanel(v, fmtDateTime, app)
+    const panel = tenantPanel(v, fmtDateTime, app)
     const ref = 'VW-' + String(v.id).slice(0, 8).toUpperCase()
     const mine = role === 'tenant'
+    const ownerText =
+      panel.owner === 'tenant'
+        ? 'Action needed from you'
+        : panel.owner === 'ebohomes'
+          ? 'Action needed from EboHomes'
+          : 'No action needed'
+
     return (
-      <section key={v.id} className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-border">
+      <section key={v.id} className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="border-b border-border p-4">
           <PropertySummary compact listing={listings[v.listing_id]} inspected={inspected.has(v.listing_id)} href={hrefOf(v.listing_id)} />
         </div>
 
         {mine ? (
-          <div className={`border-b p-4 space-y-2 ${TONE_CLASS[panel.tone]}`}>
-            <p className="text-base font-extrabold leading-tight">{panel.heading}</p>
+          <div className={`space-y-3 border-b p-4 ${TONE_CLASS[panel.tone]}`}>
+            <p className="text-base font-bold leading-snug">{tidy(panel.heading)}</p>
             <p className="text-sm">{panel.body}</p>
             {v.admin_response && (
               <div className="rounded-md bg-white/70 p-3 text-sm">
-                <p className="text-xs font-bold">LATEST MESSAGE FROM EBOHOMES{v.admin_responded_at ? ` · ${fmtDateTime(v.admin_responded_at)}` : ''}</p>
+                <p className="text-xs font-semibold">
+                  Latest message from EboHomes{v.admin_responded_at ? ` · ${fmtDateTime(v.admin_responded_at)}` : ''}
+                </p>
                 <p>{v.admin_response}</p>
               </div>
             )}
             {v.meeting_instructions && v.status === 'scheduled' && (
-              <p className="text-sm"><span className="font-bold">Meeting instructions: </span>{v.meeting_instructions}</p>
+              <p className="text-sm"><span className="font-semibold">Meeting instructions: </span>{v.meeting_instructions}</p>
             )}
-            <p className="text-sm font-bold">NEXT STEP: {panel.next}</p>
-            <p className="text-xs">{panel.owner === 'tenant' ? 'Action needed from you.' : panel.owner === 'ebohomes' ? 'Action needed from EboHomes.' : 'No action needed.'}</p>
+            <div className="rounded-md bg-white/70 p-3">
+              <p className="flex items-start gap-1.5 text-sm font-semibold">
+                <ArrowRight size={15} className="mt-0.5 shrink-0" aria-hidden />
+                <span>Next step: {tidy(panel.next)}</span>
+              </p>
+              <p className="mt-1 pl-5 text-xs">{ownerText}</p>
+            </div>
             {panel.href && panel.cta && (
-  <Link href={panel.href} className="inline-flex min-h-11 items-center rounded-md border border-current px-4 text-sm font-semibold">{panel.cta}</Link>
-)}
+              <Link href={panel.href} className="inline-flex min-h-11 items-center rounded-md border border-current px-4 text-sm font-semibold">{panel.cta}</Link>
+            )}
           </div>
         ) : (
-          <div className={`border-b p-4 flex flex-wrap items-center justify-between gap-2 ${TONE_CLASS[viewingTone(v.status)]}`}>
+          <div className={`flex flex-wrap items-center justify-between gap-2 border-b p-4 ${TONE_CLASS[viewingTone(v.status)]}`}>
             <StatusBadge status={v.status} />
             <span className="text-xs font-semibold">{ref}</span>
           </div>
         )}
 
-        <div className="p-4 space-y-4">
+        <div className="space-y-4 p-4">
           {mine && (
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
               <span className="font-semibold">Reference {ref}</span>
@@ -194,13 +217,15 @@ const panel = tenantPanel(v, fmtDateTime, app)
           )}
           {!mine && <p className="text-sm font-semibold text-foreground">Applicant: {names[v.tenant_id] ?? '—'}</p>}
 
-          <div className="rounded-lg bg-secondary p-3 text-sm space-y-1">
-            <p className="flex items-center gap-2"><CalendarClock size={15} />
+          <div className="space-y-1 rounded-lg bg-secondary p-3 text-sm">
+            <p className="flex items-center gap-2">
+              <CalendarClock size={15} aria-hidden />
               {v.scheduled_for ? <span><b>Confirmed:</b> {fmtDateTime(v.scheduled_for)}</span>
                 : v.proposed_at ? <span><b>Proposed:</b> {fmtDateTime(v.proposed_at)}</span>
-                : <span><b>Requested:</b> {fmtDateTime(v.preferred_at)}</span>}
+                : v.preferred_at ? <span><b>Requested:</b> {fmtDateTime(v.preferred_at)}</span>
+                : <span className="text-muted-foreground">No preferred time given. EboHomes will suggest one.</span>}
             </p>
-            {mine && phones[v.id] && <p className="flex items-center gap-2"><Phone size={15} /> EboHomes will call {phones[v.id]}</p>}
+            {mine && phones[v.id] && <p className="flex items-center gap-2"><Phone size={15} aria-hidden /> EboHomes will call {phones[v.id]}</p>}
           </div>
 
           {mine && v.status === 'reschedule_proposed' && (
@@ -209,13 +234,13 @@ const panel = tenantPanel(v, fmtDateTime, app)
                 <button disabled={busy} className={btnP} onClick={() => call('tenant_respond_proposal', { p_viewing: v.id, p_accept: true, p_message: null }, `Accepted. Your viewing of "${nameOf(v.listing_id)}" is scheduled for the proposed time.`)}>Accept proposed time</button>
                 <button disabled={busy} className={btnS} onClick={() => call('tenant_respond_proposal', { p_viewing: v.id, p_accept: false, p_message: (note[v.id] ?? '').trim() || null }, `Declined. EboHomes will offer another time for "${nameOf(v.listing_id)}".`)}>Decline proposed time</button>
               </div>
-              <input value={note[v.id] ?? ''} onChange={(e) => setNote((p) => ({ ...p, [v.id]: e.target.value }))} maxLength={300} placeholder="Tell EboHomes what time suits you (optional)" className={inp} />
+              <input aria-label="Tell EboHomes what time suits you" value={note[v.id] ?? ''} onChange={(e) => setNote((p) => ({ ...p, [v.id]: e.target.value }))} maxLength={300} placeholder="Tell EboHomes what time suits you (optional)" className={inp} />
             </div>
           )}
 
           {mine && v.status === 'completed' && !v.tenant_decision && (
             <div className="space-y-2 rounded-lg border-2 border-primary p-3">
-              <p className="text-sm font-extrabold text-foreground">WHAT WOULD YOU LIKE TO DO NEXT?</p>
+              <p className="text-sm font-bold text-foreground">What would you like to do next?</p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <button disabled={busy} className={btnP} onClick={() => call('tenant_viewing_decision', { p_viewing: v.id, p_interested: true }, `Recorded for "${nameOf(v.listing_id)}". EboHomes will review your application and confirm the property and rental terms. Nothing is approved or reserved yet.`, 'Continue with renting this property? This does not approve your application or reserve the property.')}>I&apos;m interested — continue with renting</button>
                 <button disabled={busy} className={btnS} onClick={() => call('tenant_viewing_decision', { p_viewing: v.id, p_interested: false }, `Recorded. You are no longer interested in "${nameOf(v.listing_id)}".`, 'Tell EboHomes you are no longer interested in this property?')}>I&apos;m no longer interested</button>
@@ -233,7 +258,7 @@ const panel = tenantPanel(v, fmtDateTime, app)
           )}
 
           {mine && OPEN_STATUSES.includes(v.status) && (
-            <button disabled={busy} onClick={() => call('cancel_viewing', { p_viewing: v.id, p_note: null }, `Viewing of "${nameOf(v.listing_id)}" cancelled.`, 'Cancel this viewing?')} className="text-sm text-muted-foreground underline hover:text-destructive">Cancel this viewing</button>
+            <button disabled={busy} onClick={() => call('cancel_viewing', { p_viewing: v.id, p_note: null }, `Viewing of "${nameOf(v.listing_id)}" cancelled.`, 'Cancel this viewing?')} className="min-h-11 text-sm text-muted-foreground underline hover:text-destructive">Cancel this viewing</button>
           )}
 
           <History events={events[v.id] ?? []} />
@@ -258,17 +283,17 @@ const panel = tenantPanel(v, fmtDateTime, app)
   }
 
   return (
-    <div className="max-w-3xl mx-auto w-full px-4 py-8">
-      <h1 className="text-2xl font-bold text-foreground mb-1">Viewings</h1>
-      <p className="text-sm text-muted-foreground mb-4">
+    <div className="mx-auto w-full max-w-3xl px-4 py-8">
+      <h1 className="mb-1 text-2xl font-bold text-foreground">Viewings</h1>
+      <p className="mb-4 text-sm text-muted-foreground">
         {role === 'tenant'
           ? 'See the property in person before you pay anything. EboHomes confirms every appointment and will call you to coordinate.'
           : 'Viewings for your properties. EboHomes schedules and manages them, so this page is for your information.'}
       </p>
 
       {msg && (
-        <div role="status" className={`mb-4 flex items-start gap-2 rounded-md p-3 text-sm font-medium ${msg.ok ? 'text-emerald-900 bg-emerald-50 border border-emerald-300' : 'text-red-900 bg-red-50 border border-red-300'}`}>
-          {msg.ok && <CheckCircle2 size={18} className="mt-0.5 shrink-0" />}
+        <div role="status" className={`mb-4 flex items-start gap-2 rounded-md p-3 text-sm font-medium ${msg.ok ? 'border border-emerald-300 bg-emerald-50 text-emerald-900' : 'border border-red-300 bg-red-50 text-red-900'}`}>
+          {msg.ok && <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden />}
           <span>{msg.text}</span>
         </div>
       )}
@@ -292,7 +317,7 @@ const panel = tenantPanel(v, fmtDateTime, app)
                   className={`block w-full rounded-lg border-2 p-3 text-left transition ${on ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-secondary/60'}`}
                 >
                   <PropertySummary compact listing={listings[a.listing_id]} inspected={inspected.has(a.listing_id)} />
-                  {on && <p className="mt-2 text-xs font-bold text-primary">✓ SELECTED</p>}
+                  {on && <p className="mt-2 text-xs font-semibold text-primary">✓ Selected</p>}
                 </button>
               )
             })}
@@ -308,7 +333,7 @@ const panel = tenantPanel(v, fmtDateTime, app)
                 <input type="tel" inputMode="tel" autoComplete="tel" placeholder="0803 123 4567" value={ph} onChange={(e) => setPhoneEdit(e.target.value)} className={`${inp} mt-1`} />
               </label>
               {ph && !phoneOk && <p className="text-xs text-red-700">Enter a valid Nigerian mobile number, for example 0803 123 4567.</p>}
-              <input value={reqNote} onChange={(e) => setReqNote(e.target.value)} maxLength={300} placeholder="Anything we should know? (optional)" className={inp} />
+              <input aria-label="Anything we should know?" value={reqNote} onChange={(e) => setReqNote(e.target.value)} maxLength={300} placeholder="Anything we should know? (optional)" className={inp} />
               <button disabled={busy || !phoneOk || !iso} onClick={submitRequest} className={`${btnP} w-full`}>
                 Request viewing for {nameOf(selected.listing_id)}
               </button>
@@ -334,7 +359,7 @@ const panel = tenantPanel(v, fmtDateTime, app)
       )}
 
       {viewings.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-10 border border-dashed border-border rounded-lg">No viewings yet.</p>
+        <p className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">No viewings yet.</p>
       ) : (
         <div className="space-y-8">
           {VIEWING_GROUP_ORDER.filter((g) => groups[g].length > 0).map((g) => {

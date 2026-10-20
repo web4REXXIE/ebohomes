@@ -1,9 +1,17 @@
 'use client'
 
-import { useParams } from 'next/navigation'
-import { TenancyHub } from '@/components/tenancy-hub'
+import { Header } from '@/components/header'
+import { Footer } from '@/components/footer'
+import { TenancyList } from '@/components/tenancy-list'
 
-export default function TenantTenancyPage() {
-  const params = useParams()
-  return <TenancyHub role="tenant" tenancyId={String(params?.id ?? '')} />
+export default function TenantTenanciesPage() {
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <Header />
+      <main className="flex-1">
+        <TenancyList role="tenant" />
+      </main>
+      <Footer />
+    </div>
+  )
 }

@@ -1,12 +1,7 @@
-import { Header } from '@/components/header'
-import { Footer } from '@/components/footer'
+'use client'
 
-export default function TenanciesLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
-      <main className="flex-1">{children}</main>
-      <Footer />
-    </div>
-  )
+import { TenancyList } from '@/components/tenancy-list'
+
+export default function TenantTenanciesPage() {
+  return <TenancyList role="tenant" />
 }

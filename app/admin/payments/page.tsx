@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getPaymentState, PAYMENT_STATE_LABEL, type PaymentState } from '@/lib/payment-status'
+import { PropertySummary, usePropertyData } from '@/components/property-summary'
 
 type Payment = {
   id: string
@@ -35,12 +36,12 @@ const FILTERS: { key: Filter; label: string }[] = [
 ]
 
 const BADGE: Record<PaymentState, string> = {
-  verified: 'bg-green-100 text-green-800',
-  legacy_confirmed: 'bg-orange-100 text-orange-800',
-  awaiting_verification: 'bg-amber-100 text-amber-800',
-  pending: 'bg-blue-100 text-blue-800',
-  rejected: 'bg-red-100 text-red-800',
-  other: 'bg-secondary text-muted-foreground',
+  verified: 'border border-emerald-300 bg-emerald-50 text-emerald-900',
+  legacy_confirmed: 'border border-amber-300 bg-amber-50 text-amber-900',
+  awaiting_verification: 'border border-amber-300 bg-amber-50 text-amber-900',
+  pending: 'border border-slate-300 bg-slate-100 text-slate-800',
+  rejected: 'border border-red-300 bg-red-50 text-red-900',
+  other: 'border border-slate-300 bg-slate-100 text-slate-800',
 }
 
 const LIMIT = 500
@@ -48,7 +49,7 @@ const LIMIT = 500
 const DUPLICATE_WINDOW_SECONDS = 120
 
 const isReviewable = (p: Payment) => p.status === 'recorded' || p.status === 'pending'
-const money = (v: number | string | null) => `₦${(Number(v) || 0).toLocaleString()}`
+const money = (v: number | string | null) => `₦${(Number(v) || 0).toLocaleString('en-NG')}`
 const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 const methodLabel = (m: string | null) =>
@@ -67,7 +68,6 @@ export default function AdminPaymentsPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [payments, setPayments] = useState<Payment[]>([])
-  const [listings, setListings] = useState<Record<string, string>>({})
   const [names, setNames] = useState<Record<string, string>>({})
   const [filter, setFilter] = useState<Filter>('awaiting')
   const [notice, setNotice] = useState<Notice>(null)
@@ -110,22 +110,17 @@ export default function AdminPaymentsPage() {
     const rows = (data ?? []) as Payment[]
     setPayments(rows)
 
-    // Context for the reviewer. Names and property titles only: no email or phone.
-    const listingIds = Array.from(new Set(rows.map((r) => r.listing_id).filter(Boolean))) as string[]
+    // Names only: no email or phone.
     const personIds = Array.from(
       new Set(rows.flatMap((r) => [r.user_id, r.recorded_by, r.verified_by]).filter(Boolean))
     ) as string[]
 
-    const [l, p] = await Promise.all([
-      listingIds.length
-        ? supabase.from('listings').select('id, title').in('id', listingIds)
-        : Promise.resolve({ data: [] as any[] }),
-      personIds.length
-        ? supabase.from('profiles').select('id, full_name').in('id', personIds)
-        : Promise.resolve({ data: [] as any[] }),
-    ])
-    setListings(Object.fromEntries((l.data ?? []).map((x: any) => [x.id, x.title || 'Property'])))
-    setNames(Object.fromEntries((p.data ?? []).map((x: any) => [x.id, x.full_name || 'Unnamed'])))
+    if (personIds.length) {
+      const { data: people } = await supabase.from('profiles').select('id, full_name').in('id', personIds)
+      setNames(Object.fromEntries((people ?? []).map((x: any) => [x.id, x.full_name || 'Unnamed'])))
+    } else {
+      setNames({})
+    }
     setLoading(false)
   }, [])
 
@@ -166,6 +161,11 @@ export default function AdminPaymentsPage() {
     if (filter === 'rejected') return payments.filter((p) => p.status === 'rejected')
     return payments
   }, [payments, filter])
+
+  // Photos and details for every property in the list. Hooks must stay above the early returns.
+  const { listings: propertyData, inspected } = usePropertyData(
+    useMemo(() => payments.map((p) => p.listing_id).filter(Boolean) as string[], [payments])
+  )
 
   const review = async (id: string, decision: 'confirmed' | 'rejected', why: string | null) => {
     if (busyRef.current) return
@@ -208,7 +208,11 @@ export default function AdminPaymentsPage() {
   }
 
   if (access === 'checking') {
-    return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" size={26} /></div>
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="animate-spin text-primary" size={26} aria-label="Checking access" />
+      </div>
+    )
   }
   if (access === 'denied') {
     return <p className="text-center py-16 text-sm text-muted-foreground">Only EboHomes administrators can review payments.</p>
@@ -249,7 +253,8 @@ export default function AdminPaymentsPage() {
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
-            className={`px-3 py-1.5 rounded-full text-sm border whitespace-nowrap ${
+            aria-pressed={filter === f.key}
+            className={`min-h-11 px-4 rounded-full text-sm font-medium border whitespace-nowrap ${
               filter === f.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-foreground'
             }`}
           >
@@ -259,7 +264,7 @@ export default function AdminPaymentsPage() {
         <button
           onClick={loadPayments}
           disabled={loading || !!busyId}
-          className="ml-auto px-3 py-1.5 rounded-full text-sm border border-border disabled:opacity-50"
+          className="ml-auto min-h-11 px-4 rounded-full text-sm font-medium border border-border disabled:opacity-50"
         >
           Refresh
         </button>
@@ -267,9 +272,9 @@ export default function AdminPaymentsPage() {
 
       {notice && (
         <p
-          role="status"
-          className={`text-sm rounded-md px-3 py-2 mb-3 ${
-            notice.ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          role={notice.ok ? 'status' : 'alert'}
+          className={`text-sm font-medium rounded-md border px-3 py-2 mb-3 ${
+            notice.ok ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-red-300 bg-red-50 text-red-900'
           }`}
         >
           {notice.text}
@@ -277,11 +282,13 @@ export default function AdminPaymentsPage() {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" size={26} /></div>
+        <div className="flex justify-center py-16">
+          <Loader2 className="animate-spin text-primary" size={26} aria-label="Loading payments" />
+        </div>
       ) : loadError ? (
         <div className="text-center py-12 border border-dashed border-border rounded-lg">
-          <p className="text-sm text-destructive mb-3">Could not load payments: {loadError}</p>
-          <button onClick={loadPayments} className="text-sm text-primary font-medium">Try again</button>
+          <p role="alert" className="text-sm font-medium text-red-900 mb-3 px-4">Could not load payments: {loadError}</p>
+          <button onClick={loadPayments} className="min-h-11 px-4 text-sm text-primary font-semibold">Try again</button>
         </div>
       ) : visible.length === 0 ? (
         <p className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
@@ -294,7 +301,7 @@ export default function AdminPaymentsPage() {
             const rowBusy = busyId === p.id
             const rejecting = rejectingId === p.id
             return (
-              <div key={p.id} className="bg-card border border-border rounded-lg p-4">
+              <div key={p.id} className="bg-card border border-border rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-lg font-bold text-foreground">{money(p.amount)}</p>
@@ -302,25 +309,31 @@ export default function AdminPaymentsPage() {
                       {p.type ?? 'payment'} · {methodLabel(p.payment_method)}
                     </p>
                   </div>
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${BADGE[state]}`}>
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${BADGE[state]}`}>
                     {PAYMENT_STATE_LABEL[state]}
                   </span>
                 </div>
 
-                <div className="mt-2 text-sm text-foreground space-y-0.5">
-                  <p>{(p.listing_id && listings[p.listing_id]) || 'Property'}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Tenant: {(p.user_id && names[p.user_id]) || '—'} · Recorded by: {(p.recorded_by && names[p.recorded_by]) || '—'}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Tenancy {p.tenancy_id ? p.tenancy_id.slice(0, 8) : '—'} · Recorded {when(p.created_at)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Reference: {p.reference || '—'}</p>
-                  {p.receipt_code && <p className="text-xs text-muted-foreground">Receipt: {p.receipt_code}</p>}
+                <div className="mt-3 text-sm text-foreground space-y-2">
+                  <PropertySummary
+                    compact
+                    listing={p.listing_id ? propertyData[p.listing_id] : undefined}
+                    inspected={!!p.listing_id && inspected.has(p.listing_id)}
+                  />
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-muted-foreground">
+                      Tenant: {(p.user_id && names[p.user_id]) || '—'} · Recorded by: {(p.recorded_by && names[p.recorded_by]) || '—'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Tenancy {p.tenancy_id ? p.tenancy_id.slice(0, 8) : '—'} · Recorded {when(p.created_at)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Reference: {p.reference || '—'}</p>
+                    {p.receipt_code && <p className="text-xs text-muted-foreground">Receipt: {p.receipt_code}</p>}
+                  </div>
                 </div>
 
                 {possibleDuplicates.has(p.id) && (
-                  <p className="mt-2 text-xs rounded-md bg-amber-100 text-amber-800 px-2 py-1.5">
+                  <p className="mt-2 text-xs rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-2 py-1.5">
                     Possible duplicate: another payment with the same amount was recorded for this tenancy within{' '}
                     {DUPLICATE_WINDOW_SECONDS} seconds. Check before verifying.
                   </p>
@@ -360,40 +373,40 @@ export default function AdminPaymentsPage() {
                           onChange={(e) => setReason(e.target.value)}
                           disabled={!!busyId}
                           rows={3}
-                          className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background"
+                          className="w-full border border-border rounded-md px-3 py-2.5 text-sm bg-background"
                         />
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => onReject(p)}
                             disabled={!!busyId || !reason.trim()}
-                            className="flex items-center gap-2 px-3 py-2 rounded-md bg-destructive text-white text-sm font-semibold disabled:opacity-50"
+                            className="flex min-h-11 items-center gap-2 px-4 rounded-md bg-red-700 text-white text-sm font-semibold disabled:opacity-50"
                           >
-                            {rowBusy && <Loader2 size={14} className="animate-spin" />}
+                            {rowBusy && <Loader2 size={14} className="animate-spin" aria-hidden />}
                             Confirm rejection
                           </button>
                           <button
                             onClick={() => { setRejectingId(null); setReason('') }}
                             disabled={!!busyId}
-                            className="px-3 py-2 rounded-md border border-border text-sm disabled:opacity-50"
+                            className="min-h-11 px-4 rounded-md border border-border text-sm font-semibold disabled:opacity-50"
                           >
                             Cancel
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => onVerify(p)}
                           disabled={!!busyId}
-                          className="flex items-center gap-2 px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50"
+                          className="flex min-h-11 items-center gap-2 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50"
                         >
-                          {rowBusy && <Loader2 size={14} className="animate-spin" />}
+                          {rowBusy && <Loader2 size={14} className="animate-spin" aria-hidden />}
                           Verify Payment
                         </button>
                         <button
                           onClick={() => { setRejectingId(p.id); setReason(''); setNotice(null) }}
                           disabled={!!busyId}
-                          className="px-3 py-2 rounded-md border border-border text-sm font-semibold disabled:opacity-50"
+                          className="min-h-11 px-4 rounded-md border border-border text-sm font-semibold disabled:opacity-50"
                         >
                           Reject Payment
                         </button>

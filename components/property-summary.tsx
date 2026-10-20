@@ -77,13 +77,32 @@ function publicId(p: PropertyLite): string | null {
 
 export function InspectionBadge({ inspected }: { inspected: boolean }) {
   return inspected ? (
-    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-900">
-      <ShieldCheck size={13} /> PHYSICALLY INSPECTED BY EBOHOMES
+    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-900">
+      <ShieldCheck size={13} aria-hidden /> Inspected by EboHomes
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-900">
-      <Hourglass size={13} />  with NOT YET INSPECTED
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
+      <Hourglass size={13} aria-hidden /> Not yet inspected
     </span>
+  )
+}
+
+function Thumb({ src, alt, className }: { src?: string; alt: string; className: string }) {
+  return (
+    <div className={`shrink-0 overflow-hidden rounded-lg bg-secondary ${className}`}>
+      {src ? (
+        <img src={src} alt={alt} className="h-full w-full object-cover" loading="lazy" />
+      ) : (
+        <div
+          className="flex h-full w-full flex-col items-center justify-center gap-0.5 text-muted-foreground"
+          role="img"
+          aria-label="No photo available"
+        >
+          <ImageOff size={18} aria-hidden />
+          <span className="text-[10px]">No photo</span>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -104,8 +123,11 @@ export function PropertySummary({
 }) {
   if (!listing) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-secondary p-4 text-sm text-muted-foreground">
-        Property details are not available right now.
+      <div className="flex items-start gap-3 rounded-lg border border-dashed border-border bg-secondary p-3 text-sm text-muted-foreground">
+        <ImageOff size={18} className="mt-0.5 shrink-0" aria-hidden />
+        <p>
+          Property details are not available right now. The property may no longer be publicly listed.
+        </p>
       </div>
     )
   }
@@ -117,8 +139,8 @@ export function PropertySummary({
   const facts = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
       {listing.property_type && <span className="capitalize">{listing.property_type.replace(/_/g, ' ')}</span>}
-      {listing.bedrooms != null && <span className="inline-flex items-center gap-1"><BedDouble size={13} />{listing.bedrooms} bed</span>}
-      {listing.bathrooms != null && <span className="inline-flex items-center gap-1"><Bath size={13} />{listing.bathrooms} bath</span>}
+      {listing.bedrooms != null && <span className="inline-flex items-center gap-1"><BedDouble size={13} aria-hidden />{listing.bedrooms} bed</span>}
+      {listing.bathrooms != null && <span className="inline-flex items-center gap-1"><Bath size={13} aria-hidden />{listing.bathrooms} bath</span>}
       {ref && <span>Ref {ref}</span>}
     </div>
   )
@@ -127,11 +149,11 @@ export function PropertySummary({
     <div className="flex flex-wrap items-center gap-2">
       <InspectionBadge inspected={inspected} />
       <span
-        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold ${
+        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${
           listed ? 'border-blue-300 bg-blue-50 text-blue-900' : 'border-slate-300 bg-slate-100 text-slate-800'
         }`}
       >
-        <Clock size={13} /> {listed ? 'CURRENTLY LISTED' : 'NOT CURRENTLY LISTED'}
+        <Clock size={13} aria-hidden /> {listed ? 'Currently listed' : 'Not currently listed'}
       </span>
       {listing.availability_date && (
         <span className="text-xs text-muted-foreground">Available from {new Date(listing.availability_date).toLocaleDateString('en-NG')}</span>
@@ -142,17 +164,11 @@ export function PropertySummary({
   if (compact) {
     const row = (
       <div className="flex gap-3">
-        <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg bg-secondary">
-          {photos[0] ? (
-            <img src={plainUrl(photos[0], 300)} alt={title} className="h-full w-full object-cover" loading="lazy" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-muted-foreground"><ImageOff size={18} /></div>
-          )}
-        </div>
+        <Thumb src={photos[0] ? plainUrl(photos[0], 300) : undefined} alt={title} className="h-16 w-20" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold text-foreground">{title}</p>
           {listing.location_text && (
-            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin size={11} />{listing.location_text}</p>
+            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin size={11} aria-hidden />{listing.location_text}</p>
           )}
           <p className="text-sm font-bold text-foreground">{naira(listing.price_monthly)} <span className="text-xs font-normal text-muted-foreground">per month</span></p>
           <p className="truncate text-xs text-muted-foreground">
@@ -162,11 +178,16 @@ export function PropertySummary({
               ref ? `Ref ${ref}` : null,
             ].filter(Boolean).join(' · ')}
           </p>
+          {inspected && (
+            <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-800">
+              <ShieldCheck size={12} aria-hidden /> Inspected by EboHomes
+            </p>
+          )}
         </div>
       </div>
     )
     return href ? (
-      <Link href={href} className="block rounded-lg transition hover:bg-secondary/60">{row}</Link>
+      <Link href={href} className="block rounded-lg transition hover:bg-secondary/60 focus-visible:outline-2 focus-visible:outline-primary">{row}</Link>
     ) : (
       row
     )
@@ -175,17 +196,11 @@ export function PropertySummary({
   if (!full) {
     return (
       <div className="flex gap-3">
-        <div className="h-24 w-28 shrink-0 overflow-hidden rounded-lg bg-secondary">
-          {photos[0] ? (
-            <img src={plainUrl(photos[0], 400)} alt={title} className="h-full w-full object-cover" loading="lazy" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-muted-foreground"><ImageOff size={20} /></div>
-          )}
-        </div>
+        <Thumb src={photos[0] ? plainUrl(photos[0], 400) : undefined} alt={title} className="h-24 w-28" />
         <div className="min-w-0 flex-1 space-y-1">
           <p className="truncate text-sm font-bold text-foreground">{title}</p>
           {listing.location_text && (
-            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin size={12} />{listing.location_text}</p>
+            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin size={12} aria-hidden />{listing.location_text}</p>
           )}
           <p className="text-sm font-bold text-foreground">{naira(listing.price_monthly)} <span className="text-xs font-normal text-muted-foreground">per month</span></p>
           {facts}
@@ -206,7 +221,7 @@ export function PropertySummary({
       <div className="space-y-2">
         <h3 className="text-lg font-bold text-foreground">{title}</h3>
         {listing.location_text && (
-          <p className="flex items-center gap-1 text-sm text-muted-foreground"><MapPin size={14} />{listing.location_text}</p>
+          <p className="flex items-center gap-1 text-sm text-muted-foreground"><MapPin size={14} aria-hidden />{listing.location_text}</p>
         )}
         <p className="text-xl font-bold text-foreground">{naira(listing.price_monthly)} <span className="text-sm font-normal text-muted-foreground">per month</span></p>
         {facts}
@@ -226,7 +241,7 @@ export function PropertySummary({
           <p className="mb-2 text-sm font-semibold text-foreground">Amenities</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {listing.amenities.map((a) => (
-              <span key={a} className="flex items-center gap-2 text-sm text-foreground"><ShieldCheck size={14} className="text-primary" />{a}</span>
+              <span key={a} className="flex items-center gap-2 text-sm text-foreground"><ShieldCheck size={14} className="text-primary" aria-hidden />{a}</span>
             ))}
           </div>
         </div>

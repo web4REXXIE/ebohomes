@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Home, Star, Pause, Play, Pencil, Trash2, Plus, Eye, CheckCircle2, X, MessageCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useInspectedIds } from '@/lib/use-inspected-ids'
 import { PropertySummary, type PropertyLite } from '@/components/property-summary'
 import { displayTitle, listingIsLive } from '@/lib/property-display'
 import {
@@ -15,6 +16,9 @@ import { TONE_CLASS } from '@/lib/viewing-status'
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
 
+const actionBtn =
+  'inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40'
+
 export default function MyListingsPage() {
   const router = useRouter()
   const [listings, setListings] = useState<any[]>([])
@@ -24,7 +28,8 @@ export default function MyListingsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [seenMs, setSeenMs] = useState<number>(Date.now() - SEVEN_DAYS)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const inspected = useInspectedIds(listings.map((l) => l.id))
 
   const loadListings = async () => {
     setLoading(true)
@@ -80,19 +85,22 @@ export default function MyListingsPage() {
         prev.map((l) => (l.id === listing.id ? { ...l, status: nextStatus } : l))
       )
       const name = displayTitle(listing)
-      setMsg(
-        nextStatus === 'paused'
-          ? `"${name}" is paused. Tenants cannot see it until you resume it.`
-          : `"${name}" is live again. Tenants can see it.`
-      )
+      setMsg({
+        ok: true,
+        text:
+          nextStatus === 'paused'
+            ? `"${name}" is paused. Tenants cannot see it until you resume it.`
+            : `"${name}" is live again. Tenants can see it.`,
+      })
     } else {
-      alert('Failed to update listing: ' + error.message)
+      setMsg({ ok: false, text: 'Could not update the property: ' + error.message })
     }
     setActioningId(null)
   }
 
   const handleDelete = async (listingId: string) => {
     setActioningId(listingId)
+    setMsg(null)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       setActioningId(null)
@@ -107,8 +115,9 @@ export default function MyListingsPage() {
 
     if (!error) {
       setListings((prev) => prev.filter((l) => l.id !== listingId))
+      setMsg({ ok: true, text: 'The property was deleted.' })
     } else {
-      alert('Failed to delete listing: ' + error.message)
+      setMsg({ ok: false, text: 'Could not delete the property: ' + error.message })
     }
     setConfirmDeleteId(null)
     setActioningId(null)
@@ -130,10 +139,21 @@ export default function MyListingsPage() {
 
   if (loading) {
     return (
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8" aria-busy="true" aria-label="Loading your properties">
+        <div className="mb-6 h-8 w-48 animate-pulse rounded bg-secondary" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-40 bg-card rounded-2xl border border-border animate-pulse" />
+            <div key={i} className="animate-pulse space-y-3 rounded-2xl border border-border bg-card p-4">
+              <div className="h-5 w-28 rounded-full bg-secondary" />
+              <div className="flex gap-3">
+                <div className="h-16 w-20 rounded-lg bg-secondary" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-2/3 rounded bg-secondary" />
+                  <div className="h-3 w-1/2 rounded bg-secondary" />
+                </div>
+              </div>
+              <div className="h-10 rounded-lg bg-secondary" />
+            </div>
           ))}
         </div>
       </div>
@@ -141,40 +161,49 @@ export default function MyListingsPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground mb-1">My Properties</h1>
+          <h1 className="mb-1 text-2xl font-bold text-foreground">My Properties</h1>
           <p className="text-sm text-muted-foreground">See which of your properties are live, waiting or need action.</p>
         </div>
         <button
           onClick={() => router.push('/list-property')}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full px-5 py-2.5 flex items-center gap-2 text-sm"
+          className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
         >
-          <Plus size={16} /> Add New Property
+          <Plus size={16} aria-hidden /> Add new property
         </button>
       </div>
 
       {loadError && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+        <div role="alert" className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-900">
           We could not load your properties. Please refresh the page.
         </div>
       )}
 
       {msg && (
-        <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
-          <span>{msg}</span>
-          <button onClick={() => setMsg(null)} aria-label="Close message"><X size={16} /></button>
+        <div
+          role={msg.ok ? 'status' : 'alert'}
+          className={`mb-4 flex items-start justify-between gap-3 rounded-lg border p-3 text-sm font-medium ${
+            msg.ok ? 'border-blue-300 bg-blue-50 text-blue-900' : 'border-red-300 bg-red-50 text-red-900'
+          }`}
+        >
+          <span>{msg.text}</span>
+          <button onClick={() => setMsg(null)} aria-label="Close message" className="flex min-h-9 min-w-9 items-center justify-center">
+            <X size={16} aria-hidden />
+          </button>
         </div>
       )}
 
       {newlyApproved.length > 0 && (
         <div className="mb-5 rounded-xl border-2 border-emerald-400 bg-emerald-50 p-4">
           <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-700" size={22} />
+            <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-700" size={22} aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="text-base font-bold text-emerald-900">
-                {newlyApproved.length === 1 ? 'Your property was approved and is now live' : `${newlyApproved.length} of your properties were approved and are now live`}
+                {newlyApproved.length === 1
+                  ? 'Your property was approved and is now live'
+                  : `${newlyApproved.length} of your properties were approved and are now live`}
               </p>
               <p className="mt-1 text-sm text-emerald-900">
                 Approved means EboHomes checked the listing and tenants can now find it, request viewings and apply.
@@ -186,11 +215,11 @@ export default function MyListingsPage() {
                     {l.location_text && <p className="truncate text-xs text-muted-foreground">{l.location_text}</p>}
                     <div className="mt-2 flex flex-wrap gap-2">
                       {listingIsLive(l.status) && (
-                        <Link href={`/listing/${l.id}`} className="min-h-10 inline-flex items-center rounded-full bg-primary px-4 text-xs font-bold text-primary-foreground">
+                        <Link href={`/listing/${l.id}`} className="inline-flex min-h-11 items-center rounded-full bg-primary px-4 text-xs font-bold text-primary-foreground">
                           View live listing
                         </Link>
                       )}
-                      <a href={`#listing-${l.id}`} className="min-h-10 inline-flex items-center rounded-full border border-emerald-400 px-4 text-xs font-bold text-emerald-900">
+                      <a href={`#listing-${l.id}`} className="inline-flex min-h-11 items-center rounded-full border border-emerald-400 px-4 text-xs font-bold text-emerald-900">
                         Find it below
                       </a>
                     </div>
@@ -201,7 +230,7 @@ export default function MyListingsPage() {
                 Next: when a tenant asks to see a property, the request appears under{' '}
                 <Link href="/dashboard/viewings" className="font-bold underline">Viewings</Link>.
               </p>
-              <button onClick={dismissBanner} className="mt-3 min-h-10 rounded-full border border-emerald-500 px-4 text-xs font-bold text-emerald-900">
+              <button onClick={dismissBanner} className="mt-3 min-h-11 rounded-full border border-emerald-500 px-4 text-xs font-bold text-emerald-900">
                 OK, got it
               </button>
             </div>
@@ -210,36 +239,37 @@ export default function MyListingsPage() {
       )}
 
       {listings.length === 0 && !loadError ? (
-        <div className="bg-card border border-border rounded-2xl p-10 text-center">
-          <Home size={32} className="mx-auto text-muted-foreground mb-3" />
-          <p className="font-semibold text-foreground mb-1">No properties yet</p>
-          <p className="text-sm text-muted-foreground mb-5">You haven't listed any properties. Add your first one to get started.</p>
+        <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+          <Home size={32} className="mx-auto mb-3 text-muted-foreground" aria-hidden />
+          <p className="mb-1 font-semibold text-foreground">No properties yet</p>
+          <p className="mb-5 text-sm text-muted-foreground">You haven&apos;t listed any properties. Add your first one to get started.</p>
           <button
             onClick={() => router.push('/list-property')}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full px-6 py-2.5 text-sm"
+            className="min-h-11 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
           >
-            Add New Property
+            Add new property
           </button>
         </div>
       ) : (
         <>
-          <div className="mb-6 flex flex-wrap gap-2">
+          <nav aria-label="Jump to a group" className="mb-6 flex flex-wrap gap-2">
             {GROUP_ORDER.filter((g) => groups[g].length > 0).map((g) => (
-              <a key={g} href={`#group-${g}`} className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground">
+              <a key={g} href={`#group-${g}`} className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-4 text-xs font-bold text-foreground">
                 {GROUP_TITLE[g]} ({groups[g].length})
               </a>
             ))}
-          </div>
+          </nav>
 
           {GROUP_ORDER.filter((g) => groups[g].length > 0).map((g: ListingGroup) => (
             <section key={g} id={`group-${g}`} className="mb-8 scroll-mt-24">
               <h2 className="text-lg font-bold text-foreground">{GROUP_TITLE[g]} ({groups[g].length})</h2>
               <p className="mb-3 text-sm text-muted-foreground">{GROUP_HELP[g]}</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {groups[g].map((listing) => {
                   const info = listingStatusInfo(listing.status)
                   const isNew = newIds.has(listing.id)
                   const live = listingIsLive(listing.status)
+                  const busy = actioningId === listing.id
                   return (
                     <div
                       key={listing.id}
@@ -251,17 +281,17 @@ export default function MyListingsPage() {
                           {info.label}
                         </span>
                         {isNew && (
-                          <span className="inline-block rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">NEW — JUST APPROVED</span>
+                          <span className="inline-block rounded-full bg-emerald-700 px-2.5 py-1 text-xs font-bold text-white">Just approved</span>
                         )}
                         {listing.featured && (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600"><Star size={12} /> Featured</span>
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700"><Star size={12} aria-hidden /> Featured</span>
                         )}
                       </div>
 
                       <PropertySummary
                         compact
                         listing={listing as PropertyLite}
-                        inspected={false}
+                        inspected={inspected.has(listing.id)}
                         href={live ? `/listing/${listing.id}` : undefined}
                       />
 
@@ -281,64 +311,56 @@ export default function MyListingsPage() {
                         </p>
                       )}
 
-                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
                         {live && (
-                          <Link
-                            href={`/listing/${listing.id}`}
-                            className="min-h-10 flex items-center gap-1 text-xs font-semibold text-foreground border border-border rounded-full px-3 py-1.5 hover:bg-secondary"
-                          >
-                            <Eye size={12} /> View live listing
+                          <Link href={`/listing/${listing.id}`} className={`${actionBtn} border-border text-foreground hover:bg-secondary`}>
+                            <Eye size={12} aria-hidden /> View live listing
                           </Link>
                         )}
 
                         <button
                           onClick={() => router.push(`/dashboard/edit/${listing.id}`)}
-                          className="min-h-10 flex items-center gap-1 text-xs font-semibold text-primary border border-primary/30 rounded-full px-3 py-1.5 hover:bg-primary/5"
+                          className={`${actionBtn} border-primary/30 text-primary hover:bg-primary/5`}
                         >
-                          <Pencil size={12} /> Edit
+                          <Pencil size={12} aria-hidden /> Edit
                         </button>
 
                         {(listing.status === 'rejected' || listing.status === 'suspended') && (
-                          <Link
-                            href="/contact"
-                            className="min-h-10 flex items-center gap-1 text-xs font-semibold text-foreground border border-border rounded-full px-3 py-1.5 hover:bg-secondary"
-                          >
-                            <MessageCircle size={12} /> Contact EboHomes
+                          <Link href="/contact" className={`${actionBtn} border-border text-foreground hover:bg-secondary`}>
+                            <MessageCircle size={12} aria-hidden /> Contact EboHomes
                           </Link>
                         )}
 
                         {(listing.status === 'approved' || listing.status === 'paused') && (
                           <button
                             onClick={() => handleTogglePause(listing)}
-                            disabled={actioningId === listing.id}
-                            className="min-h-10 flex items-center gap-1 text-xs font-semibold text-foreground border border-border rounded-full px-3 py-1.5 hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled={busy}
+                            className={`${actionBtn} border-border text-foreground hover:bg-secondary`}
                           >
-                            {listing.status === 'paused' ? <Play size={12} /> : <Pause size={12} />}
+                            {listing.status === 'paused' ? <Play size={12} aria-hidden /> : <Pause size={12} aria-hidden />}
                             {listing.status === 'paused' ? 'Resume' : 'Pause'}
                           </button>
                         )}
 
                         {!listing.featured && listing.status === 'approved' && (
-                          <Link
-                            href={`/listing/${listing.id}/feature`}
-                            className="min-h-10 flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 rounded-full px-3 py-1.5 hover:bg-amber-100"
-                          >
-                            <Star size={12} /> Feature
+                          <Link href={`/listing/${listing.id}/feature`} className={`${actionBtn} border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100`}>
+                            <Star size={12} aria-hidden /> Feature
                           </Link>
                         )}
 
                         {confirmDeleteId === listing.id ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-2">
+                            <p className="w-full text-xs font-medium text-red-900">Delete this property? This cannot be undone.</p>
                             <button
                               onClick={() => handleDelete(listing.id)}
-                              disabled={actioningId === listing.id}
-                              className="min-h-10 text-xs font-bold text-white bg-red-600 rounded-full px-3 py-1.5"
+                              disabled={busy}
+                              className="min-h-11 rounded-full bg-red-700 px-4 text-xs font-bold text-white disabled:opacity-50"
                             >
-                              Confirm Delete
+                              {busy ? 'Deleting…' : 'Yes, delete'}
                             </button>
                             <button
                               onClick={() => setConfirmDeleteId(null)}
-                              className="min-h-10 text-xs font-semibold text-muted-foreground px-2 py-1.5"
+                              className="min-h-11 px-3 text-xs font-semibold text-muted-foreground"
                             >
                               Cancel
                             </button>
@@ -346,9 +368,9 @@ export default function MyListingsPage() {
                         ) : (
                           <button
                             onClick={() => setConfirmDeleteId(listing.id)}
-                            className="min-h-10 flex items-center gap-1 text-xs font-semibold text-red-600 border border-red-200 rounded-full px-3 py-1.5 hover:bg-red-50"
+                            className={`${actionBtn} border-red-200 text-red-700 hover:bg-red-50`}
                           >
-                            <Trash2 size={12} /> Delete
+                            <Trash2 size={12} aria-hidden /> Delete
                           </button>
                         )}
                       </div>

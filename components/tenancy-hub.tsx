@@ -3,18 +3,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, CalendarDays, User } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PayOnlinePanel } from '@/components/pay-online-panel'
 import { fmtDate, fmtDateTime, label, naira, refundPreview, tenancyPath } from '@/lib/case-status'
 import { classifyTenancyLoad, TENANCY_LOAD_ERROR_TEXT, TENANCY_NOT_FOUND_TEXT } from '@/lib/tenancy-access'
 
 type Role = 'tenant' | 'landlord'
-const input = 'w-full bg-input border border-border rounded-md px-3 py-2 text-sm'
-const primary = 'px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50'
-const outline = 'px-3 py-1.5 rounded-md border border-border text-sm disabled:opacity-50'
-const card = 'bg-card border border-border rounded-lg p-4 text-sm space-y-2'
-const pill = 'text-xs border border-border rounded-full px-2 py-1 capitalize h-fit'
+const input =
+  'w-full bg-input border border-border rounded-md px-3 py-2.5 text-sm'
+const primary =
+  'min-h-11 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50'
+const outline =
+  'min-h-11 px-4 py-2 rounded-md border border-border text-sm font-semibold disabled:opacity-50'
+const card = 'bg-card border border-border rounded-xl p-4 text-sm space-y-2'
+const pill =
+  'text-xs font-semibold border border-border bg-secondary rounded-full px-2.5 py-1 capitalize h-fit whitespace-nowrap'
 
 export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string }) {
   const router = useRouter()
@@ -126,17 +130,112 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
   return (
     <div className="max-w-3xl mx-auto w-full px-4 py-6 space-y-6">
       <Link href={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground"><ArrowLeft size={14} /> Tenancies</Link>
-      <div className={card}>
-        <p className="font-semibold text-foreground text-base">{t.title ?? 'Property'}</p>
-        <p className="text-xs text-muted-foreground">{t.location_text ?? ''} {t.tenancy_code ? `· ${t.tenancy_code}` : ''}</p>
-        <p>
-  {naira(live?.status === 'signed' ? live.rent_amount : t.rent_amount)}
-  {' / '}{t.rent_period}
-  {' · '}{fmtDate(t.start_date)} to {fmtDate(t.end_date)}
-  {' · '}<span className="capitalize">{t.status}</span>
-</p>
-        <p className="text-xs text-muted-foreground">{role === 'tenant' ? 'Landlord' : 'Tenant'}: {t.other_party ?? '—'}</p>
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="space-y-3 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-foreground">
+                {t.title ?? 'Property'}
+              </h1>
+              {t.location_text && (
+                <p className="text-sm text-muted-foreground">
+                  {t.location_text}
+                </p>
+              )}
+              {t.tenancy_code && (
+                <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+                  Ref {t.tenancy_code}
+                </p>
+              )}
+            </div>
+            <span
+              className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${
+                t.status === 'active'
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                  : 'border-slate-300 bg-slate-100 text-slate-800'
+              }`}
+            >
+              {t.status}
+            </span>
+          </div>
+
+          <dl className="grid grid-cols-2 gap-3 rounded-lg bg-secondary/60 p-3 text-sm">
+            <div>
+              <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                {live?.status === 'signed' ? 'Agreed rent' : 'Rent'}
+              </dt>
+              <dd className="font-bold text-foreground">
+                {naira(
+                  live?.status === 'signed' ? live.rent_amount : t.rent_amount,
+                )}
+                <span className="text-xs font-normal text-muted-foreground">
+                  {' '}
+                  / {t.rent_period}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <User size={11} aria-hidden />{' '}
+                {role === 'tenant' ? 'Landlord' : 'Tenant'}
+              </dt>
+              <dd className="truncate font-medium text-foreground">
+                {t.other_party ?? '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <CalendarDays size={11} aria-hidden /> Starts
+              </dt>
+              <dd className="font-medium text-foreground">
+                {fmtDate(t.start_date)}
+              </dd>
+            </div>
+            <div>
+              <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <CalendarDays size={11} aria-hidden /> Ends
+              </dt>
+              <dd className="font-medium text-foreground">
+                {fmtDate(t.end_date)}
+              </dd>
+            </div>
+          </dl>
+
+          {/* Progress comes only from the saved agreement status. */}
+          {(() => {
+            const steps = ['Terms proposed', 'Accepted by both', 'Agreement recorded']
+            const done = !live
+              ? 0
+              : live.status === 'signed'
+                ? 3
+                : live.status === 'accepted'
+                  ? 2
+                  : 1
+            return (
+              <div role="group" aria-label="Agreement progress">
+                <div className="flex gap-1" aria-hidden>
+                  {steps.map((s, i) => (
+                    <span
+                      key={s}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        i < done ? 'bg-primary' : 'bg-border'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {done === 0
+                    ? 'No rental terms have been proposed yet.'
+                    : done === 3
+                      ? 'Signed agreement recorded by EboHomes.'
+                      : `Agreement: ${steps[done - 1].toLowerCase()}. Not signed yet.`}
+                </p>
+              </div>
+            )
+          })()}
+        </div>
       </div>
+      
       {msg && <p className={`text-sm rounded-md p-3 ${msg.ok ? 'text-primary bg-primary/10' : 'text-destructive bg-destructive/10'}`}>{msg.text}</p>}
 
       {/* ---------------- AGREEMENT ---------------- */}
