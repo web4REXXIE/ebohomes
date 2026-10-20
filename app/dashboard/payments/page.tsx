@@ -78,8 +78,11 @@ export default function LandlordPaymentsPage() {
       supabase.from('profiles').select('id, full_name').in('id', tenantIds),
     ])
 
-    const merged = tenancyRows.map((t) => ({
-      ...t,
+   const { data: signedRows } = await supabase.from('rental_terms').select('tenancy_id, rent_amount').in('tenancy_id', tenancyRows.map((t) => t.id)).eq('status', 'signed')
+
+const merged = tenancyRows.map((t) => ({
+  ...t,
+  rent_amount: signedRows?.find((s) => s.tenancy_id === t.id)?.rent_amount ?? t.rent_amount,
       listing: listings?.find((l) => l.id === t.listing_id),
       tenant: tenants?.find((p) => p.id === t.tenant_id),
     }))

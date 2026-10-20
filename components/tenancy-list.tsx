@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2, Receipt } from 'lucide-react'
 import { paymentLabel } from '@/lib/payment-status'
 import { supabase } from '@/lib/supabase'
+import { tenancyPath } from '@/lib/case-status'
 
 type Props = { role: 'tenant' | 'landlord' }
 
@@ -25,6 +26,7 @@ export function TenancyList({ role }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<any[]>([])
   const [payments, setPayments] = useState<Record<string, any[]>>({})
+  const [signed, setSigned] = useState<Record<string, any>>({})
   const [renewals, setRenewals] = useState<Record<string, any[]>>({})
   const [loading, setLoading] = useState(true)
   const [offerFor, setOfferFor] = useState<string | null>(null)
@@ -73,6 +75,8 @@ export function TenancyList({ role }: Props) {
         pm[p.tenancy_id].push(p)
       })
       setPayments(pm)
+      const { data: rt } = await supabase.from('rental_terms').select('tenancy_id, rent_amount, deposit_amount, fees_amount').in('tenancy_id', ids).eq('status', 'signed')
+setSigned(Object.fromEntries((rt ?? []).map((x: any) => [x.tenancy_id, x])))
 
       const { data: ren } = await supabase
         .from('renewals')
@@ -87,6 +91,7 @@ export function TenancyList({ role }: Props) {
       setRenewals(rm)
     } else {
       setPayments({})
+      setSigned({})
       setRenewals({})
     }
     setLoading(false)
@@ -273,6 +278,18 @@ export function TenancyList({ role }: Props) {
                   </p>
                 </div>
 
+                {signed[t.id] && (
+  <p className="mt-3 text-sm rounded-md bg-secondary px-3 py-2">
+    Agreed in the signed agreement: rent ₦{Number(signed[t.id].rent_amount).toLocaleString()}
+    {Number(signed[t.id].deposit_amount) > 0 && <> · deposit ₦{Number(signed[t.id].deposit_amount).toLocaleString()}</>}
+    {Number(signed[t.id].fees_amount) > 0 && <> · fees ₦{Number(signed[t.id].fees_amount).toLocaleString()}</>}
+    . Payments are based on these figures.
+  </p>
+)}
+<Link href={tenancyPath(role, t.id)} className="mt-3 inline-flex min-h-10 items-center rounded-md border border-border px-3 text-sm font-semibold text-primary">
+  {role === 'tenant' ? 'Open tenancy: agreement and how to pay' : 'Open tenancy'}
+</Link>
+
                 {t.status === 'active' && d !== null && d <= 30 && d >= 0 && (
                   <p className="mt-3 text-sm rounded-md bg-secondary px-3 py-2">
                     {d <= 14 ? 'Renewal reminder: ' : 'Your tenancy is approaching renewal: '}
@@ -373,7 +390,7 @@ export function TenancyList({ role }: Props) {
                 <div className="mt-4">
                   <p className="text-xs font-semibold text-muted-foreground mb-1">Payment records</p>
                   {(payments[t.id] ?? []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+                    <p className="text-sm text-muted-foreground">{role === 'tenant' ? 'No payments recorded yet. Open your tenancy to see how to pay.' : 'No payments recorded yet.'}</p>
                   ) : (
                     <>
                       <div className="space-y-1">
