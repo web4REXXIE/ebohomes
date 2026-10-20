@@ -9,7 +9,6 @@ import {
   CalendarClock,
   MessageCircle,
   Bell,
-  ChevronRight,
   Home,
   CheckCircle2,
   Clock,
@@ -24,12 +23,10 @@ import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
 import { useNotifications } from '@/components/notification-provider'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
-import { displayTitle, listingIsLive } from '@/lib/property-display'
+import { listingIsLive } from '@/lib/property-display'
 import { groupListings, isNewlyApproved, listingStatusInfo } from '@/lib/listing-status'
 import { TONE_CLASS } from '@/lib/viewing-status'
 import { PropertySummary, type PropertyLite } from '@/components/property-summary'
-import { TenantNextStep } from '@/components/tenant-next-step'
-import { ListingCard } from '@/components/listing-card'
 
 // Shown on the main page only when someone is signed in.
 // Tenants see their tenant dashboard sections, landlords see their landlord dashboard sections.
@@ -67,37 +64,11 @@ export function SignedInHome() {
 }
 
 /* =====================================================================
-   TENANT
+   TENANT: greeting and quick links only. The rental journey, browsing,
+   messages and notifications live inside the tenant dashboard.
    ===================================================================== */
 
-type Listing = {
-  id: string
-  title: string | null
-  price_monthly: number | null
-  location_text: string | null
-  property_type: string | null
-  bedrooms: number | null
-  photos: string[] | null
-}
-
-type ConvoPreview = { id: string; lastMessage: string; lastTime: string; unread: boolean }
-
 const ENDED = ['ended', 'terminated', 'cancelled', 'expired']
-const naira = (v: unknown) => `₦${(Number(v) || 0).toLocaleString('en-NG')}`
-
-function img(url: string | null | undefined, width: number) {
-  if (!url) return '/placeholder.jpg'
-  if (!url.includes('/upload/') || url.includes('/upload/f_auto')) return url
-  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`)
-}
-
-function formatTime(iso: string) {
-  const d = new Date(iso)
-  const sameDay = d.toDateString() === new Date().toDateString()
-  return sameDay
-    ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-}
 
 function greeting() {
   const h = new Date().getHours()
@@ -112,10 +83,6 @@ function TenantSections({ userId }: { userId: string }) {
   const [tenanciesActive, setTenanciesActive] = useState(0)
   const [viewingsUpcoming, setViewingsUpcoming] = useState(0)
   const [savedCount, setSavedCount] = useState(0)
-  const [recommended, setRecommended] = useState<any[]>([])
-  const [continueBrowsing, setContinueBrowsing] = useState<Listing[]>([])
-  const [messages, setMessages] = useState<ConvoPreview[]>([])
-  const [notifications, setNotifications] = useState<any[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -138,47 +105,6 @@ function TenantSections({ userId }: { userId: string }) {
         (viewsRes.data ?? []).filter((v: any) => v.status === 'scheduled' && v.scheduled_for && new Date(v.scheduled_for).getTime() > now).length
       )
       setTenanciesActive(((tenRes.data ?? []) as any[]).filter((t) => !ENDED.includes(t.status ?? '')).length)
-
-      // Recommended for you: the newest approved homes
-      const { data: recs } = await supabase
-        .from('listings')
-        .select('id, title, price_monthly, price_yearly, location_text, property_type, bedrooms, bathrooms, photos, created_at, featured')
-        .eq('status', 'approved')
-        .order('created_at', { ascending: false })
-        .limit(4)
-      if (!cancelled) setRecommended(recs ?? [])
-
-      // Continue Browsing: most recent distinct listings the tenant viewed
-      const { data: viewRows } = await supabase
-        .from('property_views').select('listing_id, created_at').eq('user_id', userId)
-        .order('created_at', { ascending: false }).limit(10)
-      if (viewRows && viewRows.length > 0) {
-        const seen: string[] = []
-        for (const v of viewRows) {
-          if (!seen.includes(v.listing_id)) seen.push(v.listing_id)
-          if (seen.length >= 3) break
-        }
-        const { data: browsed } = await supabase.from('listings').select('*').in('id', seen)
-        if (!cancelled) setContinueBrowsing(seen.map((id) => browsed?.find((b) => b.id === id)).filter(Boolean) as Listing[])
-      }
-
-      // Recent conversations with EboHomes Support
-      const { data: threads } = await supabase
-        .from('support_threads').select('id, subject, last_message_at').eq('customer_id', userId)
-        .order('last_message_at', { ascending: false }).limit(3)
-      if (threads && threads.length > 0) {
-        const { data: unreadRows } = await supabase
-          .from('support_messages').select('thread_id').eq('sender_kind', 'staff').is('read_at', null)
-        const unreadSet = new Set((unreadRows ?? []).map((r: any) => r.thread_id))
-        if (!cancelled) {
-          setMessages(threads.map((t: any) => ({ id: t.id, lastMessage: t.subject, lastTime: formatTime(t.last_message_at), unread: unreadSet.has(t.id) })))
-        }
-      }
-
-      const { data: notifs } = await supabase
-        .from('notifications').select('*').eq('user_id', userId)
-        .order('created_at', { ascending: false }).limit(3)
-      if (!cancelled) setNotifications(notifs ?? [])
     })()
     return () => { cancelled = true }
   }, [userId])
@@ -193,14 +119,12 @@ function TenantSections({ userId }: { userId: string }) {
   ]
 
   return (
-    <section aria-label="Your dashboard" className="mx-auto max-w-7xl space-y-6 px-4 pt-6 sm:px-6 md:pt-8 lg:px-8">
+    <section aria-label="Your dashboard" className="mx-auto max-w-7xl space-y-5 px-4 pt-6 sm:px-6 md:pt-8 lg:px-8">
       <div>
         <p className="text-sm text-muted-foreground">{greeting()},</p>
         <h2 className="text-2xl font-extrabold text-foreground">{name || 'there'} 👋</h2>
-        <p className="text-sm text-muted-foreground">Here is what needs your attention.</p>
       </div>
 
-      {/* Quick actions */}
       <div className="grid grid-cols-3 gap-3 lg:grid-cols-6">
         {tiles.map((t) => (
           <Link
@@ -215,107 +139,6 @@ function TenantSections({ userId }: { userId: string }) {
             <span className="mt-0.5 hidden text-[11px] leading-snug text-muted-foreground sm:block">{t.text}</span>
           </Link>
         ))}
-      </div>
-
-      {/* Recommended for you */}
-      {recommended.length > 0 && (
-        <div>
-          <div className="mb-4 flex items-end justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-extrabold text-foreground">Recommended for you</h3>
-              <p className="text-sm text-muted-foreground">The newest homes on EboHomes.</p>
-            </div>
-            <Link href="/search" className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
-              View all homes <ArrowRight size={14} />
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {recommended.map((l) => (
-              <ListingCard
-                key={l.id}
-                id={l.id}
-                title={l.title ?? undefined}
-                image={img(l.photos?.[0], 600)}
-                price_monthly={l.price_monthly ?? 0}
-                price_yearly={l.price_yearly ?? undefined}
-                location={l.location_text ?? ''}
-                property_type={l.property_type ?? ''}
-                bedrooms={l.bedrooms ?? undefined}
-                bathrooms={l.bathrooms ?? undefined}
-                photoCount={Array.isArray(l.photos) ? l.photos.length : undefined}
-                created_at={l.created_at}
-                featured={!!l.featured}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Continue your rental journey: real steps from the tenant's records */}
-      <TenantNextStep />
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Panel title="Continue Browsing" href="/search">
-          {continueBrowsing.length === 0 ? (
-            <EmptyRow text="Properties you view will show up here." />
-          ) : (
-            <div className="space-y-3">
-              {continueBrowsing.map((l) => (
-                <Link key={l.id} href={`/listing/${l.id}`} className="-mx-2 flex items-center gap-3 rounded-lg p-2 hover:bg-secondary/40">
-                  <img src={img(l.photos?.[0], 200)} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground">{displayTitle(l)}</p>
-                    <p className="truncate text-xs text-muted-foreground">{l.location_text}</p>
-                  </div>
-                  <p className="whitespace-nowrap text-xs font-bold text-primary">{naira(l.price_monthly)}</p>
-                </Link>
-              ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Recent Messages" href="/messages">
-          {messages.length === 0 ? (
-            <EmptyRow text="No conversations yet." />
-          ) : (
-            <div className="space-y-1">
-              {messages.map((c) => (
-                <Link key={c.id} href={`/messages?thread=${c.id}`} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-secondary/40">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">E</div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground">EboHomes Support</p>
-                    <p className="truncate text-xs text-muted-foreground">{c.lastMessage}</p>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="text-[10px] text-muted-foreground">{c.lastTime}</span>
-                    {c.unread && <span className="h-2 w-2 rounded-full bg-primary" />}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Notifications" href="/notifications">
-          {notifications.length === 0 ? (
-            <EmptyRow text="You’re all caught up." />
-          ) : (
-            <div className="space-y-1">
-              {notifications.map((n) => (
-                <div key={n.id} className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-secondary/40">
-                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <Bell size={13} className="text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-foreground">{n.message || n.title || n.body || 'Notification'}</p>
-                    <p className="text-[10px] text-muted-foreground">{n.created_at ? formatTime(n.created_at) : ''}</p>
-                  </div>
-                  {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />}
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
       </div>
     </section>
   )
@@ -513,24 +336,3 @@ function LandlordSections({ userId }: { userId: string }) {
   )
 }
 
-/* ---------------- shared bits ---------------- */
-
-function Panel({ title, href, children }: { title: string; href?: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        {href && (
-          <Link href={href} className="flex items-center gap-0.5 text-xs font-medium text-primary">
-            View all <ChevronRight size={13} />
-          </Link>
-        )}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function EmptyRow({ text }: { text: string }) {
-  return <p className="py-4 text-center text-sm text-muted-foreground">{text}</p>
-}

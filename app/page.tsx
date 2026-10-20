@@ -1076,9 +1076,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Signed-in dashboard: tenant or landlord sections (nothing for visitors) */}
-        <SignedInHome />
-
         {/* Safety strip */}
         <section className="mx-auto max-w-5xl px-4 pt-5 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
@@ -1114,12 +1111,12 @@ export default function HomePage() {
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 md:py-8">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="text-amber-500 text-xl">★</span>
-            <h2 className="text-xl md:text-3xl font-bold text-foreground">Featured Properties</h2>
+            <h2 className="text-xl md:text-3xl font-bold text-foreground">Recommended for you</h2>
             <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-2.5 py-1 rounded-full">
-              Premium Listings
+              Featured
             </span>
           </div>
-          <p className="text-muted-foreground text-sm mb-5">Featured properties, reviewed before they go live</p>
+          <p className="text-muted-foreground text-sm mb-5">Featured homes, reviewed before they go live</p>
 
           {loading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1135,6 +1132,9 @@ export default function HomePage() {
             <FeaturedMarquee items={featured} />
           )}
         </section>
+
+        {/* Signed-in dashboard: tenant or landlord sections (nothing for visitors) */}
+        <SignedInHome />
 
         {/* Recently Added */}
         {(loading || recent.length > 0) && (

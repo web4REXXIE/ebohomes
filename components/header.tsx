@@ -7,13 +7,14 @@ import {
   Sun, Moon, LogOut, LayoutDashboard, Menu, X,
   Info, HelpCircle, Mail, PlusCircle, ChevronRight,
   Bell, Search as SearchIcon, Home as HomeIcon, Heart, MessageCircle,
-  UserCircle,
+  UserCircle, ChevronDown,
 } from 'lucide-react'
 import { Button } from './ui/button'
 import { ProfileMenu } from './profile-menu'
 import { InstallButton } from '@/components/install-button'
 import { NotificationBell } from '@/components/notification-bell'
 import { supabase } from '@/lib/supabase'
+import { dashboardLinks } from '@/lib/dashboard-links'
 
 export function Header() {
   const router = useRouter()
@@ -304,11 +305,11 @@ export function Header() {
 
             {loggedIn && (
               <DrawerGroup label="Account">
-                <DrawerItem
+                <DrawerDropdown
                   icon={<LayoutDashboard size={18} />}
-                  href={dashboardHref}
                   label="Dashboard"
-                  onClick={() => setDrawerOpen(false)}
+                  items={dashboardLinks(role)}
+                  onNavigate={() => setDrawerOpen(false)}
                 />
                 <DrawerItem
                   icon={<Heart size={18} />}
@@ -482,5 +483,47 @@ function DrawerItem({
     <Link href={href!} onClick={onClick} className={className}>
       {content}
     </Link>
+  )
+}
+
+// "Dashboard" row that opens a drop-down with the tools inside the dashboard
+function DrawerDropdown({
+  icon, label, items, onNavigate,
+}: {
+  icon: React.ReactNode
+  label: string
+  items: { label: string; href: string }[]
+  onNavigate: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex min-h-[46px] w-full items-center justify-between rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted"
+      >
+        <span className="flex items-center gap-3 text-foreground">
+          {icon}
+          <span className="text-sm font-medium">{label}</span>
+        </span>
+        <ChevronDown size={15} className={`text-muted-foreground/60 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="mb-1 ml-6 mt-1 flex flex-col border-l border-border pl-3">
+          {items.map((i) => (
+            <Link
+              key={i.href}
+              href={i.href}
+              onClick={onNavigate}
+              className="flex min-h-[42px] items-center rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted"
+            >
+              {i.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
