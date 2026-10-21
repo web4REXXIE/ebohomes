@@ -9,12 +9,13 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PayOnlinePanel } from '@/components/pay-online-panel'
+import { TenancyHub } from '@/components/tenancy-hub'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { ApplicantFacts, ApplicationStatusBadge } from '@/components/application-ui'
 import { listingIsLive } from '@/lib/property-display'
-import { fmtDateTime, naira } from '@/lib/case-status'
+import { fmtDate, fmtDateTime, naira, toIso } from '@/lib/case-status'
 import { getPaymentState, paymentLabel } from '@/lib/payment-status'
-import { OPEN_STATUSES, TONE_CLASS, tenantPanel, viewingLabel, viewingTone, type Tone } from '@/lib/viewing-status'
+import { OPEN_STATUSES, TONE_CLASS, normaliseNgPhone, tenantPanel, viewingLabel, viewingTone, type Tone } from '@/lib/viewing-status'
 import {
   STEP_ORDER, STEP_TITLE, buildJourney, lockedReason, pickTenancy, statusPanel,
   type JourneyStep, type StepKey,
@@ -71,6 +72,10 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   const [terms, setTerms] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
   const [renewalOffered, setRenewalOffered] = useState(false)
+  const [renewalOffer, setRenewalOffer] = useState<any>(null)
+  // Set only when the saved data moves the journey forward after an action.
+  const [unlocked, setUnlocked] = useState<{ from: StepKey; to: StepKey } | null>(null)
+  const prevKey = useRef<StepKey | null>(null)
 
   const [picked, setPicked] = useState<StepKey | null>(null)
   const [busy, setBusy] = useState(false)
@@ -79,6 +84,13 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   const [ready, setReady] = useState(false)
   const [note, setNote] = useState('')
   const [intro, setIntro] = useState(false)
+  // Request-a-viewing form (same fields and database function as the Viewings page).
+  const [reqWhen, setReqWhen] = useState('')
+  const [reqPhone, setReqPhone] = useState<string | null>(null)
+  const [reqNote, setReqNote] = useState('')
+  const [profilePhone, setProfilePhone] = useState('')
+  // The tenancy records panel (handover, repairs, disputes, deposit) loads only when the tenant opens it.
+  const [hubOpen, setHubOpen] = useState(false)
 
   const topRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef<HTMLHeadingElement>(null)
@@ -86,6 +98,27 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
 
   useEffect(() => {
     try { if (!window.localStorage.getItem(INTRO_KEY)) setIntro(true) } catch { /* storage unavailable: show nothing */ }
+  }, [])
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const { data: auth } = await supabase.auth.getUser()
+      const uid = auth.user?.id
+      if (!uid) return
+      const { data } = await supabase.from('profiles').select('phone').eq('id', uid).maybeSingle()
+      if (alive) setProfilePhone((data as any)?.phone ?? '')
+    })()
+    return () => { alive = false }
+  }, [])
+  // Arriving straight from the Apply form: show the success message once, then clean the address.
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search)
+      if (q.get('submitted') === '1') {
+        setMsg({ text: 'Application submitted. Stage 1 is complete. EboHomes will now review it. Nothing is charged or reserved yet.', ok: true })
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+    } catch { /* ignore */ }
   }, [])
   const dismissIntro = () => {
     setIntro(false)
@@ -122,13 +155,13 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
 
     const lite = pickTenancy((tn.data ?? []) as any[])
     if (!lite) {
-      setTenancyRow(null); setTerms([]); setPayments([]); setRenewalOffered(false)
+      setTenancyRow(null); setTerms([]); setPayments([]); setRenewalOffered(false); setRenewalOffer(null)
     } else {
       const [mine, rt, pay, ren] = await Promise.all([
         supabase.rpc('my_tenancies', { p_as: 'tenant' }),
         supabase.from('rental_terms').select('*').eq('tenancy_id', lite.id).order('version', { ascending: false }),
         supabase.from('payments').select('id, tenancy_id, amount, type, status, receipt_code, created_at, verified_by, review_note').eq('tenancy_id', lite.id).order('created_at', { ascending: false }),
-        supabase.from('renewals').select('id, status').eq('tenancy_id', lite.id).eq('status', 'offered'),
+        supabase.from('renewals').select('id, status, new_rent, new_end_date, terms').eq('tenancy_id', lite.id).eq('status', 'offered').order('created_at', { ascending: false }),
       ])
       const full = (mine.data ?? []).find((x: any) => x && x.id === lite.id)
       if (mine.error || !full) problems.push('tenancy details')
@@ -138,6 +171,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       setTerms(rt.data ?? [])
       setPayments(pay.data ?? [])
       setRenewalOffered(!ren.error && (ren.data ?? []).length > 0)
+      setRenewalOffer(!ren.error && (ren.data ?? []).length > 0 ? (ren.data as any[])[0] : null)
     }
     setWarn(problems.length ? `Some information could not load (${problems.join(', ')}). What you see may be incomplete. Please refresh the page.` : '')
     setLoading(false)
@@ -159,6 +193,17 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       terms: liveTerms,
     })
   }, [app, viewings, tenancyRow, liveTerms])
+
+  // The first load never shows a banner. After that, a banner appears only when the journey really moved to a later stage.
+  useEffect(() => {
+    const cur = journey?.currentKey ?? null
+    const prev = prevKey.current
+    prevKey.current = cur
+    if (cur && prev && cur !== prev && STEP_ORDER.indexOf(cur) > STEP_ORDER.indexOf(prev)) {
+      setUnlocked({ from: prev, to: cur })
+      setPicked(null)
+    }
+  }, [journey?.currentKey])
 
   const selected: StepKey = picked ?? journey?.currentKey ?? 'application'
 
@@ -206,6 +251,37 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
     else { flash(ok, true); saved = true }
     await load()
     return saved
+  }
+
+  // Same guarded update the Tenancies page uses. It only changes an offer that is still "offered".
+  const respondRenewal = async (id: string, status: 'accepted' | 'declined'): Promise<boolean> => {
+    if (busy) return false
+    const verb = status === 'accepted' ? 'accept' : 'decline'
+    if (!window.confirm(`Are you sure you want to ${verb} this renewal offer? No payment is taken.`)) return false
+    setBusy(true); setMsg(null)
+    const { data, error } = await supabase.from('renewals').update({ status }).eq('id', id).eq('status', 'offered').select('id')
+    setBusy(false)
+    let saved = false
+    if (error) flash(error.message, false)
+    else if (!data || data.length === 0) flash('This offer could not be updated. It may already have been answered.', false)
+    else {
+      flash(status === 'accepted' ? 'You accepted the renewal offer. This records your response only. No payment has been charged.' : 'You declined the renewal offer.', true)
+      saved = true
+    }
+    await load()
+    return saved
+  }
+
+  const submitViewing = async () => {
+    const ph = reqPhone ?? profilePhone
+    const iso = toIso(reqWhen)
+    if (!iso || !normaliseNgPhone(ph)) return
+    const ok = await rpc(
+      'request_viewing',
+      { p_application: applicationId, p_preferred: iso, p_note: reqNote.trim() || null, p_phone: ph },
+      'Viewing requested. EboHomes has received it and will confirm the appointment right here on this page.',
+    )
+    if (ok) { setReqWhen(''); setReqNote('') }
   }
 
   if (loading) {
@@ -327,14 +403,6 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
     )
   }
 
-  const renderTenancyLink = (label: string) =>
-    tenancyRow ? (
-      <div className="rounded-lg border border-border p-3 text-sm">
-        <p className="text-muted-foreground">Agreement, handover, repairs, disputes and deposit are in your tenancy details.</p>
-        <Link href={`/tenancies/${tenancyRow.id}`} className={`${btnS} mt-2`}>{label} <ArrowRight size={15} aria-hidden /></Link>
-      </div>
-    ) : null
-
   // ---------- step details ----------
 
   const detailApplication = (
@@ -404,16 +472,37 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
     </div>
   )
 
+  const canRequestViewing =
+    (app.status === 'pending' || app.status === 'info_requested' || app.status === 'approved') &&
+    !tenancyRow &&
+    !viewings.some((x) => OPEN_STATUSES.includes(x.status))
+  const reqPh = reqPhone ?? profilePhone
+  const reqPhoneOk = !!normaliseNgPhone(reqPh)
+  const reqIso = toIso(reqWhen)
+  const requestForm = (
+    <div className="space-y-3 rounded-lg border border-border p-3 text-sm">
+      <p className="font-semibold text-foreground">Tell us when and how to reach you</p>
+      <label className="block text-xs font-semibold text-foreground">Preferred date and time
+        <input type="datetime-local" value={reqWhen} onChange={(e) => setReqWhen(e.target.value)} className={`${field} mt-1`} />
+      </label>
+      <label className="block text-xs font-semibold text-foreground">Phone number EboHomes can call
+        <input type="tel" inputMode="tel" autoComplete="tel" placeholder="0803 123 4567" value={reqPh} onChange={(e) => setReqPhone(e.target.value)} className={`${field} mt-1`} />
+      </label>
+      {reqPh && !reqPhoneOk && <p className="text-xs text-red-700">Enter a valid Nigerian mobile number, for example 0803 123 4567.</p>}
+      <input aria-label="Anything we should know?" value={reqNote} onChange={(e) => setReqNote(e.target.value)} maxLength={300} placeholder="Anything we should know? (optional)" className={field} />
+      <button disabled={busy || !reqPhoneOk || !reqIso} onClick={submitViewing} className={`${btnP} w-full`}>Request viewing</button>
+      {(!reqPhoneOk || !reqIso) && <p className="text-xs text-muted-foreground">Choose a date and enter a valid phone number to continue.</p>}
+    </div>
+  )
+
   const vPanel = v ? tenantPanel(v, fmtDateTime, { status: app.status, tenant_interest_at: app.tenant_interest_at }) : null
   const detailViewing = (
     <div className="space-y-4">
+      {!v && canRequestViewing && requestForm}
       {!v ? (
         <div className="space-y-2 rounded-lg border border-border p-3 text-sm">
           <p className="font-semibold text-foreground">No viewing requested yet</p>
           <p className="text-muted-foreground">See the property in person before you pay anything. EboHomes confirms every appointment and calls you to coordinate.</p>
-          {(app.status === 'pending' || app.status === 'info_requested' || app.status === 'approved') && !tenancyRow && (
-            <Link href="/viewings" className={btnP}>Request a viewing <ArrowRight size={15} aria-hidden /></Link>
-          )}
         </div>
       ) : (
         <div className="space-y-3 rounded-lg border border-border p-3 text-sm">
@@ -459,8 +548,14 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
           {OPEN_STATUSES.includes(v.status) && (
             <button disabled={busy} className="min-h-11 text-xs text-muted-foreground underline hover:text-destructive" onClick={() => rpc('cancel_viewing', { p_viewing: v.id, p_note: null }, 'Viewing cancelled.', 'Cancel this viewing?')}>Cancel this viewing</button>
           )}
-          <Link href="/viewings" className="inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline">Open full viewing page (history, new request) →</Link>
+          <Link href="/viewings" className="inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline">Open full viewing page (history) →</Link>
         </div>
+      )}
+      {v && canRequestViewing && (
+        <details className="rounded-lg border border-border p-3">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-foreground">Request another viewing</summary>
+          <div className="mt-2">{requestForm}</div>
+        </details>
       )}
 
       {app.status === 'approved' && !tenancyRow && (
@@ -506,6 +601,21 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   ) : (
     <div className="space-y-4">
       {renderTenancyFacts()}
+      {(() => {
+        // Progress comes only from the saved agreement status.
+        const labels = ['Terms proposed', 'Accepted by both', 'Agreement recorded']
+        const done = !liveTerms ? 0 : liveTerms.status === 'signed' ? 3 : liveTerms.status === 'accepted' ? 2 : 1
+        return (
+          <div role="group" aria-label="Agreement progress">
+            <div className="flex gap-1" aria-hidden>
+              {labels.map((l, i) => <span key={l} className={`h-1.5 flex-1 rounded-full ${i < done ? 'bg-primary' : 'bg-border'}`} />)}
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {done === 0 ? 'No rental terms have been proposed yet.' : done === 3 ? 'Signed agreement recorded by EboHomes.' : `Agreement: ${labels[done - 1].toLowerCase()}. Not signed yet.`}
+            </p>
+          </div>
+        )
+      })()}
       {liveTerms?.status === 'proposed' && !liveTerms.tenant_accepted_at && (
         <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-semibold">Your action: accept or decline these terms</p>
@@ -518,22 +628,42 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       )}
       {!liveTerms && <p className="rounded-lg border border-border p-3 text-sm text-muted-foreground">The landlord has not proposed rental terms yet. The rent and dates above come from the tenancy record and are not an agreement.</p>}
       {tenancyStatus !== 'active' && liveTerms?.status === 'signed' && renderPayments()}
-      {renderTenancyLink('Open tenancy details')}
     </div>
   )
 
   const detailActive = !tenancyRow ? null : (
     <div className="space-y-4">
       {renewalOffered && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-semibold">Your action: you have a renewal offer</p>
-          <Link href="/tenancies" className={`${btnP} mt-2`}>Respond to renewal offer <ArrowRight size={15} aria-hidden /></Link>
+          {renewalOffer && (
+            <>
+              <p>New rent <b>{naira(renewalOffer.new_rent)}</b>, until <b>{fmtDate(renewalOffer.new_end_date)}</b></p>
+              {renewalOffer.terms && <p className="rounded-md bg-white/70 p-2">{renewalOffer.terms}</p>}
+            </>
+          )}
+          <p className="text-xs">Responding records your decision only. No payment is taken.</p>
+          {renewalOffer ? (
+            <div className="flex flex-wrap gap-2">
+              <button disabled={busy} className={btnP} onClick={() => respondRenewal(renewalOffer.id, 'accepted')}>Accept offer</button>
+              <button disabled={busy} className={btnS} onClick={() => respondRenewal(renewalOffer.id, 'declined')}>Decline offer</button>
+            </div>
+          ) : (
+            <Link href="/tenancies" className={btnP}>Respond to renewal offer <ArrowRight size={15} aria-hidden /></Link>
+          )}
         </div>
       )}
       {renderTenancyFacts()}
       {renderPayments()}
       <p className="text-xs text-muted-foreground">This page does not show an automatic due date for the next payment. Follow the payment schedule above or ask EboHomes.</p>
-      {renderTenancyLink('Open tenancy details')}
+      <details
+        className="rounded-lg border border-border p-3 text-sm"
+        onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) setHubOpen(true) }}
+      >
+        <summary className="min-h-11 cursor-pointer py-2 font-semibold text-foreground">Handover, repairs, disputes and deposit</summary>
+        <p className="mb-3 text-muted-foreground">Record your move-in condition, report a repair, raise a dispute or follow the deposit settlement. Everything is handled here.</p>
+        {hubOpen && <TenancyHub role="tenant" tenancyId={tenancyRow.id} embedded />}
+      </details>
     </div>
   )
 
@@ -625,6 +755,19 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         </div>
       )}
 
+      {unlocked && (
+        <div role="status" className="space-y-2 rounded-xl border-2 border-primary bg-primary/5 p-4 text-sm">
+          <p className="flex items-center gap-2 text-base font-bold text-primary">
+            <CheckCircle2 size={20} aria-hidden /> Stage {STEP_ORDER.indexOf(unlocked.from) + 1} complete
+          </p>
+          <p className="text-foreground">Stage {STEP_ORDER.indexOf(unlocked.to) + 1}, {STEP_TITLE[unlocked.to]}, is now open.</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={btnP} onClick={() => { const k = unlocked.to; setUnlocked(null); selectStep(k) }}>Go to {STEP_TITLE[unlocked.to]} <ArrowDown size={15} aria-hidden /></button>
+            <button type="button" className={btnS} onClick={() => setUnlocked(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
+
       {/* Current status panel */}
       <section aria-labelledby="status-heading" className={`rounded-xl border border-border border-t-4 bg-card p-4 sm:p-5 ${TOP[panel.tone]}`}>
         <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -640,10 +783,10 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         </dl>
         {panel.cta && (
           <div className="mt-4">
-            {panel.cta.href ? (
+            {panel.cta.href && panel.cta.href !== '/viewings' ? (
               <Link href={panel.cta.href} className={btnP}>{panel.cta.label} <ArrowRight size={15} aria-hidden /></Link>
             ) : (
-              <button type="button" onClick={() => panel.cta!.step && selectStep(panel.cta!.step)} className={btnP}>{panel.cta.label} <ArrowDown size={15} aria-hidden /></button>
+              <button type="button" onClick={() => selectStep(panel.cta!.step ?? 'viewing')} className={btnP}>{panel.cta.label} <ArrowDown size={15} aria-hidden /></button>
             )}
           </div>
         )}

@@ -1209,7 +1209,7 @@ export default function ListingDetailPage() {
 
                   <Button
                     type="button"
-                    onClick={() => router.push(`/apply/${listing.id}`)}
+                    onClick={() => router.push(`/journey/apply/${listing.id}`)}
                     disabled={listing.status !== 'approved'}
                     className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold mt-2 flex items-center justify-center gap-2"
                   >
@@ -1268,7 +1268,7 @@ export default function ListingDetailPage() {
 
           <Button
             type="button"
-            onClick={() => router.push(`/apply/${listing.id}`)}
+            onClick={() => router.push(`/journey/apply/${listing.id}`)}
             disabled={listing.status !== 'approved'}
             className="h-11 flex-[1.3] gap-1.5 bg-primary px-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >

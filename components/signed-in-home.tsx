@@ -125,6 +125,22 @@ function TenantSections({ userId }: { userId: string }) {
         <h2 className="text-2xl font-extrabold text-foreground">{name || 'there'} 👋</h2>
       </div>
 
+      <Link
+        href="/journey"
+        className="flex items-center justify-between gap-3 rounded-2xl bg-primary p-4 text-primary-foreground shadow-sm transition hover:opacity-95 sm:p-5"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15">
+            <KeyRound size={22} aria-hidden />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-base font-extrabold sm:text-lg">My Rental Journey</span>
+            <span className="block text-xs opacity-90 sm:text-sm">Apply, view, agree terms and pay, all in one place.</span>
+          </span>
+        </span>
+        <ArrowRight size={20} className="shrink-0" aria-hidden />
+      </Link>
+
       <div className="grid grid-cols-3 gap-3 lg:grid-cols-6">
         {tiles.map((t) => (
           <Link
@@ -336,3 +352,4 @@ function LandlordSections({ userId }: { userId: string }) {
   )
 }
 
+<div className="grid grid-cols-3 gap-3 lg:grid-cols-6"></div>

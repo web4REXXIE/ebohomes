@@ -20,7 +20,9 @@ const card = 'bg-card border border-border rounded-xl p-4 text-sm space-y-2'
 const pill =
   'text-xs font-semibold border border-border bg-secondary rounded-full px-2.5 py-1 capitalize h-fit whitespace-nowrap'
 
-export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string }) {
+// embedded: used inside the rental journey page. It shows only handover, repairs, disputes and deposit.
+// The page header, back links and agreement block are left out because the journey already shows them.
+export function TenancyHub({ role, tenancyId, embedded = false }: { role: Role; tenancyId: string; embedded?: boolean }) {
   const router = useRouter()
   const [me, setMe] = useState('')
   const [t, setT] = useState<any>(null)
@@ -133,7 +135,8 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
   const settlementOpen = settlement && ['proposed', 'disputed'].includes(settlement.status)
 
   return (
-    <div className="max-w-3xl mx-auto w-full px-4 py-6 space-y-6">
+    <div className={embedded ? 'space-y-6' : 'max-w-3xl mx-auto w-full px-4 py-6 space-y-6'}>
+      {!embedded && (<>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link href={back} className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground"><ArrowLeft size={14} /> Tenancies</Link>
         {role === 'tenant' && journeyApp && (
@@ -245,10 +248,12 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
           })()}
         </div>
       </div>
-      
+      </>)}
+
       {msg && <p className={`text-sm rounded-md p-3 ${msg.ok ? 'text-primary bg-primary/10' : 'text-destructive bg-destructive/10'}`}>{msg.text}</p>}
 
       {/* ---------------- AGREEMENT ---------------- */}
+      {!embedded && (
       <section className="space-y-2">
         <h2 className="font-bold text-foreground">Rental terms and agreement</h2>
         {live ? (
@@ -297,6 +302,7 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
           )
         )}
       </section>
+      )}
 
       {/* ---------------- HANDOVER ---------------- */}
       <section className="space-y-2">
@@ -451,7 +457,7 @@ export function TenancyHub({ role, tenancyId }: { role: Role; tenancyId: string 
       </section>
 
       {/* ---------------- SETTLEMENT ---------------- */}
-      <section className="space-y-2 pb-10">
+      <section className={embedded ? 'space-y-2' : 'space-y-2 pb-10'}>
         <h2 className="font-bold text-foreground">Deposit settlement</h2>
         <p className="text-xs text-muted-foreground">This records the figures both sides agree. EboHomes does not hold, transfer or refund this money. The landlord pays any refund directly.</p>
         {settlement ? (

@@ -251,7 +251,7 @@ const on = (d?: string | null) => (d ? ` on ${d}` : '')
 
 export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
   const none = 'Nothing is required from you right now.'
-  const apply: PanelCta | null = c.listingOpen && c.listingId ? { label: 'Apply for this property again', href: `/apply/${c.listingId}` } : { label: 'Browse other properties', href: '/search' }
+  const apply: PanelCta | null = c.listingOpen && c.listingId ? { label: 'Apply for this property again', href: `/journey/apply/${c.listingId}` } : { label: 'Browse other properties', href: '/search' }
   switch (phase) {
     case 'withdrawn':
       return { tone: 'grey', needsYou: false, heading: 'Application withdrawn', happened: 'You withdrew this application.', means: 'It is closed. No tenancy will be set up and nothing was charged.', next: 'You can apply again if you change your mind and the property is still listed.', action: 'Nothing to do.', cta: apply }

@@ -319,7 +319,7 @@ export default function MyApplicationsPage() {
                   )}
 
                   {(app.status === 'rejected' || app.status === 'withdrawn') && listingOpen && (
-                    <Link href={`/apply/${app.listing_id}`} className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline">
+                    <Link href={`/journey/apply/${app.listing_id}`} className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline">
                       Apply again →
                     </Link>
                   )}
