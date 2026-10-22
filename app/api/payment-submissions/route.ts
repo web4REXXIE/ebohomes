@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
   const v = validateSubmission(body ?? {})
   if (!v.ok) return fail('Please check the form.', 400, { fields: v.errors })
-  const ctx = await loadPayContext(db, user.id, body.tenancy_id, v.value.payment_type)
+  const ctx = await loadPayContext(db, user.id, body.tenancy_id, v.value.payment_type, body.renewal_id)
   if ('res' in ctx) return ctx.res
 
   const replaces = body.replaces_id == null || body.replaces_id === '' ? null : String(body.replaces_id)
@@ -36,17 +36,21 @@ export async function POST(req: Request) {
   const bytes = Number((file as any)?.metadata?.size)
   if (!file || validateEvidenceMeta(mime, bytes)) return fail('Your evidence file did not upload. Please try again.', 400)
 
-  const { data, error } = await db.rpc('eb_submit_payment_evidence', {
+  const args = {
     p_tenant: user.id, p_tenancy: ctx.tenancyId, p_terms: ctx.termsId, p_type: v.value.payment_type, p_expected: ctx.expected,
     p_amount: v.value.amount_paid, p_payer_name: v.value.payer_name, p_payer_bank: v.value.payer_bank,
     p_ref: v.value.transaction_reference, p_paid_at: v.value.paid_at, p_method: v.value.payment_method, p_notes: v.value.notes,
     p_path: body.evidence_path, p_mime: mime, p_bytes: bytes, p_replaces: replaces,
-  })
+  }
+  // A renewal payment is created and linked to its renewal in one database transaction.
+  const { data, error } = ctx.renewalId
+    ? await db.rpc('eb_submit_renewal_evidence', { ...args, p_renewal: ctx.renewalId })
+    : await db.rpc('eb_submit_payment_evidence', args)
   if (error) {
     const m = error.message ?? ''
     if (m.includes('payment_submissions_one_open_idx')) return fail('You already have a submission for this payment waiting for EboHomes. You do not need to send it again.', 409)
     if (m.includes('payment_submissions_reference_idx')) return fail('This transaction reference was already submitted. If it is your payment, contact EboHomes.', 409)
-    if (m.includes('corrected') || m.includes('not found') || m.includes('active tenancies')) return fail(m, 409)
+    if (m.includes('corrected') || m.includes('not found') || m.includes('active tenancies') || m.includes('renewal') || m.includes('Renewal')) return fail(m, 409)
     console.error('payment submission failed:', error.code)
     return fail('Could not save your submission. Try again.', 500)
   }

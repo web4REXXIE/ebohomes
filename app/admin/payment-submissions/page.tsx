@@ -19,7 +19,7 @@ async function api(path: string, init?: RequestInit) {
   const t = (await supabase.auth.getSession()).data.session?.access_token ?? ''
   const res = await fetch(path, { ...init, headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } })
   const j = await res.json().catch(() => null)
-  return { ok: res.ok, j }
+  return { ok: res.ok, j, status: res.status }
 }
 
 export default function AdminPaymentSubmissions() {
@@ -31,7 +31,7 @@ export default function AdminPaymentSubmissions() {
   const load = useCallback(async () => {
     setItems(null); setErr(null)
     const r = await api(`/api/admin/payment-submissions?filter=${filter}`)
-    if (!r.ok) { setErr(r.j?.error ?? 'Could not load the queue.'); setItems([]); return }
+    if (!r.ok) { setErr(r.j?.error ?? `Could not load the queue (HTTP ${r.status}).`); setItems([]); return }
     setItems(r.j.items)
   }, [filter])
   useEffect(() => { load() }, [load])

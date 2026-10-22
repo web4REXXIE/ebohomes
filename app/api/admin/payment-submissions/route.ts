@@ -1,58 +1,86 @@
 import { NextResponse } from 'next/server'
-import { EVIDENCE_BUCKET, UUID_RE, isValidEvidencePath, validateEvidenceMeta, validateSubmission } from '@/lib/payment-submission'
-import { authUser, fail, loadPayContext } from '@/lib/payment-submission-server'
+import { UUID_RE } from '@/lib/payment-submission'
+import { QUEUE_FILTERS, filterStatuses, type QueueFilter } from '@/lib/payment-review'
+import { authAdmin } from '@/lib/admin-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// POST the submission form. Records EVIDENCE ONLY. It never touches payments and never marks anything verified.
-export async function POST(req: Request) {
-  const a = await authUser(req)
+const json = (b: unknown, status = 200) => NextResponse.json(b, { status, headers: { 'Cache-Control': 'no-store' } })
+
+// Server-side only: real DB error goes to Vercel logs, never to the browser.
+function logDbError(where: string, e: { code?: string; message?: string; details?: string; hint?: string } | null) {
+  if (e) console.error(`admin payment-submissions ${where}:`, { code: e.code, message: e.message, details: e.details, hint: e.hint })
+}
+
+export async function GET(req: Request) {
+  const a = await authAdmin(req)
   if ('res' in a) return a.res
-  const { db, user } = a
-  let body: any
-  try { body = await req.json() } catch { return fail('Invalid request.', 400) }
+  const { db } = a
+  const q = new URL(req.url).searchParams
+  const id = q.get('id')
 
-  const v = validateSubmission(body ?? {})
-  if (!v.ok) return fail('Please check the form.', 400, { fields: v.errors })
-  const ctx = await loadPayContext(db, user.id, body.tenancy_id, v.value.payment_type, body.renewal_id)
-  if ('res' in ctx) return ctx.res
+  if (id !== null) {
+    if (!UUID_RE.test(id)) return json({ error: 'Invalid request.' }, 400)
+    const { data: submission, error } = await db.from('payment_submissions').select('*').eq('id', id).maybeSingle()
+    if (error) { logDbError('detail', error); return json({ error: 'Could not load this submission.' }, 500) }
+    if (!submission) return json({ error: 'Submission not found.' }, 404)
 
-  const replaces = body.replaces_id == null || body.replaces_id === '' ? null : String(body.replaces_id)
-  if (replaces && !UUID_RE.test(replaces)) return fail('Invalid request.', 400)
-  if (!isValidEvidencePath(body.evidence_path, user.id, ctx.tenancyId)) return fail('Invalid evidence file.', 400)
+    const [tenancyR, termsR, tenantR, eventsR, historyR, authR] = await Promise.all([
+      db.from('tenancies').select('id, tenancy_code, status, listing_id').eq('id', submission.tenancy_id).maybeSingle(),
+      submission.terms_id
+        ? db.from('rental_terms').select('id, rent_amount, deposit_amount, fees_amount').eq('id', submission.terms_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      db.from('profiles').select('id, full_name, phone').eq('id', submission.tenant_id).maybeSingle(),
+      db.from('payment_submission_events').select('id, event, actor_id, note, created_at').eq('submission_id', id).order('created_at', { ascending: true }),
+      db.from('payment_submissions').select('id, status, replaces_id, created_at')
+        .eq('tenancy_id', submission.tenancy_id).eq('payment_type', submission.payment_type).order('created_at', { ascending: true }),
+      db.auth.admin.getUserById(submission.tenant_id),
+    ])
+    for (const [n, r] of [['tenancy', tenancyR], ['terms', termsR], ['tenant', tenantR], ['events', eventsR], ['history', historyR]] as const) logDbError(`detail.${n}`, (r as any).error)
+    if (eventsR.error || historyR.error) return json({ error: 'Could not load this submission.' }, 500)
 
-  // simple abuse limit: 10 submissions per tenant per hour
-  const since = new Date(Date.now() - 3600_000).toISOString()
-  const { count } = await db.from('payment_submissions').select('id', { count: 'exact', head: true }).eq('tenant_id', user.id).gte('created_at', since)
-  if ((count ?? 0) >= 10) return fail('Too many submissions. Please wait an hour or contact EboHomes.', 429)
+    const listingR = tenancyR.data?.listing_id
+      ? await db.from('listings').select('title, location_text, properties(public_id)').eq('id', tenancyR.data.listing_id).maybeSingle()
+      : { data: null, error: null }
+    logDbError('detail.listing', listingR.error)
 
-  // the file must really exist in the private bucket, with an allowed type and size
-  const folder = `${user.id}/${ctx.tenancyId}`
-  const name = String(body.evidence_path).split('/')[2]
-  const { data: files } = await db.storage.from(EVIDENCE_BUCKET).list(folder, { limit: 5, search: name })
-  const file = (files ?? []).find((f: any) => f.name === name)
-  const mime = (file as any)?.metadata?.mimetype
-  const bytes = Number((file as any)?.metadata?.size)
-  if (!file || validateEvidenceMeta(mime, bytes)) return fail('Your evidence file did not upload. Please try again.', 400)
+    const ids = Array.from(new Set([...(eventsR.data ?? []).map((e: any) => e.actor_id), submission.reviewed_by].filter(Boolean))) as string[]
+    const names: Record<string, string> = {}
+    if (ids.length) {
+      const { data: ps, error: pe } = await db.from('profiles').select('id, full_name').in('id', ids)
+      logDbError('detail.names', pe)
+      for (const p of ps ?? []) names[p.id] = p.full_name ?? 'Staff'
+    }
 
-  const args = {
-    p_tenant: user.id, p_tenancy: ctx.tenancyId, p_terms: ctx.termsId, p_type: v.value.payment_type, p_expected: ctx.expected,
-    p_amount: v.value.amount_paid, p_payer_name: v.value.payer_name, p_payer_bank: v.value.payer_bank,
-    p_ref: v.value.transaction_reference, p_paid_at: v.value.paid_at, p_method: v.value.payment_method, p_notes: v.value.notes,
-    p_path: body.evidence_path, p_mime: mime, p_bytes: bytes, p_replaces: replaces,
+    return json({
+      submission,
+      tenant: tenantR.data ? { full_name: tenantR.data.full_name, phone: tenantR.data.phone, email: authR.data?.user?.email ?? null } : null,
+      listing: listingR.data ?? null,
+      tenancy: tenancyR.data ? { tenancy_code: tenancyR.data.tenancy_code, status: tenancyR.data.status } : null,
+      terms: termsR.data ?? null,
+      events: eventsR.data ?? [],
+      history: historyR.data ?? [],
+      names,
+    })
   }
-  // A renewal payment is created and linked to its renewal in one database transaction.
-  const { data, error } = ctx.renewalId
-    ? await db.rpc('eb_submit_renewal_evidence', { ...args, p_renewal: ctx.renewalId })
-    : await db.rpc('eb_submit_payment_evidence', args)
-  if (error) {
-    const m = error.message ?? ''
-    if (m.includes('payment_submissions_one_open_idx')) return fail('You already have a submission for this payment waiting for EboHomes. You do not need to send it again.', 409)
-    if (m.includes('payment_submissions_reference_idx')) return fail('This transaction reference was already submitted. If it is your payment, contact EboHomes.', 409)
-    if (m.includes('corrected') || m.includes('not found') || m.includes('active tenancies') || m.includes('renewal') || m.includes('Renewal')) return fail(m, 409)
-    console.error('payment submission failed:', error.code)
-    return fail('Could not save your submission. Try again.', 500)
+
+  const f = (q.get('filter') ?? 'awaiting') as QueueFilter
+  if (!QUEUE_FILTERS.some((x) => x.key === f)) return json({ error: 'Unknown filter.' }, 400)
+  const statuses = filterStatuses(f)
+  let query = db.from('payment_submissions')
+    .select('id, tenant_id, tenancy_id, payment_type, expected_amount, amount_paid, status, replaces_id, created_at')
+    .order('created_at', { ascending: false }).limit(200)
+  if (statuses) query = query.in('status', statuses)
+  const { data: rows, error } = await query
+  if (error) { logDbError('queue', error); return json({ error: 'Could not load the queue.' }, 500) }
+
+  const tenantIds = Array.from(new Set((rows ?? []).map((r: any) => r.tenant_id)))
+  const nameOf: Record<string, string> = {}
+  if (tenantIds.length) {
+    const { data: ps, error: pe } = await db.from('profiles').select('id, full_name').in('id', tenantIds)
+    logDbError('queue.names', pe)
+    for (const p of ps ?? []) nameOf[p.id] = p.full_name ?? 'Tenant'
   }
-  return NextResponse.json({ ok: true, id: (data as any)?.id, status: (data as any)?.status })
+  return json({ items: (rows ?? []).map((r: any) => ({ ...r, tenant_name: nameOf[r.tenant_id] ?? 'Tenant' })) })
 }
