@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import {
   User, Building2, ShieldCheck, Lock, Bell, Landmark,
   Camera, Loader2, ChevronDown, ChevronRight,
@@ -20,9 +21,15 @@ type Profile = {
   business_name: string | null
   business_address: string | null
   cac_number: string | null
-  bank_name: string | null
-  bank_account_name: string | null
-  bank_account_number: string | null
+}
+
+type Tile = {
+  key: string
+  icon: React.ComponentType<{ size?: number }>
+  label: string
+  desc: string
+  stub?: boolean
+  href?: string
 }
 
 const VERIFICATION_STEPS = [
@@ -32,6 +39,9 @@ const VERIFICATION_STEPS = [
   { key: 'address', label: 'Address Verification' },
   { key: 'cac', label: 'Business Registration (CAC)' },
 ]
+
+const PROFILE_COLUMNS =
+  'id, role, full_name, email, phone, location, avatar_url, verified, verification_status, business_name, business_address, cac_number'
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -43,7 +53,6 @@ export default function ProfilePage() {
 
   const [personalForm, setPersonalForm] = useState({ full_name: '', phone: '', location: '' })
   const [businessForm, setBusinessForm] = useState({ business_name: '', business_address: '', cac_number: '' })
-  const [bankForm, setBankForm] = useState({ bank_name: '', bank_account_name: '', bank_account_number: '' })
 
   const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' })
   const [passwordError, setPasswordError] = useState('')
@@ -61,11 +70,11 @@ export default function ProfilePage() {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select(PROFILE_COLUMNS)
       .eq('id', user.id)
       .single()
 
-    if (error) {
+    if (error || !data) {
       console.error('Failed to load profile:', error)
       setLoading(false)
       return
@@ -73,7 +82,7 @@ export default function ProfilePage() {
 
     const email = data.email ?? user.email ?? null
 
-    setProfile({ ...data, email })
+    setProfile({ ...(data as Profile), email })
     setPersonalForm({
       full_name: data.full_name ?? '',
       phone: data.phone ?? '',
@@ -84,22 +93,14 @@ export default function ProfilePage() {
       business_address: data.business_address ?? '',
       cac_number: data.cac_number ?? '',
     })
-    setBankForm({
-      bank_name: data.bank_name ?? '',
-      bank_account_name: data.bank_account_name ?? '',
-      bank_account_number: data.bank_account_number ?? '',
-    })
     setLoading(false)
   }
 
-  async function handleSave(section: 'personal' | 'business' | 'bank') {
+  async function handleSave(section: 'personal' | 'business') {
     if (!profile) return
     setSaving(true)
 
-    const payload =
-      section === 'personal' ? personalForm :
-      section === 'business' ? businessForm :
-      bankForm
+    const payload = section === 'personal' ? personalForm : businessForm
 
     const { error } = await supabase
       .from('profiles')
@@ -189,14 +190,16 @@ export default function ProfilePage() {
   const isLandlord = profile.role === 'landlord'
   const initials = profile.full_name?.[0]?.toUpperCase() ?? 'U'
 
-  const tiles = [
+  const tiles: Tile[] = [
     { key: 'personal', icon: User, label: 'Personal Information', desc: 'Update your personal details and contact information.' },
     ...(isLandlord ? [{ key: 'business', icon: Building2, label: 'Business Information', desc: 'Manage your business and agency details.' }] : []),
     ...(isLandlord ? [{ key: 'verification', icon: ShieldCheck, label: 'Verification Status', desc: 'View your verification progress and documents.' }] : []),
     { key: 'security', icon: Lock, label: 'Security', desc: 'Change your account password.' },
     { key: 'notifications', icon: Bell, label: 'Notification Preferences', desc: 'Coming soon.', stub: true },
-    ...(isLandlord ? [{ key: 'bank', icon: Landmark, label: 'Bank Details', desc: 'Manage your bank account for payouts.' }] : []),
+    ...(isLandlord ? [{ key: 'bank', icon: Landmark, label: 'Payout Account', desc: 'The protected bank account EboHomes pays your rent into.', href: '/dashboard/payout-account' }] : []),
   ]
+
+  const tileClass = 'text-left bg-card border border-border rounded-xl p-4 transition-colors'
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
@@ -218,6 +221,7 @@ export default function ProfilePage() {
             )}
             <button
               onClick={() => fileInputRef.current?.click()}
+              aria-label="Change photo"
               className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center"
             >
               {uploadingPhoto ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
@@ -249,23 +253,33 @@ export default function ProfilePage() {
 
       {/* Settings tiles */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {tiles.map((tile) => (
-          <button
-            key={tile.key}
-            onClick={() => !tile.stub && setOpenSection(openSection === tile.key ? null : tile.key)}
-            className={`text-left bg-card border border-border rounded-xl p-4 transition-colors ${tile.stub ? 'opacity-60 cursor-not-allowed' : 'hover:border-primary/40'}`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-3">
-                <tile.icon size={17} />
+        {tiles.map((tile) => {
+          const inner = (
+            <>
+              <div className="flex items-start justify-between">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-3">
+                  <tile.icon size={17} />
+                </div>
+                {tile.stub || tile.href ? <ChevronRight size={16} className="text-muted-foreground mt-1" /> :
+                  (openSection === tile.key ? <ChevronDown size={16} className="text-muted-foreground mt-1" /> : <ChevronRight size={16} className="text-muted-foreground mt-1" />)}
               </div>
-              {tile.stub ? <ChevronRight size={16} className="text-muted-foreground mt-1" /> :
-                (openSection === tile.key ? <ChevronDown size={16} className="text-muted-foreground mt-1" /> : <ChevronRight size={16} className="text-muted-foreground mt-1" />)}
-            </div>
-            <p className="text-sm font-semibold text-foreground">{tile.label}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{tile.desc}</p>
-          </button>
-        ))}
+              <p className="text-sm font-semibold text-foreground">{tile.label}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{tile.desc}</p>
+            </>
+          )
+          if (tile.href) {
+            return <Link key={tile.key} href={tile.href} className={`${tileClass} block hover:border-primary/40`}>{inner}</Link>
+          }
+          return (
+            <button
+              key={tile.key}
+              onClick={() => !tile.stub && setOpenSection(openSection === tile.key ? null : tile.key)}
+              className={`${tileClass} ${tile.stub ? 'opacity-60 cursor-not-allowed' : 'hover:border-primary/40'}`}
+            >
+              {inner}
+            </button>
+          )
+        })}
       </div>
 
       {/* Personal Information panel */}
@@ -291,19 +305,6 @@ export default function ProfilePage() {
             <Field label="Business Address" value={businessForm.business_address} onChange={(v) => setBusinessForm({ ...businessForm, business_address: v })} className="sm:col-span-2" />
           </div>
           <SaveBar saving={saving} onSave={() => handleSave('business')} onCancel={() => setOpenSection(null)} />
-        </div>
-      )}
-
-      {/* Bank Details panel (landlord only) */}
-      {isLandlord && openSection === 'bank' && (
-        <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-          <p className="font-semibold text-foreground text-sm">Bank Details</p>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Bank Name" value={bankForm.bank_name} onChange={(v) => setBankForm({ ...bankForm, bank_name: v })} />
-            <Field label="Account Name" value={bankForm.bank_account_name} onChange={(v) => setBankForm({ ...bankForm, bank_account_name: v })} />
-            <Field label="Account Number" value={bankForm.bank_account_number} onChange={(v) => setBankForm({ ...bankForm, bank_account_number: v })} />
-          </div>
-          <SaveBar saving={saving} onSave={() => handleSave('bank')} onCancel={() => setOpenSection(null)} />
         </div>
       )}
 

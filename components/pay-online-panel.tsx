@@ -244,12 +244,19 @@ export function PayOnlinePanel({ tenancyId, terms, title, reference, period }: P
           <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
             <li>Transfer the amount from your signed agreement to the account above.</li>
             <li>Write your tenancy reference in the transfer description.</li>
-            <li>EboHomes matches the transfer to your tenancy, records it and checks it.</li>
+            <li>Tap &ldquo;I have made the payment&rdquo; and upload your receipt.</li>
+            <li>EboHomes checks the bank account and verifies the payment.</li>
             <li>When it shows &ldquo;Verified by EboHomes&rdquo; below, your receipt is ready.</li>
           </ol>
 
+          <Link
+            href={`/tenancies/${tenancyId}/pay`}
+            className="flex min-h-14 w-full items-center justify-center rounded-xl bg-primary px-4 text-center text-base font-bold tracking-wide text-primary-foreground"
+          >
+            I HAVE MADE THE PAYMENT
+          </Link>
           <p className="rounded-md bg-secondary p-2 text-xs font-semibold text-foreground">
-            Your payment is not confirmed until it shows &ldquo;Verified by EboHomes&rdquo;. You cannot mark it as paid yourself, so there is nothing to press after you transfer. Keep your bank&rsquo;s transfer receipt.
+            After you transfer, tap the button above and upload your bank receipt. This does not confirm your payment. It is not confirmed until it shows &ldquo;Verified by EboHomes&rdquo;, which only an EboHomes administrator can do after seeing the money in the bank.
           </p>
           <p className="text-xs text-muted-foreground">
             Only trust account details shown here after you sign in. If anyone sends you different details, do not pay. Contact EboHomes.

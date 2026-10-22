@@ -13,6 +13,8 @@ const NAV_ITEMS = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/cases', label: 'Cases', icon: ClipboardList },
   { href: '/admin/payments', label: 'Payments', icon: CreditCard },
+  { href: '/admin/payment-submissions', label: 'Payment Evidence', icon: ShieldCheck },
+  { href: '/admin/payout-accounts', label: 'Payout Accounts', icon: CreditCard },
   { href: '/admin/applications', label: 'Applications', icon: ClipboardCheck },
   { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
   { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
@@ -27,6 +29,8 @@ const NAV_ITEMS = [
   { href: '/admin/messages', label: 'Message History', icon: MessageSquare },
   { href: '/admin/contact-messages', label: 'Contact Messages', icon: MessageSquare },
   { href: '/admin/audit-log', label: 'Audit Log', icon: ClipboardList },
+  { href: '/admin/payouts', label: 'Landlord Payouts', icon: CreditCard },
+  { href: '/admin/handovers', label: 'Handovers', icon: ShieldCheck },
   { href: '/admin/staff-roles', label: 'Staff Roles', icon: ShieldCheck },
 ]
 

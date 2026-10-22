@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ShieldCheck, Clock, XCircle, FileText, Check } from 'lucide-react'
+import { ShieldCheck, Clock, XCircle, FileText, Check, Landmark } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   OWNERSHIP_BUCKET,
@@ -35,9 +36,6 @@ export default function GetVerifiedPage() {
     account_type: 'individual',
     representative_name: '',
     representative_role: '',
-    bank_name: '',
-    bank_account_name: '',
-    bank_account_number: '',
     ownership_doc_url: '', // stores a storage PATH, not a public URL
     id_document_type: '',
     id_document_url: '',
@@ -55,7 +53,7 @@ export default function GetVerifiedPage() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('account_type, representative_name, representative_role, business_name, business_address, cac_number, bank_name, bank_account_name, bank_account_number, ownership_doc_url, id_document_type, id_document_url, selfie_url, verification_status, verified, rejection_reason')
+        .select('account_type, representative_name, representative_role, business_name, business_address, cac_number, ownership_doc_url, id_document_type, id_document_url, selfie_url, verification_status, verified, rejection_reason')
         .eq('id', user.id)
         .single()
 
@@ -67,9 +65,6 @@ export default function GetVerifiedPage() {
           account_type: data.account_type || 'individual',
           representative_name: data.representative_name || '',
           representative_role: data.representative_role || '',
-          bank_name: data.bank_name || '',
-          bank_account_name: data.bank_account_name || '',
-          bank_account_number: data.bank_account_number || '',
           ownership_doc_url: data.ownership_doc_url || '',
           id_document_type: data.id_document_type || '',
           id_document_url: data.id_document_url || '',
@@ -194,9 +189,6 @@ export default function GetVerifiedPage() {
     companyOk &&
     formData.business_name &&
     formData.business_address &&
-    formData.bank_name &&
-    formData.bank_account_name &&
-    formData.bank_account_number &&
     formData.id_document_type &&
     formData.id_document_url &&
     formData.selfie_url &&
@@ -229,9 +221,6 @@ export default function GetVerifiedPage() {
         account_type: formData.account_type,
         representative_name: formData.account_type === 'company' ? formData.representative_name.trim() : null,
         representative_role: formData.account_type === 'company' ? formData.representative_role.trim() : null,
-        bank_name: formData.bank_name,
-        bank_account_name: formData.bank_account_name,
-        bank_account_number: formData.bank_account_number,
         ownership_doc_url: formData.ownership_doc_url, // storage path
         id_document_type: formData.id_document_type,
         id_document_url: formData.id_document_url,
@@ -261,6 +250,9 @@ export default function GetVerifiedPage() {
           <ShieldCheck size={40} className="mx-auto text-emerald-600 mb-4" />
           <h1 className="text-xl font-bold text-foreground mb-1">You&apos;re Verified</h1>
           <p className="text-sm text-muted-foreground">Your landlord account has been verified on EboHomes.</p>
+          <Link href="/dashboard/payout-account" className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+            <Landmark size={16} /> Set up your payout account
+          </Link>
         </div>
       </div>
     )
@@ -374,29 +366,14 @@ export default function GetVerifiedPage() {
         </div>
 
         <div className="border-t border-border pt-4">
-          <p className="text-sm font-semibold text-foreground mb-3">Bank Details *</p>
-          <div className="space-y-3">
-            <input
-              required
-              value={formData.bank_name}
-              onChange={(e) => setFormData((p) => ({ ...p, bank_name: e.target.value }))}
-              placeholder="Bank name"
-              className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <input
-              required
-              value={formData.bank_account_name}
-              onChange={(e) => setFormData((p) => ({ ...p, bank_account_name: e.target.value }))}
-              placeholder="Account name"
-              className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <input
-              required
-              value={formData.bank_account_number}
-              onChange={(e) => setFormData((p) => ({ ...p, bank_account_number: e.target.value }))}
-              placeholder="Account number"
-              className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-secondary p-4 text-sm">
+            <Landmark size={18} className="mt-0.5 shrink-0 text-primary" />
+            <p className="text-muted-foreground">
+              <span className="font-semibold text-foreground">Bank details are no longer entered here.</span>{' '}
+              After you are verified, add your payout account on the{' '}
+              <Link href="/dashboard/payout-account" className="font-semibold text-primary underline">Payout account page</Link>.
+              EboHomes reviews it to protect your rent from fraud.
+            </p>
           </div>
         </div>
 
