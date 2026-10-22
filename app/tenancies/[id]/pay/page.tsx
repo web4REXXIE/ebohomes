@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { BANK_TRANSFER, amountLines, transferReference } from '@/lib/payment-instructions'
 import { classifyTenancyLoad, TENANCY_LOAD_ERROR_TEXT, TENANCY_NOT_FOUND_TEXT } from '@/lib/tenancy-access'
 import { PaymentSubmissionForm, SubmissionList, type Sub } from '@/components/payment-submission-form'
+import { fmtDate } from '@/lib/case-status'
 
 const naira = (n: number) => '\u20A6' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 })
 
@@ -22,6 +23,8 @@ export default function PaySubmissionPage() {
   const [subs, setSubs] = useState<Sub[]>([])
   const [replaces, setReplaces] = useState<Sub | null>(null)
   const [copied, setCopied] = useState(false)
+  const [renewal, setRenewal] = useState<{ id: string; new_rent: number; new_end_date: string } | null>(null)
+  const [renewalProblem, setRenewalProblem] = useState<string | null>(null)
 
   const loadSubs = useCallback(async () => {
     const { data } = await supabase.from('payment_submissions')
@@ -45,6 +48,13 @@ export default function PaySubmissionPage() {
       const { data: l } = await supabase.from('listings').select('photos').eq('id', found.row.listing_id).maybeSingle()
       const p = Array.isArray(l?.photos) ? l!.photos.find((x: unknown) => typeof x === 'string') : null
       setPhoto(typeof p === 'string' ? p : null)
+      // Paying for a renewal: /tenancies/<id>/pay?renewal=<renewal id>
+      const rid = new URLSearchParams(window.location.search).get('renewal')
+      if (rid) {
+        const { data: ren } = await supabase.from('renewals').select('id, status, new_rent, new_end_date, tenancy_id').eq('id', rid).maybeSingle()
+        if (ren && ren.tenancy_id === tenancyId && ren.status === 'accepted') setRenewal({ id: ren.id, new_rent: Number(ren.new_rent), new_end_date: ren.new_end_date })
+        else setRenewalProblem('This renewal is not waiting for payment. Open your tenancy page to see where it is.')
+      }
       await loadSubs()
       setState('ok')
     })()
@@ -58,7 +68,9 @@ export default function PaySubmissionPage() {
     </div>
   )
 
-  const lines = amountLines(terms, t.rent_period)
+  const lines = renewal
+    ? [{ key: 'rent' as const, label: `Renewal rent until ${fmtDate(renewal.new_end_date)}`, amount: renewal.new_rent }]
+    : amountLines(terms, t.rent_period)
   const due = lines.map((l) => ({ type: l.key === 'fees' ? 'fees' as const : l.key, amount: l.amount }))
   const ref = transferReference(t.tenancy_code)
   const hasOpen = subs.some((s) => s.status === 'submitted' || s.status === 'under_review')
@@ -78,7 +90,7 @@ export default function PaySubmissionPage() {
       </section>
 
       <section className="space-y-2 rounded-xl border border-border bg-card p-4 text-sm">
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><ShieldCheck size={14} aria-hidden /> Amounts in your signed agreement</p>
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><ShieldCheck size={14} aria-hidden /> {renewal ? 'Amount due for your renewal' : 'Amounts in your signed agreement'}</p>
         {lines.length === 0 ? <p className="text-muted-foreground">Your signed agreement is not recorded yet, so payment is not open.</p> : (
           <ul className="divide-y divide-border">{lines.map((l) => (
             <li key={l.key} className="flex items-center justify-between py-1.5"><span>{l.label}</span><b className="text-base">{naira(l.amount)}</b></li>))}</ul>)}
@@ -93,10 +105,13 @@ export default function PaySubmissionPage() {
         </div>
       </section>
 
-      {lines.length > 0 && (
+      {renewalProblem && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{renewalProblem}</p>}
+      {renewal && <p role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">You are paying for your <b>renewal</b>. The renewal is only applied after EboHomes verifies this payment and you confirm it with your code.</p>}
+
+      {lines.length > 0 && !renewalProblem && (
         hasOpen && !replaces
           ? <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">You already sent evidence that EboHomes has not decided on yet. See below. You do not need to send it again.</p>
-          : <PaymentSubmissionForm key={replaces?.id ?? 'new'} tenancyId={tenancyId} due={due} replaces={replaces}
+          : <PaymentSubmissionForm key={replaces?.id ?? 'new'} tenancyId={tenancyId} due={due} replaces={replaces} renewalId={renewal?.id ?? null}
               onDone={() => { setReplaces(null); loadSubs() }} />
       )}
 

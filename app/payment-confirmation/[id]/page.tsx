@@ -13,14 +13,14 @@ type St = {
   confirmed_at?: string | null; receipt_code?: string | null
 }
 
-const naira = (n: number) => '\u20A6' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 })
+const naira = (n: number) => '₦' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 })
 const field = 'w-full min-h-14 rounded-lg border border-border bg-input px-3 py-2.5 text-center text-xl font-bold tracking-widest uppercase'
 
 const INTRO: Record<ConfirmState, string> = {
   awaiting_review: 'EboHomes has your evidence and has not verified the payment yet. We will notify you when a decision is made.',
   needs_info: 'EboHomes needs more information. Open your payment page to read the message and send a correction.',
   closed: 'This submission is closed. Open your payment page to see why, or send a correction if you did pay.',
-  code_pending: 'EboHomes verified your payment in the bank. Your confirmation code has not been delivered yet. We will email it to you.',
+  code_pending: 'EboHomes verified your payment in the bank. Your confirmation code email has not been delivered yet. EboHomes needs to send it again. This page checks by itself every 30 seconds. If nothing arrives soon, contact EboHomes support and ask them to resend it.',
   code_sent: 'EboHomes verified your payment. We emailed you a confirmation code. Enter it below to finish.',
   code_expired: 'Your confirmation code has expired. Contact EboHomes support and we will send a new one.',
   locked: 'Your code was locked after too many wrong attempts. Contact EboHomes support and we will send a new one.',
@@ -47,6 +47,14 @@ export default function PaymentConfirmationPage() {
     setLoading(false)
   }, [id, router])
   useEffect(() => { load() }, [load])
+
+  // While we wait for review or for the code email, check again every 30 seconds.
+  const waiting = st?.state === 'awaiting_review' || st?.state === 'code_pending'
+  useEffect(() => {
+    if (!waiting) return
+    const t = setInterval(() => { load() }, 30000)
+    return () => clearInterval(t)
+  }, [waiting, load])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -105,6 +113,11 @@ export default function PaymentConfirmationPage() {
       </ol>
 
       <p className="rounded-lg bg-secondary p-3 text-sm">{INTRO[st.state]}</p>
+
+      {waiting && (
+        <button type="button" onClick={() => { setLoading(true); load() }} className="flex min-h-12 w-full items-center justify-center rounded-xl border border-border text-sm font-semibold">
+          Check again
+        </button>)}
 
       {st.state === 'code_sent' && (
         <form onSubmit={submit} noValidate className="space-y-3 rounded-xl border border-border bg-card p-4">

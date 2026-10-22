@@ -75,7 +75,7 @@ export function SubmissionList({ items, onCorrect }: { items: Sub[]; onCorrect: 
   )
 }
 
-export function PaymentSubmissionForm({ tenancyId, due, replaces, onDone }: { tenancyId: string; due: Due[]; replaces: Sub | null; onDone: () => void }) {
+export function PaymentSubmissionForm({ tenancyId, due, replaces, onDone, renewalId = null }: { tenancyId: string; due: Due[]; replaces: Sub | null; onDone: () => void; renewalId?: string | null }) {
   const [type, setType] = useState<SubmissionType>(replaces?.payment_type ?? due[0]?.type ?? 'rent')
   const dueFor = (t: SubmissionType) => due.find((d) => d.type === t)?.amount
   const [amount, setAmount] = useState(String(replaces?.amount_paid ?? dueFor(type) ?? ''))
@@ -121,7 +121,7 @@ export function PaymentSubmissionForm({ tenancyId, due, replaces, onDone }: { te
       if (up.error) throw new Error('The upload failed. Check your network and try again.')
       setStage('Sending to EboHomes...')
       const res = await fetch('/api/payment-submissions', { method: 'POST', headers: auth,
-        body: JSON.stringify({ ...payload, tenancy_id: tenancyId, evidence_path: pj.path, replaces_id: replaces?.id ?? null }) })
+        body: JSON.stringify({ ...payload, tenancy_id: tenancyId, evidence_path: pj.path, replaces_id: replaces?.id ?? null, renewal_id: renewalId }) })
       const j = await res.json().catch(() => null)
       if (!res.ok) { if (j?.fields) setErrors(j.fields); throw new Error(j?.error ?? 'Could not save your submission.') }
       setDone(true)
@@ -151,16 +151,16 @@ export function PaymentSubmissionForm({ tenancyId, due, replaces, onDone }: { te
 
       <div>
         <label className={lbl} htmlFor="ps-type">What did you pay for?</label>
-        <select id="ps-type" className={field} value={type} disabled={!!replaces}
+        <select id="ps-type" className={field} value={type} disabled={!!replaces || !!renewalId}
           onChange={(e) => { const t = e.target.value as SubmissionType; setType(t); setAmount(String(dueFor(t) ?? '')) }}>
-          {due.map((d) => <option key={d.type} value={d.type}>{TYPE_LABEL[d.type]} ({naira(d.amount)} in your agreement)</option>)}
+          {due.map((d) => <option key={d.type} value={d.type}>{TYPE_LABEL[d.type]} ({naira(d.amount)} {renewalId ? 'for your renewal' : 'in your agreement'})</option>)}
         </select>{err('payment_type')}
       </div>
       <div>
         <label className={lbl} htmlFor="ps-amt">Amount paid (&#8358;)</label>
         <input id="ps-amt" className={field} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 450000" />{err('amount_paid')}
         {dueFor(type) && Number(amount.replace(/,/g, '')) > 0 && Number(amount.replace(/,/g, '')) !== dueFor(type) && (
-          <p className="mt-1 text-xs text-amber-800">This is different from the {naira(dueFor(type)!)} in your agreement. You can still submit. EboHomes will check it.</p>)}
+          <p className="mt-1 text-xs text-amber-800">This is different from the {naira(dueFor(type)!)} {renewalId ? 'for your renewal' : 'in your agreement'}. You can still submit. EboHomes will check it.</p>)}
       </div>
       <div>
         <label className={lbl} htmlFor="ps-name">Full name on the account you paid from</label>

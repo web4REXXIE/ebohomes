@@ -1,53 +1,58 @@
 import { NextResponse } from 'next/server'
-import { UUID_RE } from '@/lib/payment-submission'
-import { filterStatuses, type QueueFilter } from '@/lib/payment-review'
-import { authAdmin } from '@/lib/admin-server'
+import { EVIDENCE_BUCKET, UUID_RE, isValidEvidencePath, validateEvidenceMeta, validateSubmission } from '@/lib/payment-submission'
+import { authUser, fail, loadPayContext } from '@/lib/payment-submission-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// GET ?filter=awaiting|info|verified|rejected|all  -> list
-// GET ?id=<submission id>                          -> full detail for the reviewer
-export async function GET(req: Request) {
-  const a = await authAdmin(req)
+// POST the submission form. Records EVIDENCE ONLY. It never touches payments and never marks anything verified.
+export async function POST(req: Request) {
+  const a = await authUser(req)
   if ('res' in a) return a.res
-  const { db } = a
-  const q = new URL(req.url).searchParams
-  const id = q.get('id')
+  const { db, user } = a
+  let body: any
+  try { body = await req.json() } catch { return fail('Invalid request.', 400) }
 
-  if (id) {
-    if (!UUID_RE.test(id)) return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
-    const { data: s } = await db.from('payment_submissions').select('*').eq('id', id).maybeSingle()
-    if (!s) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
-    const [tenancy, tenant, terms, events, history] = await Promise.all([
-      db.from('tenancies').select('id, tenancy_code, status, rent_period, start_date, end_date, listing_id').eq('id', s.tenancy_id).maybeSingle(),
-      db.from('profiles').select('id, full_name, email, phone').eq('id', s.tenant_id).maybeSingle(),
-      db.from('rental_terms').select('id, rent_amount, deposit_amount, fees_amount, status, version').eq('id', s.terms_id ?? '00000000-0000-0000-0000-000000000000').maybeSingle(),
-      db.from('payment_submission_events').select('id, event, actor_id, note, details, created_at').eq('submission_id', id).order('created_at', { ascending: true }),
-      db.from('payment_submissions').select('id, status, amount_paid, review_note, reviewed_by, reviewed_at, created_at, replaces_id')
-        .eq('tenancy_id', s.tenancy_id).eq('payment_type', s.payment_type).order('created_at', { ascending: true }),
-    ])
-    const { data: listing } = tenancy.data?.listing_id
-      ? await db.from('listings').select('id, title, location_text, properties(public_id)').eq('id', tenancy.data.listing_id).maybeSingle()
-      : { data: null }
-    const actorIds = Array.from(new Set([...(events.data ?? []).map((e: any) => e.actor_id), ...(history.data ?? []).map((h: any) => h.reviewed_by)].filter(Boolean)))
-    const { data: actors } = actorIds.length ? await db.from('profiles').select('id, full_name').in('id', actorIds as string[]) : { data: [] as any[] }
-    const names: Record<string, string> = {}
-    for (const p of actors ?? []) names[(p as any).id] = (p as any).full_name ?? 'Staff'
-    return NextResponse.json({ submission: s, tenancy: tenancy.data, tenant: tenant.data, terms: terms.data, listing, events: events.data ?? [], history: history.data ?? [], names })
+  const v = validateSubmission(body ?? {})
+  if (!v.ok) return fail('Please check the form.', 400, { fields: v.errors })
+  const ctx = await loadPayContext(db, user.id, body.tenancy_id, v.value.payment_type, body.renewal_id)
+  if ('res' in ctx) return ctx.res
+
+  const replaces = body.replaces_id == null || body.replaces_id === '' ? null : String(body.replaces_id)
+  if (replaces && !UUID_RE.test(replaces)) return fail('Invalid request.', 400)
+  if (!isValidEvidencePath(body.evidence_path, user.id, ctx.tenancyId)) return fail('Invalid evidence file.', 400)
+
+  // simple abuse limit: 10 submissions per tenant per hour
+  const since = new Date(Date.now() - 3600_000).toISOString()
+  const { count } = await db.from('payment_submissions').select('id', { count: 'exact', head: true }).eq('tenant_id', user.id).gte('created_at', since)
+  if ((count ?? 0) >= 10) return fail('Too many submissions. Please wait an hour or contact EboHomes.', 429)
+
+  // the file must really exist in the private bucket, with an allowed type and size
+  const folder = `${user.id}/${ctx.tenancyId}`
+  const name = String(body.evidence_path).split('/')[2]
+  const { data: files } = await db.storage.from(EVIDENCE_BUCKET).list(folder, { limit: 5, search: name })
+  const file = (files ?? []).find((f: any) => f.name === name)
+  const mime = (file as any)?.metadata?.mimetype
+  const bytes = Number((file as any)?.metadata?.size)
+  if (!file || validateEvidenceMeta(mime, bytes)) return fail('Your evidence file did not upload. Please try again.', 400)
+
+  const args = {
+    p_tenant: user.id, p_tenancy: ctx.tenancyId, p_terms: ctx.termsId, p_type: v.value.payment_type, p_expected: ctx.expected,
+    p_amount: v.value.amount_paid, p_payer_name: v.value.payer_name, p_payer_bank: v.value.payer_bank,
+    p_ref: v.value.transaction_reference, p_paid_at: v.value.paid_at, p_method: v.value.payment_method, p_notes: v.value.notes,
+    p_path: body.evidence_path, p_mime: mime, p_bytes: bytes, p_replaces: replaces,
   }
-
-  const f = (q.get('filter') ?? 'awaiting') as QueueFilter
-  let query = db.from('payment_submissions')
-    .select('id, tenancy_id, tenant_id, payment_type, amount_paid, expected_amount, status, replaces_id, created_at, transaction_reference')
-    .order('created_at', { ascending: true }).limit(100)
-  const st = filterStatuses(f)
-  if (st) query = query.in('status', st)
-  const { data: rows, error } = await query
-  if (error) return NextResponse.json({ error: 'Could not load the queue.' }, { status: 500 })
-  const tIds = Array.from(new Set((rows ?? []).map((r: any) => r.tenant_id)))
-  const { data: profs } = tIds.length ? await db.from('profiles').select('id, full_name').in('id', tIds) : { data: [] as any[] }
-  const nm: Record<string, string> = {}
-  for (const p of profs ?? []) nm[(p as any).id] = (p as any).full_name ?? 'Tenant'
-  return NextResponse.json({ items: (rows ?? []).map((r: any) => ({ ...r, tenant_name: nm[r.tenant_id] ?? 'Tenant' })) })
+  // A renewal payment is created and linked to its renewal in one database transaction.
+  const { data, error } = ctx.renewalId
+    ? await db.rpc('eb_submit_renewal_evidence', { ...args, p_renewal: ctx.renewalId })
+    : await db.rpc('eb_submit_payment_evidence', args)
+  if (error) {
+    const m = error.message ?? ''
+    if (m.includes('payment_submissions_one_open_idx')) return fail('You already have a submission for this payment waiting for EboHomes. You do not need to send it again.', 409)
+    if (m.includes('payment_submissions_reference_idx')) return fail('This transaction reference was already submitted. If it is your payment, contact EboHomes.', 409)
+    if (m.includes('corrected') || m.includes('not found') || m.includes('active tenancies') || m.includes('renewal') || m.includes('Renewal')) return fail(m, 409)
+    console.error('payment submission failed:', error.code)
+    return fail('Could not save your submission. Try again.', 500)
+  }
+  return NextResponse.json({ ok: true, id: (data as any)?.id, status: (data as any)?.status })
 }

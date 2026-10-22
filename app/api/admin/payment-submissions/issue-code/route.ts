@@ -50,17 +50,17 @@ export async function POST(req: Request) {
 
   const outcome = email
     ? await sendCodeEmail(email, formatCode(code), listing?.title ?? 'your EboHomes property')
-    : 'failed'
-  const sent = outcome === 'sent'
+    : { status: 'failed' as const, detail: 'This tenant has no email address on their account.' }
+  const sent = outcome.status === 'sent'
 
   const { error: markError } = await a.userDb.rpc('eb_mark_code_delivery', { p_code: codeId, p_status: sent ? 'sent' : 'failed' })
   if (markError) console.error('issue-code: could not record delivery:', markError.code)
 
   if (!sent) {
     return json({
-      error: outcome === 'not_configured'
-        ? 'The code was created but email sending is not set up on the server, so it was not delivered.'
-        : 'The code was created but the email could not be sent. Wait two minutes, then send a new code.',
+      error: outcome.status === 'not_configured'
+        ? 'The code was created but email sending is not set up on the server, so it was not delivered. Add the email settings in Vercel, redeploy, wait two minutes, then send a new code.'
+        : `The code was created but the email could not be sent. ${outcome.detail ?? ''} Fix that, wait two minutes, then send a new code.`.replace(/\s+/g, ' '),
     }, 502)
   }
   return json({ ok: true, delivery: 'sent', expires_at: (issued as { expires_at?: string }).expires_at ?? null })
