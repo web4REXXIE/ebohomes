@@ -17,7 +17,7 @@ import { fmtDate, fmtDateTime, naira, toIso } from '@/lib/case-status'
 import { getPaymentState, paymentLabel } from '@/lib/payment-status'
 import { OPEN_STATUSES, TONE_CLASS, normaliseNgPhone, tenantPanel, viewingLabel, viewingTone, type Tone } from '@/lib/viewing-status'
 import {
-  STEP_ORDER, STEP_TITLE, buildJourney, lockedReason, pickTenancy, statusPanel,
+  NO_RESERVATION_NOTICE, STEP_ORDER, STEP_TITLE, buildJourney, lockedReason, pickTenancy, showsNoReservationNotice, statusPanel,
   type JourneyStep, type StepKey,
 } from '@/lib/rental-journey'
 
@@ -65,6 +65,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   const [loading, setLoading] = useState(true)
   const [loadState, setLoadState] = useState<'ok' | 'error' | 'notfound'>('ok')
   const [warn, setWarn] = useState('')
+  const [justSubmitted, setJustSubmitted] = useState(false)
   const [app, setApp] = useState<any>(null)
   const [extra, setExtra] = useState<{ decided_at?: string | null; application_data?: unknown }>({})
   const [viewings, setViewings] = useState<any[]>([])
@@ -110,12 +111,12 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
     })()
     return () => { alive = false }
   }, [])
-  // Arriving straight from the Apply form: show the success message once, then clean the address.
+  // Arriving straight from the Apply form: show the success card once, then clean the address.
   useEffect(() => {
     try {
       const q = new URLSearchParams(window.location.search)
       if (q.get('submitted') === '1') {
-        setMsg({ text: 'Application submitted. Stage 1 is complete. EboHomes will now review it. Nothing is charged or reserved yet.', ok: true })
+        setJustSubmitted(true)
         window.history.replaceState(null, '', window.location.pathname)
       }
     } catch { /* ignore */ }
@@ -305,7 +306,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         </p>
         <div className="flex justify-center gap-2">
           {loadState === 'error' && <button className={btnP} onClick={() => { setLoading(true); load() }}>Try again</button>}
-          <Link href="/applications" className={btnS}>Back to My Applications</Link>
+          <Link href="/journey?all=1" className={btnS}>Back to my journeys</Link>
         </div>
       </div>
     )
@@ -680,7 +681,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-6">
       <div ref={topRef} className="scroll-mt-4">
-        <Link href="/applications" className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={14} aria-hidden /> My Applications</Link>
+        <Link href="/journey?all=1" className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={14} aria-hidden /> All my journeys</Link>
         <h1 className="text-2xl font-bold text-foreground">Your rental journey</h1>
         <p className="text-sm text-muted-foreground">Five stages from application to moving in. Tap any stage to read about it.</p>
       </div>
@@ -697,6 +698,22 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
           <button onClick={dismissIntro} className="mt-2 min-h-11 font-semibold underline">Got it, hide this</button>
           <button onClick={dismissIntro} aria-label="Dismiss introduction" className="absolute right-1 top-1 inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-black/5"><X size={16} aria-hidden /></button>
         </div>
+      )}
+
+      {justSubmitted && app.status === 'pending' && (
+        <section role="status" aria-labelledby="submitted-heading" className="space-y-2 rounded-xl border-2 border-emerald-500 bg-emerald-50 p-4 text-sm text-emerald-950">
+          <h2 id="submitted-heading" className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 size={22} aria-hidden /> Application submitted</h2>
+          <p>Stage 1 is complete{app.case_ref ? `. Your reference is ${app.case_ref}` : ''}. EboHomes will now review your application.</p>
+          <p className="font-medium">This is not an approval, a reservation or a payment. Nothing has been charged.</p>
+          <button type="button" onClick={() => setJustSubmitted(false)} className="min-h-11 font-semibold underline">Got it, hide this</button>
+        </section>
+      )}
+
+      {showsNoReservationNotice(journey.phase) && (
+        <p role="note" className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <Info size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <span>{NO_RESERVATION_NOTICE}</span>
+        </p>
       )}
 
       {warn && <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{warn}</p>}

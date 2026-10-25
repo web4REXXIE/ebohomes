@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { amountForPurpose, isPurpose, newReference, paystackConfig } from '@/lib/paystack'
+import { settledByPayments } from '@/lib/payment-complete'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,6 +42,13 @@ export async function POST(req: Request) {
     const { data: already } = await db.from('paystack_transactions').select('id')
       .eq('tenancy_id', tenancyId).eq('purpose', purpose).eq('status', 'paid').limit(1)
     if (already && already.length) return NextResponse.json({ error: 'This has already been paid online.' }, { status: 409 })
+    // Also stop a second payment when a payment record or bank proof already covers this one-off charge.
+    const { data: payRows } = await db.from('payments').select('id, amount, type, status, verified_by, created_at').eq('tenancy_id', tenancyId)
+    const { data: proofRows } = await db.from('payment_submissions').select('payment_type, amount_paid, status').eq('tenancy_id', tenancyId)
+    const agreedAmount = purpose === 'deposit' ? terms.deposit_amount : terms.fees_amount
+    if (settledByPayments(payRows ?? [], purpose, agreedAmount, proofRows ?? [])) {
+      return NextResponse.json({ error: 'This has already been paid, or EboHomes is checking a payment for it. You do not need to pay again.' }, { status: 409 })
+    }
   }
 
   const reference = newReference()

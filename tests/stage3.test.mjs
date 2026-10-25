@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { transpileModule, ModuleKind, ScriptTarget } from 'typescript'
+const js = (p) => transpileModule(readFileSync(p, 'utf8'), { compilerOptions: { module: ModuleKind.ES2022, target: ScriptTarget.ES2022 } }).outputText
+const url = (c) => 'data:text/javascript;base64,' + Buffer.from(c).toString('base64')
+const ps = url(js('lib/payment-status.ts'))
+const pc = await import(url(js('lib/payment-complete.ts').replace(/'\.\/payment-status'/, `'${ps}'`)))
+const av = await import(url(js('lib/availability.ts')))
+assert.equal(av.availabilityKind('approved', true), 'other_application')
+assert.equal(av.availabilityKind('approved', null), 'available')
+assert.equal(av.availabilityKind('rented', false), 'rented')
+assert.equal(av.availabilityKind('paused', true), 'unavailable')
+assert.equal(av.availabilityNote('available'), null)
+assert.match(av.availabilityNote('other_application').text, /may still apply/)
+const agreed = { rent: 500000, deposit: 100000, fees: 50000 }
+const V = (type, amount, id) => ({ id, type, amount, status: 'confirmed', verified_by: 'a', created_at: '2026-10-01', receipt_code: 'R' + id })
+let s = pc.summarisePayments([], { agreed })
+assert.deepEqual(s.openOneOff, ['deposit', 'fees']); assert.equal(s.latestVerified, null)
+s = pc.summarisePayments([V('deposit', 100000, 1), V('fee', 50000, 2)], { agreed })
+assert.equal(s.charges.deposit.state, 'verified'); assert.equal(s.charges.fees.state, 'verified')
+assert.equal(pc.canPay('deposit', s), false); assert.equal(pc.canPay('rent', s), true); assert.equal(s.openOneOff.length, 0)
+s = pc.summarisePayments([{ id: 3, type: 'deposit', amount: 100000, status: 'recorded' }], { agreed })
+assert.equal(s.charges.deposit.state, 'awaiting'); assert.equal(s.latestVerified, null); assert.equal(pc.canPay('deposit', s), false)
+s = pc.summarisePayments([V('deposit', 40000, 4)], { agreed })
+assert.equal(s.charges.deposit.state, 'partial'); assert.equal(pc.canPay('deposit', s), true)
+s = pc.summarisePayments([{ id: 5, type: 'deposit', amount: 100000, status: 'rejected' }], { agreed })
+assert.equal(s.charges.deposit.state, 'none')
+s = pc.summarisePayments([], { agreed, proofs: [{ payment_type: 'deposit', amount_paid: 100000, status: 'under_review' }] })
+assert.equal(s.charges.deposit.state, 'awaiting')
+s = pc.summarisePayments([], { agreed, proofs: [{ payment_type: 'deposit', amount_paid: 100000, status: 'needs_info' }] })
+assert.equal(s.charges.deposit.state, 'none')
+assert.equal(pc.settledByPayments([V('deposit', 100000, 6)], 'deposit', 100000), true)
+assert.equal(pc.settledByPayments([V('rent', 500000, 7)], 'rent', 500000), false)
+const panel = { heading: 'h', happened: 'a', means: 'm', next: 'n', action: 'x' }
+s = pc.summarisePayments([V('deposit', 100000, 1)], { agreed })
+assert.match(pc.paymentPanelOverride(panel, 'terms_signed', s).heading, /Payment verified/)
+assert.equal(pc.paymentPanelOverride(panel, 'under_review', s), panel)
+console.log('stage3 ok')

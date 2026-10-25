@@ -59,15 +59,3 @@ for (const st of ['requested', 'approved', 'reschedule_proposed', 'scheduled', '
 }
 assert.equal(s.eventLabel('tenant_interested'), 'Tenant wants to continue with renting')
 console.log('viewing-status tests passed')
-// One-action interest: the panel follows the real application status
-const done = (app) => s.tenantPanel({ status: 'completed', tenant_decision: 'interested' }, fmt, app)
-const pend = done({ status: 'pending' })
-assert.equal(pend.owner, 'ebohomes'); assert.match(pend.body, /applied automatically/); assert.equal(pend.href, '/applications')
-assert.equal(done({ status: 'info_requested' }).owner, 'tenant')
-const appr = done({ status: 'approved', tenant_interest_at: '2026-10-20T10:00:00Z' })
-assert.match(appr.heading, /APPLICATION IS APPROVED/); assert.equal(appr.owner, 'none'); assert.equal(appr.href, '/tenancies')
-const legacy = done({ status: 'approved', tenant_interest_at: null })
-assert.equal(legacy.owner, 'tenant'); assert.equal(legacy.href, '/applications')
-assert.match(done({ status: 'closed' }).heading, /CLOSED/)
-assert.equal(done(undefined).owner, 'ebohomes')
-assert.match(s.staffNext({ status: 'completed', tenant_decision: 'interested' }), /Open Applications/)

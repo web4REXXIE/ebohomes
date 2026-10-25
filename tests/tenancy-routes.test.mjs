@@ -27,11 +27,15 @@ assert.match(detail, /<TenancyHub role="tenant" tenancyId=\{String\(params\?\.id
 assert.doesNotMatch(detail, /TenancyList/, 'detail route must not render the list')
 assert.doesNotMatch(detail, /<Header|<Footer/, 'detail route must not render a second header or footer')
 
+// A tenant's tenancy forwards to the rental journey of its application, and only for the tenant who owns it.
+assert.match(detail, /router\.replace\(`\/journey\/\$\{row\.application_id\}`\)/)
+assert.match(detail, /row\.tenant_id === uid/)
+
 // Landlord detail route uses the hub too.
 assert.match(landlordDetail, /<TenancyHub role="landlord"/)
 
-// "Open my tenancy" links to the tenancy's own id, never the application id.
-assert.match(appsPage, /href=\{`\/tenancies\/\$\{tenancy\.id\}`\}/)
+// My Applications now redirects into the rental journey and never links a tenancy by application id.
+assert.match(appsPage, /router\.replace\('\/journey'\)/)
 assert.doesNotMatch(appsPage, /\/tenancies\/\$\{app\.id\}/)
 
 console.log('tenancy-routes ok')

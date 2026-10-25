@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { amountForPurpose, PURPOSES, PURPOSE_LABEL, paystackConfig } from '@/lib/paystack'
 import { settleReference } from '@/lib/paystack-server'
+import { settledByPayments } from '@/lib/payment-complete'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,9 +42,13 @@ export async function GET(req: Request) {
   const { data: paid } = await db.from('paystack_transactions').select('purpose')
     .eq('tenancy_id', tenancyId!).eq('status', 'paid')
   const paidPurposes = new Set((paid ?? []).map((p: any) => p.purpose))
+  // A deposit or fee counts as done when an online payment was confirmed OR a payment record / bank proof already covers it.
+  const { data: payRows } = await db.from('payments').select('id, amount, type, status, verified_by, created_at').eq('tenancy_id', tenancyId!)
+  const { data: proofRows } = await db.from('payment_submissions').select('payment_type, amount_paid, status').eq('tenancy_id', tenancyId!)
+  const agreedFor = (p: string) => (p === 'rent' ? terms.rent_amount : p === 'deposit' ? terms.deposit_amount : terms.fees_amount)
   const options = PURPOSES.map((purpose) => ({
     purpose, label: PURPOSE_LABEL[purpose], amount_kobo: amountForPurpose(terms, purpose),
-    paid: purpose !== 'rent' && paidPurposes.has(purpose),
+    paid: purpose !== 'rent' && (paidPurposes.has(purpose) || settledByPayments(payRows ?? [], purpose, agreedFor(purpose), proofRows ?? [])),
   })).filter((o) => o.amount_kobo)
   return NextResponse.json({ enabled: true, options })
 }

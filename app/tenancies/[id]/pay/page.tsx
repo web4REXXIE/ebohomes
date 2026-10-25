@@ -9,8 +9,9 @@ import { BANK_TRANSFER, amountLines, transferReference } from '@/lib/payment-ins
 import { classifyTenancyLoad, TENANCY_LOAD_ERROR_TEXT, TENANCY_NOT_FOUND_TEXT } from '@/lib/tenancy-access'
 import { PaymentSubmissionForm, SubmissionList, type Sub } from '@/components/payment-submission-form'
 import { fmtDate } from '@/lib/case-status'
+import { canPay, summarisePayments, CHARGE_LABEL } from '@/lib/payment-complete'
 
-const naira = (n: number) => '\u20A6' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 })
+const naira = (n: number) => '₦' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 })
 
 export default function PaySubmissionPage() {
   const params = useParams()
@@ -21,6 +22,7 @@ export default function PaySubmissionPage() {
   const [terms, setTerms] = useState<any>(null)
   const [photo, setPhoto] = useState<string | null>(null)
   const [subs, setSubs] = useState<Sub[]>([])
+  const [payRows, setPayRows] = useState<any[]>([])
   const [replaces, setReplaces] = useState<Sub | null>(null)
   const [copied, setCopied] = useState(false)
   const [renewal, setRenewal] = useState<{ id: string; new_rent: number; new_end_date: string } | null>(null)
@@ -55,6 +57,8 @@ export default function PaySubmissionPage() {
         if (ren && ren.tenancy_id === tenancyId && ren.status === 'accepted') setRenewal({ id: ren.id, new_rent: Number(ren.new_rent), new_end_date: ren.new_end_date })
         else setRenewalProblem('This renewal is not waiting for payment. Open your tenancy page to see where it is.')
       }
+      const pr = await supabase.from('payments').select('id, amount, type, status, verified_by, created_at').eq('tenancy_id', tenancyId)
+      setPayRows(pr.error ? [] : (pr.data ?? []))
       await loadSubs()
       setState('ok')
     })()
@@ -68,9 +72,17 @@ export default function PaySubmissionPage() {
     </div>
   )
 
-  const lines = renewal
+  // Deposit and fees are paid once. When one is verified or waiting for EboHomes, it is not offered again.
+  // Rent repeats every period, so it stays.
+  const summary = summarisePayments(payRows, {
+    agreed: { rent: terms?.rent_amount, deposit: terms?.deposit_amount, fees: terms?.fees_amount },
+    proofs: subs.map((s) => ({ payment_type: s.payment_type, amount_paid: s.amount_paid, status: s.status })),
+  })
+  const allLines = renewal
     ? [{ key: 'rent' as const, label: `Renewal rent until ${fmtDate(renewal.new_end_date)}`, amount: renewal.new_rent }]
     : amountLines(terms, t.rent_period)
+  const lines = renewal ? allLines : allLines.filter((l) => canPay(l.key, summary))
+  const alreadyDone = renewal ? [] : allLines.filter((l) => !canPay(l.key, summary))
   const due = lines.map((l) => ({ type: l.key === 'fees' ? 'fees' as const : l.key, amount: l.amount }))
   const ref = transferReference(t.tenancy_code)
   const hasOpen = subs.some((s) => s.status === 'submitted' || s.status === 'under_review')
@@ -91,9 +103,14 @@ export default function PaySubmissionPage() {
 
       <section className="space-y-2 rounded-xl border border-border bg-card p-4 text-sm">
         <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><ShieldCheck size={14} aria-hidden /> {renewal ? 'Amount due for your renewal' : 'Amounts in your signed agreement'}</p>
-        {lines.length === 0 ? <p className="text-muted-foreground">Your signed agreement is not recorded yet, so payment is not open.</p> : (
+        {lines.length === 0 ? <p className="text-muted-foreground">{allLines.length === 0 ? 'Your signed agreement is not recorded yet, so payment is not open.' : 'Everything that is paid once is already paid or being checked by EboHomes.'}</p> : (
           <ul className="divide-y divide-border">{lines.map((l) => (
             <li key={l.key} className="flex items-center justify-between py-1.5"><span>{l.label}</span><b className="text-base">{naira(l.amount)}</b></li>))}</ul>)}
+        {alreadyDone.length > 0 && (
+          <ul className="space-y-1 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-900" aria-label="Already paid">
+            {alreadyDone.map((l) => <li key={l.key}><b>{l.label}</b> {naira(l.amount)}: {CHARGE_LABEL[summary.charges[l.key].state as 'verified' | 'awaiting']}. You do not need to pay it again.</li>)}
+          </ul>
+        )}
         <div className="mt-2 space-y-1 rounded-lg bg-secondary p-3">
           <p className="text-xs text-muted-foreground">You should have transferred to</p>
           <p><b>{BANK_TRANSFER.bankName}</b> · {BANK_TRANSFER.accountName} · <b className="tracking-wider">{BANK_TRANSFER.accountNumber}</b></p>

@@ -247,6 +247,15 @@ export type PanelCtx = {
   renewalOffered?: boolean
 }
 
+// Shown to anyone with an open application. It is a rule of the platform, not a count of other people.
+export const NO_RESERVATION_NOTICE =
+  'Your application does not reserve this property. Complete the required steps promptly to continue your rental process. Other applicants may still apply until the property is confirmed as rented.'
+
+// The notice applies from the moment of applying until the signed agreement is recorded.
+export function showsNoReservationNotice(phase: Phase): boolean {
+  return !['withdrawn', 'rejected', 'unknown', 'terms_signed', 'active', 'ended'].includes(phase)
+}
+
 const on = (d?: string | null) => (d ? ` on ${d}` : '')
 
 export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
@@ -282,7 +291,7 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
     case 'awaiting_tenancy':
       return { tone: 'amber', needsYou: false, heading: 'Your tenancy is being set up', happened: `You confirmed${on(c.interestOn)} that you want to proceed.`, means: 'The landlord now creates your tenancy and proposes the rental terms. Nothing is reserved or charged yet.', next: 'You will be notified, and your tenancy will appear here.', action: none, cta: null }
     case 'terms_none':
-      return { tone: 'amber', needsYou: false, heading: 'Your rental terms are being prepared', happened: 'Your tenancy record has been created.', means: 'The landlord proposes the rent, deposit, fees and dates. You will be asked to accept them.', next: 'Wait for the landlord’s proposal. You will be notified.', action: none, cta: c.tenancyId ? { label: 'Open tenancy details', href: `/tenancies/${c.tenancyId}` } : null }
+      return { tone: 'amber', needsYou: false, heading: 'Your rental terms are being prepared', happened: 'Your tenancy record has been created.', means: 'The landlord proposes the rent, deposit, fees and dates. You will be asked to accept them.', next: 'Wait for the landlord’s proposal. You will be notified.', action: none, cta: c.tenancyId ? { label: 'See your tenancy', step: 'setup' } : null }
     case 'terms_review':
       return { tone: 'amber', needsYou: true, heading: 'Review and accept your rental terms', happened: 'The landlord proposed rental terms for your tenancy.', means: 'Check the rent, deposit, fees and dates. Accept them only if they are right.', next: 'Accept or decline the terms.', action: 'Accept or decline the proposed terms.', cta: { label: 'Review rental terms', step: 'setup' } }
     case 'terms_waiting_landlord':
@@ -290,12 +299,12 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
     case 'terms_accepted':
       return { tone: 'amber', needsYou: false, heading: 'Terms accepted. The signed agreement is being recorded', happened: 'You and the landlord both accepted the terms.', means: 'EboHomes records the signed agreement once it has seen it. This page does not replace the signed document.', next: 'Wait for EboHomes to record the signed agreement.', action: none, cta: { label: 'See the rental terms', step: 'setup' } }
     case 'terms_signed':
-      return { tone: 'green', needsYou: false, heading: 'Your agreement is recorded', happened: 'EboHomes recorded your signed agreement.', means: 'Payments are based on the agreed figures. Your tenancy shows as active only when its status becomes active.', next: 'Use the payment section when a payment is due. Open tenancy details for handover and records.', action: 'Pay what is due, if anything, in the payment section.', cta: { label: 'See agreement and payments', step: 'setup' } }
+      return { tone: 'green', needsYou: false, heading: 'Your agreement is recorded', happened: 'EboHomes recorded your signed agreement.', means: 'Payments are based on the agreed figures. Your tenancy shows as active only when its status becomes active.', next: 'Use the payment section when a payment is due. Handover and records appear in the Active Tenancy stage once your tenancy is active.', action: 'Pay what is due, if anything, in the payment section.', cta: { label: 'See agreement and payments', step: 'setup' } }
     case 'active':
       if (c.renewalOffered)
-        return { tone: 'amber', needsYou: true, heading: 'Your tenancy is active. You have a renewal offer', happened: 'The landlord sent you a renewal offer.', means: 'Responding records your decision only. No payment is taken.', next: 'Open My Tenancies to accept or decline the offer.', action: 'Respond to the renewal offer.', cta: { label: 'Respond to renewal offer', href: '/tenancies' } }
-      return { tone: 'green', needsYou: false, heading: 'Your tenancy is active', happened: 'Your tenancy status is active.', means: 'Your agreed rent, payments, receipts and records are kept here and in your tenancy details.', next: 'Pay rent when it is due and keep your receipts. Handover, repairs, disputes and deposit are in tenancy details.', action: 'Nothing is required unless a payment is due.', cta: c.tenancyId ? { label: 'Open tenancy details', href: `/tenancies/${c.tenancyId}` } : null }
+        return { tone: 'amber', needsYou: true, heading: 'Your tenancy is active. You have a renewal offer', happened: 'The landlord sent you a renewal offer.', means: 'Responding records your decision only. No payment is taken.', next: 'Accept or decline the offer in the Active Tenancy stage below.', action: 'Respond to the renewal offer.', cta: { label: 'Respond to renewal offer', step: 'active' } }
+      return { tone: 'green', needsYou: false, heading: 'Your tenancy is active', happened: 'Your tenancy status is active.', means: 'Your agreed rent, payments, receipts and records are kept here.', next: 'Pay rent when it is due and keep your receipts. Handover, repairs, disputes and deposit are in the Active Tenancy stage.', action: 'Nothing is required unless a payment is due.', cta: c.tenancyId ? { label: 'See rent, receipts and handover', step: 'active' } : null }
     case 'ended':
-      return { tone: 'grey', needsYou: false, heading: `This tenancy is ${c.tenancyStatus ?? 'ended'}`, happened: `Its saved status is “${c.tenancyStatus ?? 'ended'}”.`, means: 'The tenancy is no longer running. Your payment records and receipts stay available.', next: 'Open tenancy details for records, handover and deposit information.', action: 'Nothing is required unless EboHomes contacts you.', cta: c.tenancyId ? { label: 'Open tenancy details', href: `/tenancies/${c.tenancyId}` } : null }
+      return { tone: 'grey', needsYou: false, heading: `This tenancy is ${c.tenancyStatus ?? 'ended'}`, happened: `Its saved status is “${c.tenancyStatus ?? 'ended'}”.`, means: 'The tenancy is no longer running. Your payment records and receipts stay available.', next: 'Open the Active Tenancy stage for records, handover and deposit information.', action: 'Nothing is required unless EboHomes contacts you.', cta: c.tenancyId ? { label: 'See your tenancy records', step: 'active' } : null }
   }
 }

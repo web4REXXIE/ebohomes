@@ -21,7 +21,10 @@ const toneClass = {
 
 // Shows the renewal on the tenancy page for the tenant and the landlord.
 // Tenant: answer an offer, then pay and confirm. Landlord: send an offer and follow its progress.
-export function RenewalPanel({ role, tenancyId }: { role: RenewalRole; tenancyId: string }) {
+// embedded: used inside the rental journey, which already supplies the page width and spacing.
+// onChanged: called after the tenant answers an offer, so the page around the panel can refresh.
+export function RenewalPanel({ role, tenancyId, embedded = false, onChanged }: { role: RenewalRole; tenancyId: string; embedded?: boolean; onChanged?: () => void }) {
+  const wrap = embedded ? 'space-y-3' : 'mx-auto max-w-3xl space-y-3 px-4 pb-6'
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [tenancy, setTenancy] = useState<any>(null)
@@ -64,6 +67,7 @@ export function RenewalPanel({ role, tenancyId }: { role: RenewalRole; tenancyId
     if (error || !data?.length) { setMsg({ text: error?.message ?? 'This offer has already been answered. Refresh the page.', ok: false }); await load(); return }
     setMsg({ text: status === 'accepted' ? 'You accepted the offer. Next, pay the renewal and send proof.' : 'You declined the offer.', ok: true })
     await load()
+    onChanged?.()
   }
 
   const sendOffer = async (e: React.FormEvent) => {
@@ -89,10 +93,10 @@ export function RenewalPanel({ role, tenancyId }: { role: RenewalRole; tenancyId
     await load()
   }
 
-  if (loading) return <p className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground" role="status"><Loader2 size={16} className="animate-spin" aria-hidden /> Loading renewal...</p>
+  if (loading) return <p className={`flex items-center gap-2 py-3 text-sm text-muted-foreground ${embedded ? '' : 'px-4'}`} role="status"><Loader2 size={16} className="animate-spin" aria-hidden /> Loading renewal...</p>
   if (failed) {
     return (
-      <section className="mx-auto max-w-3xl px-4">
+      <section className={embedded ? '' : 'mx-auto max-w-3xl px-4'}>
         <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           Could not load the renewal section. <button type="button" className="font-semibold underline" onClick={() => { setLoading(true); load() }}>Try again</button>
         </p>
@@ -113,7 +117,7 @@ export function RenewalPanel({ role, tenancyId }: { role: RenewalRole; tenancyId
   const older = items.slice(1)
 
   return (
-    <section className="mx-auto max-w-3xl space-y-3 px-4 pb-6" aria-labelledby="renewal-title">
+    <section className={wrap} aria-labelledby="renewal-title">
       <div className="space-y-3 rounded-xl border border-border bg-card p-4 text-sm">
         <div className="flex items-center justify-between gap-2">
           <h2 id="renewal-title" className="flex items-center gap-2 text-base font-bold text-foreground"><RefreshCw size={16} aria-hidden /> Renewal</h2>
