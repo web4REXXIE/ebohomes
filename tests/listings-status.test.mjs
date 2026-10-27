@@ -19,7 +19,14 @@ assert.equal(m.listingGroup('rented'), 'other')
 
 const r = m.listingStatusInfo('rented')
 assert.equal(r.label, 'Rented')
-assert.match(r.meaning, /signed rental agreement/i)
+// Rented means payment verified AND key handover confirmed. A signed agreement alone is not enough, so the text must not say so.
+assert.match(r.meaning, /payment is verified/i)
+assert.match(r.meaning, /key handover is confirmed/i)
+assert.doesNotMatch(r.meaning, /agreement/i)
+assert.equal(r.tone, 'blue')
+// Other statuses keep their meanings.
+assert.equal(m.listingStatusInfo('paused').label, 'Paused by you')
+assert.equal(m.listingStatusInfo('suspended').label, 'Hidden by EboHomes')
 assert.equal(m.listingStatusInfo('approved').tone, 'green')
 assert.equal(m.listingStatusInfo(undefined).label, 'Waiting for EboHomes review')
 

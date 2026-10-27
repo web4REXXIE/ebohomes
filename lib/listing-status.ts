@@ -1,5 +1,5 @@
 // Pure helpers for how a landlord sees listing statuses. No imports, so they can be unit tested directly.
-// Uses only the statuses that already exist on listings: pending, inspection_required, approved, paused, rejected, suspended.
+// Uses only the statuses that already exist on listings: pending, inspection_required, approved, paused, rented, rejected, suspended.
 // "Live" means status = 'approved'. That is the same rule search, home and the public listing page use.
 
 export type ListingGroup = 'attention' | 'review' | 'live' | 'other'
@@ -68,6 +68,13 @@ export function listingStatusInfo(status: string | null | undefined): ListingSta
         meaning: 'You paused this listing. Tenants cannot see it.',
         next: 'Tap Resume when you want it live again.',
       }
+    case 'rented':
+      return {
+        label: 'Rented',
+        tone: 'blue',
+        meaning: 'This property is rented. EboHomes marks a listing as rented only after the required payment is verified and the key handover is confirmed. Tenants cannot see it.',
+        next: 'Nothing to do. If this looks wrong, contact EboHomes.',
+      }
     case 'rejected':
       return {
         label: 'Not approved — action required',
@@ -113,4 +120,3 @@ export function groupListings<T extends Sortable>(list: T[]): Record<ListingGrou
   out.live.sort((a, b) => ms(b.reviewed_at) - ms(a.reviewed_at) || ms(b.created_at) - ms(a.created_at))
   for (const g of ['attention', 'review', 'other'] as const) out[g].sort((a, b) => ms(b.created_at) - ms(a.created_at))
   return out
-}
