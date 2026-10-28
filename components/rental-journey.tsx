@@ -21,6 +21,7 @@ import {
   type JourneyStep, type StepKey,
 } from '@/lib/rental-journey'
 import { TenancyChecklist } from '@/components/tenancy-checklist'
+import { getPaymentState, isVerified, paymentLabel } from '@/lib/payment-status'
 
 const INTRO_KEY = 'ebohomes_journey_intro_v1'
 const LIVE_TERMS = ['proposed', 'accepted', 'signed']
@@ -196,14 +197,15 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
 
   const journey = useMemo(() => {
     if (!app) return null
-    return buildJourney({
+       return buildJourney({
       app,
       viewings,
       tenancy: tenancyRow ? { id: tenancyRow.id, status: tenancyRow.status } : null,
       terms: liveTerms,
       waitlisted,
+      paymentVerified: payments.some((p) => isVerified(p)),
     })
-  }, [app, viewings, tenancyRow, liveTerms, waitlisted])
+  }, [app, viewings, tenancyRow, liveTerms, waitlisted, payments])
 
   // The first load never shows a banner. After that, a banner appears only when the journey really moved to a later stage.
   useEffect(() => {

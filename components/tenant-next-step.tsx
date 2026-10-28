@@ -90,6 +90,7 @@ export function TenantNextStep() {
           viewings: data.viewings.filter((v) => v.application_id === a.id) as any[],
           tenancy: t ? { id: t.id, status: t.status } : null,
           terms: live,
+                    paymentVerified: t ? data.payments.some((p) => p.tenancy_id === t.id && p.status === 'confirmed' && !!p.verified_by) : undefined,
         })
         return { a, j }
       })

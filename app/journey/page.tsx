@@ -57,13 +57,18 @@ export default function MyRentalJourneyHubPage() {
       supabase.from('tenancies').select('id, application_id, status').in('application_id', ids),
     ])
     const tenancies = (tn.data ?? []) as { id: string; application_id: string; status: string | null }[]
-    let terms: any[] = []
+       let terms: any[] = []
+    let verified = new Set<string>()
+    let paymentsKnown = false
     if (tenancies.length) {
-      const rt = await supabase
-        .from('rental_terms')
-        .select('id, tenancy_id, status, tenant_accepted_at, landlord_accepted_at')
-        .in('tenancy_id', tenancies.map((t) => t.id))
+      const tids = tenancies.map((t) => t.id)
+      const [rt, pv] = await Promise.all([
+        supabase.from('rental_terms').select('id, tenancy_id, status, tenant_accepted_at, landlord_accepted_at').in('tenancy_id', tids),
+        supabase.from('payments').select('tenancy_id').in('tenancy_id', tids).eq('status', 'confirmed').not('verified_by', 'is', null),
+      ])
       terms = rt.data ?? []
+      paymentsKnown = !pv.error
+      verified = new Set((pv.data ?? []).map((x: any) => x.tenancy_id))
     }
     setFailed(!!(vw.error || tn.error))
 
@@ -85,6 +90,7 @@ export default function MyRentalJourneyHubPage() {
         terms: live,
         waitlisted: waiting.has(app.id),
       })
+              paymentVerified: t && paymentsKnown ? verified.has(t.id) : undefined,
       return { app, journey }
     })
     setEntries(built)
