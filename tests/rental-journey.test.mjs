@@ -46,7 +46,7 @@ j = J({ app: { status: 'approved' }, tenancy: { id: 't1', status: 'active' } });
 j = J({ app: A, tenancy: { id: 't1', status: 'ended' } }); eq('ended', j.phase, 'ended'); eq('ended label', lab(j, 4), 'Tenancy ended')
 j = J({ app: A, tenancy: { id: 't1', status: 'terminated' } }); eq('terminated', j.phase, 'ended')
 // every phase yields a complete panel
-for (const p of ['withdrawn','rejected','unknown','under_review','info_requested','v_none','v_waiting','v_proposed','v_scheduled','v_decide','v_confirm','v_declined','v_retry','awaiting_tenancy','terms_none','terms_review','terms_waiting_landlord','terms_accepted','terms_signed','active','ended'] ) {
+for (const p of ['withdrawn','rejected','unknown','under_review','info_requested','v_none','v_waiting','v_proposed','v_scheduled','v_decide','v_confirm','v_declined','v_retry','awaiting_tenancy','terms_none','terms_review','terms_waiting_landlord','terms_accepted','terms_signed','payment_confirm','active','ended'] ) {
   const x = statusPanel(p, { tenancyId: 't1' }); eq('panel ' + p, [x.heading, x.happened, x.means, x.next, x.action].every((s) => s.length > 10), true)
 }
 // panel never claims action for waiting states

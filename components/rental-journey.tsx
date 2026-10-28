@@ -73,6 +73,10 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   const [tenancyRow, setTenancyRow] = useState<any>(null)
   const [terms, setTerms] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
+  // Newest payment submission still being worked on, the verified submission waiting for the tenant's code, and the key handover.
+  const [proofStatus, setProofStatus] = useState<string | null>(null)
+  const [awaitingCode, setAwaitingCode] = useState<string | null>(null)
+  const [handover, setHandover] = useState<'unknown' | 'none' | 'tenant_confirmed' | 'landlord_confirmed' | 'disputed' | 'completed'>('unknown')
   const [renewalOffered, setRenewalOffered] = useState(false)
   const [waitlisted, setWaitlisted] = useState(false)
   const [renewalOffer, setRenewalOffer] = useState<any>(null)
@@ -158,7 +162,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
 
     const lite = pickTenancy((tn.data ?? []) as any[])
     if (!lite) {
-      setTenancyRow(null); setTerms([]); setPayments([]); setRenewalOffered(false); setRenewalOffer(null)
+      setTenancyRow(null); setTerms([]); setPayments([]); setProofStatus(null); setAwaitingCode(null); setHandover('unknown'); setRenewalOffered(false); setRenewalOffer(null)
       // Waiting list: the database tells us (yes/no only) whether another applicant already has an agreed tenancy here.
       // If the function is not installed yet or fails, we show nothing different rather than guess.
       if (a.status === 'approved') {
@@ -167,11 +171,13 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       } else setWaitlisted(false)
     } else {
       setWaitlisted(false)
-      const [mine, rt, pay, ren] = await Promise.all([
+      const [mine, rt, pay, ren, subs, ho] = await Promise.all([
         supabase.rpc('my_tenancies', { p_as: 'tenant' }),
         supabase.from('rental_terms').select('*').eq('tenancy_id', lite.id).order('version', { ascending: false }),
         supabase.from('payments').select('id, tenancy_id, amount, type, status, receipt_code, created_at, verified_by, review_note').eq('tenancy_id', lite.id).order('created_at', { ascending: false }),
         supabase.from('renewals').select('id, status, new_rent, new_end_date, terms').eq('tenancy_id', lite.id).eq('status', 'offered').order('created_at', { ascending: false }),
+        supabase.from('payment_submissions').select('id, status, created_at').eq('tenancy_id', lite.id).order('created_at', { ascending: false }),
+        supabase.from('tenancy_handovers').select('status, tenant_confirmed_at, landlord_confirmed_at').eq('tenancy_id', lite.id).limit(1),
       ])
       const full = (mine.data ?? []).find((x: any) => x && x.id === lite.id)
       if (mine.error || !full) problems.push('tenancy details')
@@ -180,6 +186,23 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       if (pay.error) problems.push('payments')
       setTerms(rt.data ?? [])
       setPayments(pay.data ?? [])
+      // Payment evidence: the newest submission that is not replaced. A verified one may still wait for the tenant's code.
+      const subRows = subs.error ? [] : ((subs.data ?? []) as any[])
+      setProofStatus((() => { const n = subRows.find((x) => x.status !== 'superseded'); return n && n.status !== 'verified' ? n.status : null })())
+      let waitingId: string | null = null
+      const verifiedSubs = subRows.filter((x) => x.status === 'verified')
+      if (verifiedSubs.length) {
+        const states = await Promise.all(verifiedSubs.map((x) => supabase.rpc('eb_my_confirmation_state', { p_submission: x.id })))
+        if (states.some((r) => r.error)) problems.push('payment confirmation')
+        const hit = verifiedSubs.find((_, i) => { const d: any = states[i].data; return !states[i].error && d?.found !== false && d?.state && d.state !== 'confirmed' })
+        waitingId = hit ? hit.id : null
+      }
+      setAwaitingCode(waitingId)
+      if (ho.error) { setHandover('unknown') } else {
+        const h: any = (ho.data ?? [])[0]
+        setHandover(!h ? 'none' : h.status === 'completed' ? 'completed' : h.status === 'disputed' ? 'disputed'
+          : h.tenant_confirmed_at && !h.landlord_confirmed_at ? 'tenant_confirmed' : h.landlord_confirmed_at && !h.tenant_confirmed_at ? 'landlord_confirmed' : 'none')
+      }
       setRenewalOffered(!ren.error && (ren.data ?? []).length > 0)
       setRenewalOffer(!ren.error && (ren.data ?? []).length > 0 ? (ren.data as any[])[0] : null)
     }
@@ -196,15 +219,16 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
 
   const journey = useMemo(() => {
     if (!app) return null
-       return buildJourney({
+    return buildJourney({
       app,
       viewings,
       tenancy: tenancyRow ? { id: tenancyRow.id, status: tenancyRow.status } : null,
       terms: liveTerms,
       waitlisted,
       paymentVerified: payments.some((p) => isVerified(p)),
+      awaitingConfirmationId: awaitingCode,
     })
-  }, [app, viewings, tenancyRow, liveTerms, waitlisted, payments])
+  }, [app, viewings, tenancyRow, liveTerms, waitlisted, payments, awaitingCode])
 
   // The first load never shows a banner. After that, a banner appears only when the journey really moved to a later stage.
   useEffect(() => {
@@ -331,6 +355,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
     viewingWhen: v ? fmtDateTime(v.scheduled_for ?? v.proposed_at) : null, viewingStatus: v?.status ?? null,
     tenancyId: tenancyRow?.id ?? null, tenancyStatus, listingId: app.listing_id, listingOpen,
     appStatus: app.status, renewalOffered,
+    proofStatus, awaitingConfirmationId: awaitingCode, handover,
   })
   const selStep = journey.steps.find((s) => s.key === selected)!
   const selIndex = STEP_ORDER.indexOf(selected)
@@ -382,6 +407,13 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
     if (!tenancyRow) return null
     return (
       <div className="space-y-4">
+        {awaitingCode && (
+          <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="font-semibold">Your action: enter your confirmation code</p>
+            <p>EboHomes verified your payment and emailed you a confirmation code. Your confirmation is not complete until you enter it.</p>
+            <Link href={`/payment-confirmation/${awaitingCode}`} className={btnP}>Enter confirmation code <ArrowRight size={15} aria-hidden /></Link>
+          </div>
+        )}
         {liveTerms?.status === 'signed' && (
           <PayOnlinePanel tenancyId={tenancyRow.id} terms={liveTerms} title={tenancyRow.title} reference={tenancyRow.tenancy_code} period={tenancyRow.rent_period} />
         )}
@@ -639,13 +671,12 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         </div>
       )}
       {!liveTerms && <p className="rounded-lg border border-border p-3 text-sm text-muted-foreground">The landlord has not proposed rental terms yet. The rent and dates above come from the tenancy record and are not an agreement.</p>}
-      {liveTerms?.status === 'signed' && journey.phase === 'terms_signed' && renderPayments()}
+      {liveTerms?.status === 'signed' && (journey.phase === 'terms_signed' || journey.phase === 'payment_confirm') && renderPayments()}
     </div>
   )
 
   const detailActive = !tenancyRow ? null : (
     <div className="space-y-4">
-      <TenancyChecklist tenancyId={tenancyRow.id} />
       <TenancyChecklist tenancyId={tenancyRow.id} />
       {renewalOffered && (
         <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">

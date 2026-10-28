@@ -27,13 +27,16 @@ export type JourneyInput = {
   // True when EboHomes has verified a confirmed payment for this tenancy. false = known to be unpaid or unverified.
   // undefined = unknown (the payments query failed or was not run), in which case we keep the old behaviour.
   paymentVerified?: boolean
+  // Id of a payment submission that EboHomes verified but whose confirmation code the tenant has NOT yet entered.
+  // null/undefined = nothing waiting (or not known). It comes from eb_my_confirmation_state, never from the browser guessing.
+  awaitingConfirmationId?: string | null
 }
 
 export type Phase =
   | 'withdrawn' | 'rejected' | 'unknown' | 'under_review' | 'info_requested'
   | 'v_none' | 'v_waiting' | 'v_proposed' | 'v_scheduled' | 'v_decide' | 'v_confirm' | 'v_declined' | 'v_retry'
   | 'awaiting_tenancy' | 'waitlisted'
-  | 'terms_none' | 'terms_review' | 'terms_waiting_landlord' | 'terms_accepted' | 'terms_signed'
+  | 'terms_none' | 'terms_review' | 'terms_waiting_landlord' | 'terms_accepted' | 'terms_signed' | 'payment_confirm'
   | 'active' | 'ended'
 
 export type JourneyStep = {
@@ -94,10 +97,14 @@ export function computePhase(inp: JourneyInput): Phase {
     // behaviour, because older tenancies exist without one.
     if (terms?.status === 'proposed') return terms.tenant_accepted_at ? 'terms_waiting_landlord' : 'terms_review'
     if (terms?.status === 'accepted') return 'terms_accepted'
+    // EboHomes verified a payment but the tenant has not entered the confirmation code yet: that step comes first.
+    if (terms?.status === 'signed' && inp.awaitingConfirmationId) return 'payment_confirm'
     // Agreement signed but no verified payment yet: the tenant still has to pay, so the rental is not running.
     if (terms?.status === 'signed' && inp.paymentVerified === false) return 'terms_signed'
+    // No live rental terms. An 'active' status alone does not mean the rental is running, because a tenancy is 'active' from
+    // the moment it is created. Only an older tenancy that already has a payment verified by EboHomes is treated as running.
+    if (!terms) return s === 'active' && inp.paymentVerified === true ? 'active' : 'terms_none'
     if (s === 'active') return 'active'
-    if (!terms) return 'terms_none'
     if (terms.status === 'signed') return 'terms_signed'
     return 'terms_none'
   }
@@ -138,13 +145,13 @@ function currentIndex(p: Phase): number {
     case 'v_none': case 'v_waiting': case 'v_proposed': case 'v_scheduled':
     case 'v_decide': case 'v_confirm': case 'v_declined': case 'v_retry': return 2
     case 'awaiting_tenancy': case 'waitlisted': case 'terms_none': case 'terms_review':
-    case 'terms_waiting_landlord': case 'terms_accepted': case 'terms_signed': return 3
+    case 'terms_waiting_landlord': case 'terms_accepted': case 'terms_signed': case 'payment_confirm': return 3
     case 'active':
     case 'ended': return 4
   }
 }
 
-const NEEDS_YOU: Phase[] = ['info_requested', 'v_none', 'v_proposed', 'v_decide', 'v_confirm', 'v_retry', 'terms_review']
+const NEEDS_YOU: Phase[] = ['info_requested', 'v_none', 'v_proposed', 'v_decide', 'v_confirm', 'v_retry', 'terms_review', 'payment_confirm']
 
 // Label for the Viewing step while it is NOT the current step (for example a viewing requested during review).
 function sideViewingLabel(v: JourneyViewing | null): string {
@@ -191,6 +198,7 @@ function stepLabel(key: StepKey, phase: Phase, state: StepState, v: JourneyViewi
         case 'terms_waiting_landlord': return { label: 'Waiting for landlord', tone: 'amber' }
         case 'terms_accepted': return { label: 'Agreement being recorded', tone: 'amber' }
         case 'terms_signed': return { label: 'Agreement recorded', tone: 'green' }
+        case 'payment_confirm': return { label: 'Confirm your payment', tone: 'amber' }
         default: return { label: 'In progress', tone: 'blue' }
       }
     }
@@ -258,6 +266,12 @@ export type PanelCtx = {
   appStatus?: string | null
   // True when the tenant has an open renewal offer (renewals.status = 'offered').
   renewalOffered?: boolean
+  // Newest payment submission that is still being worked on ('submitted' | 'under_review' | 'needs_info' | 'rejected'), if any.
+  proofStatus?: string | null
+  // Verified submission waiting for the tenant's confirmation code.
+  awaitingConfirmationId?: string | null
+  // Key handover: 'none' = no record yet, 'unknown' = could not be read.
+  handover?: 'unknown' | 'none' | 'tenant_confirmed' | 'landlord_confirmed' | 'disputed' | 'completed' | null
 }
 
 // Shown to anyone with an open application. It is a rule of the platform, not a count of other people.
@@ -266,7 +280,7 @@ export const NO_RESERVATION_NOTICE =
 
 // The notice applies from the moment of applying until the signed agreement is recorded.
 export function showsNoReservationNotice(phase: Phase): boolean {
-  return !['withdrawn', 'rejected', 'unknown', 'terms_signed', 'active', 'ended'].includes(phase)
+  return !['withdrawn', 'rejected', 'unknown', 'terms_signed', 'payment_confirm', 'active', 'ended'].includes(phase)
 }
 
 const on = (d?: string | null) => (d ? ` on ${d}` : '')
@@ -313,11 +327,26 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
       return { tone: 'amber', needsYou: false, heading: 'Waiting for the landlord to accept', happened: 'You accepted the proposed terms.', means: 'Both sides must accept before the agreement can be recorded.', next: 'Nothing more to do now.', action: none, cta: { label: 'See the rental terms', step: 'setup' } }
     case 'terms_accepted':
       return { tone: 'amber', needsYou: false, heading: 'Terms accepted. The signed agreement is being recorded', happened: 'You and the landlord both accepted the terms.', means: 'EboHomes records the signed agreement once it has seen it. This page does not replace the signed document.', next: 'Wait for EboHomes to record the signed agreement.', action: none, cta: { label: 'See the rental terms', step: 'setup' } }
-    case 'terms_signed':
-      return { tone: 'amber', needsYou: false, heading: 'Agreement recorded. Payment is next', happened: 'EboHomes recorded your signed agreement.', means: 'Your tenancy becomes active after EboHomes verifies your payment. An uploaded receipt is not proof of payment.', next: 'Pay what is due using the payment section, then send your payment evidence. EboHomes checks it before your tenancy becomes active.', action: 'Pay and submit your payment evidence.', cta: { label: 'See agreement and payments', step: 'setup' } }
+    case 'terms_signed': {
+      const ps = c.proofStatus ?? null
+      const pay: PanelCta | null = c.tenancyId ? { label: 'See agreement and payments', step: 'setup' } : null
+      if (ps === 'submitted' || ps === 'under_review')
+        return { tone: 'amber', needsYou: false, heading: 'Payment evidence received. EboHomes is checking it', happened: 'You sent your payment evidence.', means: 'EboHomes has not confirmed that the money arrived. An uploaded receipt is not proof of payment.', next: 'EboHomes compares your evidence with the bank account. You will be notified of the result.', action: none, cta: pay }
+      if (ps === 'needs_info' || ps === 'rejected')
+        return { tone: 'red', needsYou: true, heading: ps === 'needs_info' ? 'EboHomes needs more information about your payment' : 'EboHomes could not match your payment', happened: 'EboHomes reviewed your payment evidence.', means: 'Nothing is verified yet, so your tenancy is not confirmed.', next: 'Read EboHomes’ note, then send a corrected payment submission if you did pay.', action: 'Send a corrected payment submission.', cta: c.tenancyId ? { label: 'Correct my payment evidence', href: `/tenancies/${c.tenancyId}/pay` } : pay }
+      return { tone: 'amber', needsYou: false, heading: 'Agreement recorded. Payment is next', happened: 'EboHomes recorded your signed agreement.', means: 'Your tenancy becomes active after EboHomes verifies your payment. An uploaded receipt is not proof of payment.', next: 'Pay what is due using the payment section, then send your payment evidence. EboHomes checks it before your tenancy becomes active.', action: 'Pay and submit your payment evidence.', cta: pay }
+    }
+    case 'payment_confirm':
+      return { tone: 'amber', needsYou: true, heading: 'EboHomes verified your payment. Enter your confirmation code', happened: 'EboHomes confirmed that your payment arrived and emailed you a confirmation code.', means: 'Your confirmation is not complete until you enter the code. The property is only confirmed as rented after payment is verified and the key handover is confirmed.', next: 'Open the confirmation page and enter the code from your email. If it has not arrived, contact EboHomes.', action: 'Enter your confirmation code.', cta: c.awaitingConfirmationId ? { label: 'Enter confirmation code', href: `/payment-confirmation/${c.awaitingConfirmationId}` } : null }
     case 'active':
       if (c.renewalOffered)
         return { tone: 'amber', needsYou: true, heading: 'Your tenancy is active. You have a renewal offer', happened: 'The landlord sent you a renewal offer.', means: 'Responding records your decision only. No payment is taken.', next: 'Accept or decline the offer in the Active Tenancy stage below.', action: 'Respond to the renewal offer.', cta: { label: 'Respond to renewal offer', step: 'active' } }
+      if (c.handover === 'completed')
+        return { tone: 'green', needsYou: false, heading: 'Rental complete. Payment verified and key handover confirmed', happened: 'EboHomes verified your payment and the key handover was confirmed.', means: 'Your agreed rent, payments, receipts and records are kept here.', next: 'Pay rent when it is due and keep your receipts.', action: 'Nothing is required unless a payment is due.', cta: c.tenancyId ? { label: 'See rent, receipts and records', step: 'active' } : null }
+      if (c.handover === 'disputed')
+        return { tone: 'amber', needsYou: false, heading: 'Your tenancy is active. The key handover is under review', happened: 'The key handover was disputed.', means: 'EboHomes is reviewing it. The rental is not complete until the handover is confirmed.', next: 'Wait for EboHomes’ decision. You will be notified.', action: none, cta: c.tenancyId ? { label: 'See handover', step: 'active' } : null }
+      if (c.handover === 'none' || c.handover === 'tenant_confirmed' || c.handover === 'landlord_confirmed')
+        return { tone: 'amber', needsYou: c.handover === 'none' || c.handover === 'landlord_confirmed', heading: 'Payment verified. Key handover still to confirm', happened: 'EboHomes verified your payment.', means: c.handover === 'tenant_confirmed' ? 'You confirmed the key handover. The landlord has not yet.' : c.handover === 'landlord_confirmed' ? 'The landlord confirmed the key handover. You have not yet.' : 'Neither you nor the landlord has confirmed the key handover yet. The rental is not complete until both do.', next: 'Confirm the key handover in the Active Tenancy stage once you have the keys.', action: c.handover === 'tenant_confirmed' ? none : 'Confirm the key handover when you receive the keys.', cta: c.tenancyId ? { label: 'Confirm key handover', step: 'active' } : null }
       return { tone: 'green', needsYou: false, heading: 'Your tenancy is active', happened: 'Your tenancy status is active.', means: 'Your agreed rent, payments, receipts and records are kept here.', next: 'Pay rent when it is due and keep your receipts. Handover, repairs, disputes and deposit are in the Active Tenancy stage.', action: 'Nothing is required unless a payment is due.', cta: c.tenancyId ? { label: 'See rent, receipts and handover', step: 'active' } : null }
     case 'ended':
       return { tone: 'grey', needsYou: false, heading: 'This tenancy has ended', happened: 'Your tenancy is no longer running.', means: 'Your records and receipts stay available here for your reference.', next: 'You can look at other properties if you want to rent again.', action: 'Nothing to do.', cta: { label: 'Browse other properties', href: '/search' } }
