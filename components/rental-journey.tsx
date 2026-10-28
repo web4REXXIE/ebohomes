@@ -644,6 +644,8 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
 
   const detailActive = !tenancyRow ? null : (
     <div className="space-y-4">
+      <TenancyChecklist tenancyId={tenancyRow.id} />
+      <TenancyChecklist tenancyId={tenancyRow.id} />
       {renewalOffered && (
         <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-semibold">Your action: you have a renewal offer</p>
