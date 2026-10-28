@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, AlertTriangle, FileText, ShieldCheck, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PAYMENT_METHODS, TYPE_LABEL, type SubmissionStatus } from '@/lib/payment-submission'
+import { describeSendResult } from '@/lib/email-diagnostic'
 import { QUEUE_FILTERS, adminStatusLabel, amountMismatch, validateReview, type QueueFilter } from '@/lib/payment-review'
 
 const naira = (n: number | string | null) => (n == null ? 'n/a' : '\u20A6' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 }))
@@ -66,7 +67,7 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
   const [code, setCode] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
-  const [info, setInfo] = useState<{ ok: boolean; text: string } | null>(null)
+  const [info, setInfo] = useState<{ ok: boolean; text: string; messageId?: string | null } | null>(null)
   const [note, setNote] = useState('')
   const [mode, setMode] = useState<null | 'request_info' | 'reject' | 'verify'>(null)
   const [a, setA] = useState({ checked_bank_account: false, correct_tenant_and_property: false, amount_received: '', bank_reference: '', mismatch_acknowledged: false })
@@ -93,7 +94,7 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
     setBusy(true); setInfo(null)
     const r = await api('/api/admin/payment-submissions/issue-code', { method: 'POST', body: JSON.stringify({ id }) })
     setBusy(false)
-    setInfo(r.ok ? { ok: true, text: 'Confirmation code emailed to the tenant.' } : { ok: false, text: r.j?.error ?? 'The code could not be sent.' })
+    setInfo(describeSendResult(r.ok, r.j))
     await reload()
   }
 
@@ -114,7 +115,7 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
     : code.status === 'consumed' ? `Tenant confirmed with the code on ${when(code.consumed_at)}.`
     : code.status === 'locked' ? `Code locked after ${code.attempts} wrong attempts. Resend to issue a new one.`
     : code.status === 'expired' || (code.status === 'active' && new Date(code.expires_at) < new Date()) ? 'The last code expired. Resend to issue a new one.'
-    : code.status === 'active' && code.delivery_status === 'sent' ? `Code emailed ${when(code.issued_at)}, expires ${when(code.expires_at)}. Wrong attempts: ${code.attempts}.`
+    : code.status === 'active' && code.delivery_status === 'sent' ? `Code accepted by the email provider ${when(code.issued_at)} (delivery to the mailbox is not confirmed), expires ${when(code.expires_at)}. Wrong attempts: ${code.attempts}.`
     : 'The last code was NOT delivered to the tenant. Press Resend.'
 
   return (
@@ -151,7 +152,12 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
               {code?.exists ? 'Resend confirmation code' : 'Send confirmation code'}
             </button>)}
         </div>)}
-      {info && <p role={info.ok ? 'status' : 'alert'} className={`rounded-lg border p-3 ${info.ok ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-red-300 bg-red-50 text-red-900'}`}>{info.text}</p>}
+      {info && (
+        <div role={info.ok ? 'status' : 'alert'} className={`space-y-1 rounded-lg border p-3 ${info.ok ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-red-300 bg-red-50 text-red-900'}`}>
+          <p className="font-semibold">{info.ok ? 'Accepted by the email provider (not confirmed delivered)' : 'Email not sent'}</p>
+          <p>{info.text}</p>
+          {info.messageId && <p className="break-all text-xs">Provider message ID (for troubleshooting): {info.messageId}</p>}
+        </div>)}
 
       {open && !mode && (
         <div className="flex flex-col gap-2 sm:flex-row">

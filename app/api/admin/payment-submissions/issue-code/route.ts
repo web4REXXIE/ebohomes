@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { UUID_RE } from '@/lib/payment-submission'
 import { CODE_ALPHABET, CODE_LENGTH, formatCode } from '@/lib/confirmation-code'
 import { generateCode, hashCode, readSecret } from '@/lib/confirmation-crypto'
-import { sendCodeEmail } from '@/lib/confirmation-server'
+import { sendCodeEmail, type EmailOutcome } from '@/lib/confirmation-server'
 import { authAdmin } from '@/lib/admin-server'
+import { maskEmail } from '@/lib/email-diagnostic'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -48,20 +49,28 @@ export async function POST(req: Request) {
   const codeId = (issued as { code_id?: string } | null)?.code_id
   if (!codeId) return json({ error: 'Could not create the code. Nothing was changed.' }, 500)
 
-  const outcome = email
+  const outcome: EmailOutcome = email
     ? await sendCodeEmail(email, formatCode(code), listing?.title ?? 'your EboHomes property')
-    : { status: 'failed' as const, detail: 'This tenant has no email address on their account.' }
-  const sent = outcome.status === 'sent'
+    : { status: 'failed', to: null, detail: 'This tenant has no email address on their account.' }
+  // The database only has two delivery states. 'sent' here means the provider ACCEPTED the message, not that it was delivered.
+  const accepted = outcome.status === 'accepted'
+  const diag = {
+    delivery: outcome.status,
+    provider: outcome.provider ?? null,
+    message_id: outcome.messageId ?? null,
+    to_masked: outcome.to ?? maskEmail(email),
+  }
 
-  const { error: markError } = await a.userDb.rpc('eb_mark_code_delivery', { p_code: codeId, p_status: sent ? 'sent' : 'failed' })
+  const { error: markError } = await a.userDb.rpc('eb_mark_code_delivery', { p_code: codeId, p_status: accepted ? 'sent' : 'failed' })
   if (markError) console.error('issue-code: could not record delivery:', markError.code)
 
-  if (!sent) {
+  if (!accepted) {
     return json({
+      ...diag,
       error: outcome.status === 'not_configured'
         ? 'The code was created but email sending is not set up on the server, so it was not delivered. Add the email settings in Vercel, redeploy, wait two minutes, then send a new code.'
-        : `The code was created but the email could not be sent. ${outcome.detail ?? ''} Fix that, wait two minutes, then send a new code.`.replace(/\s+/g, ' '),
+        : `The code was created but the email could not be sent${diag.to_masked ? ` to ${diag.to_masked}` : ''}. ${outcome.detail ?? ''} Fix that, wait two minutes, then send a new code.`.replace(/\s+/g, ' '),
     }, 502)
   }
-  return json({ ok: true, delivery: 'sent', expires_at: (issued as { expires_at?: string }).expires_at ?? null })
+  return json({ ok: true, ...diag, expires_at: (issued as { expires_at?: string }).expires_at ?? null })
 }

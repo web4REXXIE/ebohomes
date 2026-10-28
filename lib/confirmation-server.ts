@@ -1,6 +1,7 @@
 // SERVER ONLY.
 import nodemailer from 'nodemailer'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
+import { isPlausibleEmail, maskEmail, redactRecipient, type SendProvider } from '@/lib/email-diagnostic'
 
 // Validates the tenant's token and returns a client that acts AS that user (auth.uid() = the tenant).
 export async function authTenant(req: Request): Promise<{ db: SupabaseClient; user: User } | null> {
@@ -19,9 +20,16 @@ export async function authTenant(req: Request): Promise<{ db: SupabaseClient; us
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
 
-export type EmailOutcome = { status: 'sent' | 'not_configured' | 'failed'; detail?: string }
+// 'accepted' means the provider took the message. It does NOT prove the tenant's mailbox received it.
+export type EmailOutcome = {
+  status: 'accepted' | 'not_configured' | 'failed'
+  provider?: SendProvider
+  messageId?: string | null
+  to?: string | null // masked recipient, safe to show to the admin
+  detail?: string
+}
 
-// Short, safe reason for the ADMIN screen only. It never contains the code.
+// Short, safe reason for the ADMIN screen only. It never contains the code or the full recipient address.
 const clean = (s: unknown) => String(s ?? '').replace(/\s+/g, ' ').slice(0, 200)
 
 function buildMessage(formattedCode: string, propertyTitle: string) {
@@ -42,9 +50,15 @@ function buildMessage(formattedCode: string, propertyTitle: string) {
   return { subject, text, html }
 }
 
-// Sends the code. Uses Gmail SMTP when SMTP_USER and SMTP_PASS are set, otherwise Resend.
-// Returns the real outcome. Never logs the code.
+const addr = (a: unknown): string => String(typeof a === 'string' ? a : (a as any)?.address ?? '').trim().toLowerCase()
+
+// Sends the code. Uses Gmail SMTP when SMTP_USER and SMTP_PASS are set, otherwise Resend (unchanged selection).
+// Returns what the provider actually said. Never logs the code or the full recipient address.
 export async function sendCodeEmail(to: string, formattedCode: string, propertyTitle: string): Promise<EmailOutcome> {
+  const masked = maskEmail(to)
+  if (!isPlausibleEmail(to) || !masked) return { status: 'failed', to: null, detail: 'The tenant\u2019s account email address is missing or not a valid email address.' }
+  const recipient = to.trim()
+
   const from = process.env.EMAIL_FROM
   const smtpUser = process.env.SMTP_USER
   const smtpPass = process.env.SMTP_PASS
@@ -59,11 +73,20 @@ export async function sendCodeEmail(to: string, formattedCode: string, propertyT
         secure: Number(process.env.SMTP_PORT || 465) === 465,
         auth: { user: smtpUser, pass: smtpPass },
       })
-      await transporter.sendMail({ from: from || smtpUser, to, subject, text, html })
-      return { status: 'sent' }
+      const info: any = await transporter.sendMail({ from: from || smtpUser, to: recipient, subject, text, html })
+      const accepted = (info?.accepted ?? []).map(addr)
+      const rejected = (info?.rejected ?? []).map(addr)
+      const want = recipient.toLowerCase()
+      const messageId = info?.messageId ? clean(info.messageId) : null
+      if (rejected.includes(want) || !accepted.includes(want)) {
+        console.error('email: SMTP did not accept the recipient. messageId:', messageId ?? 'none')
+        return { status: 'failed', provider: 'smtp', messageId, to: masked, detail: `The mail server did not accept ${masked}${info?.response ? `: ${redactRecipient(clean(info.response), recipient)}` : '.'}` }
+      }
+      console.info('email: SMTP accepted. messageId:', messageId ?? 'none')
+      return { status: 'accepted', provider: 'smtp', messageId, to: masked }
     } catch (e: any) {
       console.error('email: SMTP send failed:', clean(e?.code), clean(e?.responseCode))
-      return { status: 'failed', detail: `Mail server said: ${clean(e?.response || e?.message)}` }
+      return { status: 'failed', provider: 'smtp', to: masked, detail: `Mail server said: ${redactRecipient(clean(e?.response || e?.message), recipient)}` }
     }
   }
 
@@ -72,17 +95,21 @@ export async function sendCodeEmail(to: string, formattedCode: string, propertyT
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, to: [to], subject, text, html }),
+        body: JSON.stringify({ from, to: [recipient], subject, text, html }),
       })
-      if (res.ok) return { status: 'sent' }
       const body: any = await res.json().catch(() => null)
+      if (res.ok) {
+        const messageId = body?.id ? clean(body.id) : null
+        console.info('email: Resend accepted. messageId:', messageId ?? 'none')
+        return { status: 'accepted', provider: 'resend', messageId, to: masked }
+      }
       console.error('email: Resend refused:', res.status, clean(body?.name))
-      return { status: 'failed', detail: `Resend said (${res.status}): ${clean(body?.message || body?.name || 'no reason given')}` }
+      return { status: 'failed', provider: 'resend', to: masked, detail: `Resend said (${res.status}): ${redactRecipient(clean(body?.message || body?.name || 'no reason given'), recipient)}` }
     } catch (e: any) {
       console.error('email: Resend request failed:', clean(e?.message))
-      return { status: 'failed', detail: 'Could not reach Resend.' }
+      return { status: 'failed', provider: 'resend', to: masked, detail: 'Could not reach Resend.' }
     }
   }
 
-  return { status: 'not_configured' }
+  return { status: 'not_configured', to: masked }
 }
