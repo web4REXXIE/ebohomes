@@ -21,12 +21,15 @@ export type JourneyInput = {
   viewings: JourneyViewing[]
   tenancy: JourneyTenancy | null
   terms: JourneyTerms | null
+  // True when the tenant's application is approved, has no tenancy, and ANOTHER applicant already has an agreed tenancy on the
+  // same property. It comes from the database (eb_my_application_waiting), never from the browser guessing at other people's data.
+  waitlisted?: boolean
 }
 
 export type Phase =
   | 'withdrawn' | 'rejected' | 'unknown' | 'under_review' | 'info_requested'
   | 'v_none' | 'v_waiting' | 'v_proposed' | 'v_scheduled' | 'v_decide' | 'v_confirm' | 'v_declined' | 'v_retry'
-  | 'awaiting_tenancy'
+  | 'awaiting_tenancy' | 'waitlisted'
   | 'terms_none' | 'terms_review' | 'terms_waiting_landlord' | 'terms_accepted' | 'terms_signed'
   | 'active' | 'ended'
 
@@ -83,10 +86,13 @@ export function computePhase(inp: JourneyInput): Phase {
   if (tenancy) {
     const s = tenancy.status ?? ''
     if (ENDED.includes(s)) return 'ended'
+    // A new tenancy is 'active' from the moment it is created, so the status alone does not mean the rental is running.
+    // While the terms are still being proposed or accepted, show those steps. With no terms record at all we keep the old
+    // behaviour, because older tenancies exist without one.
+    if (terms?.status === 'proposed') return terms.tenant_accepted_at ? 'terms_waiting_landlord' : 'terms_review'
+    if (terms?.status === 'accepted') return 'terms_accepted'
     if (s === 'active') return 'active'
     if (!terms) return 'terms_none'
-    if (terms.status === 'proposed') return terms.tenant_accepted_at ? 'terms_waiting_landlord' : 'terms_review'
-    if (terms.status === 'accepted') return 'terms_accepted'
     if (terms.status === 'signed') return 'terms_signed'
     return 'terms_none'
   }
@@ -95,6 +101,7 @@ export function computePhase(inp: JourneyInput): Phase {
   if (app.status === 'info_requested') return 'info_requested'
   if (app.status === 'pending') return 'under_review'
   if (app.status !== 'approved') return 'unknown'
+  if (inp.waitlisted) return 'waitlisted'
 
   if (app.tenant_interest_at) return 'awaiting_tenancy'
   const v = pickViewing(inp.viewings)
@@ -125,7 +132,7 @@ function currentIndex(p: Phase): number {
     case 'info_requested': return 1
     case 'v_none': case 'v_waiting': case 'v_proposed': case 'v_scheduled':
     case 'v_decide': case 'v_confirm': case 'v_declined': case 'v_retry': return 2
-    case 'awaiting_tenancy': case 'terms_none': case 'terms_review':
+    case 'awaiting_tenancy': case 'waitlisted': case 'terms_none': case 'terms_review':
     case 'terms_waiting_landlord': case 'terms_accepted': case 'terms_signed': return 3
     case 'active':
     case 'ended': return 4
@@ -173,6 +180,7 @@ function stepLabel(key: StepKey, phase: Phase, state: StepState, v: JourneyViewi
       if (state === 'upcoming') return { label: phase === 'withdrawn' || phase === 'rejected' ? 'Unavailable' : 'Not started', tone: 'grey' }
       switch (phase) {
         case 'awaiting_tenancy': return { label: 'Landlord setting up', tone: 'amber' }
+        case 'waitlisted': return { label: 'On the waiting list', tone: 'blue' }
         case 'terms_none': return { label: 'Terms being prepared', tone: 'amber' }
         case 'terms_review': return { label: 'Review your terms', tone: 'amber' }
         case 'terms_waiting_landlord': return { label: 'Waiting for landlord', tone: 'amber' }
@@ -290,6 +298,8 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
       return { tone: 'red', needsYou: true, heading: 'Your last viewing did not go ahead', happened: 'Your last viewing was cancelled, missed or not approved.', means: 'You have not seen the property through EboHomes yet. Nothing is reserved.', next: 'Request a new viewing if you still want to see the property.', action: 'Request a new viewing.', cta: { label: 'Request a viewing', href: '/viewings' } }
     case 'awaiting_tenancy':
       return { tone: 'amber', needsYou: false, heading: 'Your tenancy is being set up', happened: `You confirmed${on(c.interestOn)} that you want to proceed.`, means: 'The landlord now creates your tenancy and proposes the rental terms. Nothing is reserved or charged yet.', next: 'You will be notified, and your tenancy will appear here.', action: none, cta: null }
+    case 'waitlisted':
+      return { tone: 'blue', needsYou: false, heading: 'You are on the waiting list for this property', happened: 'EboHomes approved your application, but another applicant’s tenancy for this property is already in progress.', means: 'You have not been rejected and you have not rented this property. The property is only confirmed as rented after payment is verified and the key handover is confirmed.', next: 'If that rental does not go through, EboHomes can move you forward. You will be notified. You can also look at other properties.', action: 'Nothing to do right now.', cta: { label: 'Browse other properties', href: '/search' } }
     case 'terms_none':
       return { tone: 'amber', needsYou: false, heading: 'Your rental terms are being prepared', happened: 'Your tenancy record has been created.', means: 'The landlord proposes the rent, deposit, fees and dates. You will be asked to accept them.', next: 'Wait for the landlord’s proposal. You will be notified.', action: none, cta: c.tenancyId ? { label: 'See your tenancy', step: 'setup' } : null }
     case 'terms_review':

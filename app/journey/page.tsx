@@ -67,6 +67,14 @@ export default function MyRentalJourneyHubPage() {
     }
     setFailed(!!(vw.error || tn.error))
 
+    // Waiting list: ask the database (yes/no only) about approved applications that have no tenancy of their own.
+    const haveTenancy = new Set(tenancies.map((t) => t.application_id))
+    const waiting = new Set<string>()
+    await Promise.all(rows.filter((a) => a.status === 'approved' && !haveTenancy.has(a.id)).map(async (a) => {
+      const w = await supabase.rpc('eb_my_application_waiting', { p_application: a.id })
+      if (!w.error && w.data === true) waiting.add(a.id)
+    }))
+
     const built = rows.map((app): Entry => {
       const t = pickTenancy(tenancies.filter((x) => x.application_id === app.id))
       const live = t ? terms.find((x) => x.tenancy_id === t.id && ['proposed', 'accepted', 'signed'].includes(x.status)) ?? null : null
@@ -75,6 +83,7 @@ export default function MyRentalJourneyHubPage() {
         viewings: ((vw.data ?? []) as any[]).filter((v) => v.application_id === app.id),
         tenancy: t ? { id: t.id, status: t.status } : null,
         terms: live,
+        waitlisted: waiting.has(app.id),
       })
       return { app, journey }
     })

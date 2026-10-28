@@ -73,6 +73,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   const [terms, setTerms] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
   const [renewalOffered, setRenewalOffered] = useState(false)
+  const [waitlisted, setWaitlisted] = useState(false)
   const [renewalOffer, setRenewalOffer] = useState<any>(null)
   // Set only when the saved data moves the journey forward after an action.
   const [unlocked, setUnlocked] = useState<{ from: StepKey; to: StepKey } | null>(null)
@@ -157,7 +158,14 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
     const lite = pickTenancy((tn.data ?? []) as any[])
     if (!lite) {
       setTenancyRow(null); setTerms([]); setPayments([]); setRenewalOffered(false); setRenewalOffer(null)
+      // Waiting list: the database tells us (yes/no only) whether another applicant already has an agreed tenancy here.
+      // If the function is not installed yet or fails, we show nothing different rather than guess.
+      if (a.status === 'approved') {
+        const w = await supabase.rpc('eb_my_application_waiting', { p_application: applicationId })
+        setWaitlisted(!w.error && w.data === true)
+      } else setWaitlisted(false)
     } else {
+      setWaitlisted(false)
       const [mine, rt, pay, ren] = await Promise.all([
         supabase.rpc('my_tenancies', { p_as: 'tenant' }),
         supabase.from('rental_terms').select('*').eq('tenancy_id', lite.id).order('version', { ascending: false }),
@@ -192,8 +200,9 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       viewings,
       tenancy: tenancyRow ? { id: tenancyRow.id, status: tenancyRow.status } : null,
       terms: liveTerms,
+      waitlisted,
     })
-  }, [app, viewings, tenancyRow, liveTerms])
+  }, [app, viewings, tenancyRow, liveTerms, waitlisted])
 
   // The first load never shows a banner. After that, a banner appears only when the journey really moved to a later stage.
   useEffect(() => {
