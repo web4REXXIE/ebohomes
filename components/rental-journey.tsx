@@ -20,6 +20,7 @@ import {
   NO_RESERVATION_NOTICE, STEP_ORDER, STEP_TITLE, buildJourney, lockedReason, pickTenancy, showsNoReservationNotice, statusPanel,
   type JourneyStep, type StepKey,
 } from '@/lib/rental-journey'
+import { TenancyChecklist } from '@/components/tenancy-checklist'
 
 const INTRO_KEY = 'ebohomes_journey_intro_v1'
 const LIVE_TERMS = ['proposed', 'accepted', 'signed']
