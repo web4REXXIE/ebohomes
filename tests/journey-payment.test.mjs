@@ -16,6 +16,9 @@ eq('signed, payment verified: active', J({ app, tenancy: T, terms: { status: 'si
 eq('signed, payments not loaded: old behaviour', J({ app, tenancy: T, terms: { status: 'signed' } }).phase, 'active')
 eq('proposed terms still win over payment flag', J({ app, tenancy: T, terms: { status: 'proposed' }, paymentVerified: false }).phase, 'terms_review')
 eq('ended tenancy stays ended', J({ app, tenancy: { id: 't', status: 'ended' }, terms: { status: 'signed' }, paymentVerified: false }).phase, 'ended')
-eq('legacy active with no terms unchanged', J({ app, tenancy: T, paymentVerified: false }).phase, 'active')
+// An 'active' tenancy with no terms record is only treated as running once EboHomes has verified a payment.
+eq('no terms, payment not verified: not running', J({ app, tenancy: T, paymentVerified: false }).phase, 'terms_none')
+eq('no terms, payment not loaded: not running', J({ app, tenancy: T }).phase, 'terms_none')
+eq('older tenancy, no terms, payment verified: active', J({ app, tenancy: T, paymentVerified: true }).phase, 'active')
 eq('payment panel text says not active until verified', /becomes active after EboHomes verifies/.test(statusPanel('terms_signed', { tenancyId: 't' }).means), true)
 console.log('journey-payment: ok')
