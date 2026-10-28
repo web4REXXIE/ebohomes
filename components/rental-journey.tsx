@@ -14,7 +14,6 @@ import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { ApplicantFacts, ApplicationStatusBadge } from '@/components/application-ui'
 import { listingIsLive } from '@/lib/property-display'
 import { fmtDate, fmtDateTime, naira, toIso } from '@/lib/case-status'
-import { getPaymentState, paymentLabel } from '@/lib/payment-status'
 import { OPEN_STATUSES, TONE_CLASS, normaliseNgPhone, tenantPanel, viewingLabel, viewingTone, type Tone } from '@/lib/viewing-status'
 import {
   NO_RESERVATION_NOTICE, STEP_ORDER, STEP_TITLE, buildJourney, lockedReason, pickTenancy, showsNoReservationNotice, statusPanel,
@@ -640,7 +639,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         </div>
       )}
       {!liveTerms && <p className="rounded-lg border border-border p-3 text-sm text-muted-foreground">The landlord has not proposed rental terms yet. The rent and dates above come from the tenancy record and are not an agreement.</p>}
-      {tenancyStatus !== 'active' && liveTerms?.status === 'signed' && renderPayments()}
+      {liveTerms?.status === 'signed' && journey.phase === 'terms_signed' && renderPayments()}
     </div>
   )
 

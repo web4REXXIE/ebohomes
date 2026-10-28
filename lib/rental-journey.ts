@@ -24,6 +24,9 @@ export type JourneyInput = {
   // True when the tenant's application is approved, has no tenancy, and ANOTHER applicant already has an agreed tenancy on the
   // same property. It comes from the database (eb_my_application_waiting), never from the browser guessing at other people's data.
   waitlisted?: boolean
+  // True when EboHomes has verified a confirmed payment for this tenancy. false = known to be unpaid or unverified.
+  // undefined = unknown (the payments query failed or was not run), in which case we keep the old behaviour.
+  paymentVerified?: boolean
 }
 
 export type Phase =
@@ -91,6 +94,7 @@ export function computePhase(inp: JourneyInput): Phase {
     // behaviour, because older tenancies exist without one.
     if (terms?.status === 'proposed') return terms.tenant_accepted_at ? 'terms_waiting_landlord' : 'terms_review'
     if (terms?.status === 'accepted') return 'terms_accepted'
+    // Agreement signed but no verified payment yet: the tenant still has to pay, so the rental is not running.
     if (terms?.status === 'signed' && inp.paymentVerified === false) return 'terms_signed'
     if (s === 'active') return 'active'
     if (!terms) return 'terms_none'
@@ -310,11 +314,12 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
     case 'terms_accepted':
       return { tone: 'amber', needsYou: false, heading: 'Terms accepted. The signed agreement is being recorded', happened: 'You and the landlord both accepted the terms.', means: 'EboHomes records the signed agreement once it has seen it. This page does not replace the signed document.', next: 'Wait for EboHomes to record the signed agreement.', action: none, cta: { label: 'See the rental terms', step: 'setup' } }
     case 'terms_signed':
-            return { tone: 'amber', needsYou: false, heading: 'Agreement recorded. Payment is next', happened: 'EboHomes recorded your signed agreement.', means: 'Your tenancy becomes active after EboHomes verifies your payment. An uploaded receipt is not proof of payment.', next: 'Pay what is due using the payment section, then send your payment evidence. EboHomes checks it before your tenancy becomes active.', action: 'Pay and submit your payment evidence.', cta: { label: 'See agreement and payments', step: 'setup' } }
+      return { tone: 'amber', needsYou: false, heading: 'Agreement recorded. Payment is next', happened: 'EboHomes recorded your signed agreement.', means: 'Your tenancy becomes active after EboHomes verifies your payment. An uploaded receipt is not proof of payment.', next: 'Pay what is due using the payment section, then send your payment evidence. EboHomes checks it before your tenancy becomes active.', action: 'Pay and submit your payment evidence.', cta: { label: 'See agreement and payments', step: 'setup' } }
+    case 'active':
       if (c.renewalOffered)
         return { tone: 'amber', needsYou: true, heading: 'Your tenancy is active. You have a renewal offer', happened: 'The landlord sent you a renewal offer.', means: 'Responding records your decision only. No payment is taken.', next: 'Accept or decline the offer in the Active Tenancy stage below.', action: 'Respond to the renewal offer.', cta: { label: 'Respond to renewal offer', step: 'active' } }
       return { tone: 'green', needsYou: false, heading: 'Your tenancy is active', happened: 'Your tenancy status is active.', means: 'Your agreed rent, payments, receipts and records are kept here.', next: 'Pay rent when it is due and keep your receipts. Handover, repairs, disputes and deposit are in the Active Tenancy stage.', action: 'Nothing is required unless a payment is due.', cta: c.tenancyId ? { label: 'See rent, receipts and handover', step: 'active' } : null }
     case 'ended':
-      return { tone: 'grey', needsYou: false, heading: `This tenancy is ${c.tenancyStatus ?? 'ended'}`, happened: `Its saved status is “${c.tenancyStatus ?? 'ended'}”.`, means: 'The tenancy is no longer running. Your payment records and receipts stay available.', next: 'Open the Active Tenancy stage for records, handover and deposit information.', action: 'Nothing is required unless EboHomes contacts you.', cta: c.tenancyId ? { label: 'See your tenancy records', step: 'active' } : null }
+      return { tone: 'grey', needsYou: false, heading: 'This tenancy has ended', happened: 'Your tenancy is no longer running.', means: 'Your records and receipts stay available here for your reference.', next: 'You can look at other properties if you want to rent again.', action: 'Nothing to do.', cta: { label: 'Browse other properties', href: '/search' } }
   }
 }

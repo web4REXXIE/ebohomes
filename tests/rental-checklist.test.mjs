@@ -13,14 +13,14 @@ const keys = (c) => c.items.map((i) => i.state).join(',')
 let c = buildChecklist({ terms: { status: 'accepted' } })
 eq('accepted is not signed', c.agreementRecorded, false); eq('stage', c.stage, 'agreement_pending'); eq('states', keys(c), 'current,upcoming,upcoming,upcoming')
 
-// Signed agreement alone: not rented, not paid, not complete.
+// Signed agreement alone: not paid, not complete.
 c = buildChecklist({ terms: { status: 'signed' }, payments: [], submissions: [] })
 eq('signed recorded', c.agreementRecorded, true); eq('signed not paid', c.paymentVerified, false); eq('signed not complete', c.rentalCompleted, false)
 eq('signed stage', c.stage, 'agreement_recorded')
 
 // Uploaded evidence is NOT verified.
 c = buildChecklist({ terms: { status: 'signed' }, submissions: [{ status: 'submitted' }] })
-eq('evidence not verified', c.paymentVerified, false); eq('evidence stage', c.stage, 'payment_awaiting_check'); eq('handover locked', c.items[2].state, 'upcoming')
+eq('evidence not verified', c.paymentVerified, false); eq('evidence stage', c.stage, 'payment_awaiting_check'); eq('handover locked', c.items[2].state, 'upcoming'); eq('not complete', c.rentalCompleted, false)
 c = buildChecklist({ terms: { status: 'signed' }, submissions: [{ status: 'under_review' }] })
 eq('under review not verified', c.paymentVerified, false)
 
@@ -35,17 +35,17 @@ eq('recorded not verified', isVerifiedPayment({ status: 'recorded', verified_by:
 eq('confirmed without verifier', isVerifiedPayment({ status: 'confirmed', verified_by: null }), false)
 eq('confirmed with verifier', isVerifiedPayment({ status: 'confirmed', verified_by: 'u1' }), true)
 
-// Payment verified, handover not done.
+// Verified payment on a signed agreement: rental is completed, handover is only the next step.
 c = buildChecklist({ terms: { status: 'signed' }, payments: [{ status: 'confirmed', verified_by: 'a1' }], handover: null })
-eq('verified stage', c.stage, 'handover_pending'); eq('not complete', c.rentalCompleted, false); eq('handover current', c.items[2].state, 'current')
+eq('paid stage', c.stage, 'rental_completed'); eq('paid complete', c.rentalCompleted, true); eq('handover is next', c.items[2].state, 'current'); eq('completed done', c.items[3].state, 'done')
 c = buildChecklist({ terms: { status: 'signed' }, submissions: [{ status: 'verified' }], handover: { status: 'open' } })
-eq('verified submission counts', c.paymentVerified, true); eq('open handover', c.stage, 'handover_pending')
+eq('verified submission counts', c.paymentVerified, true); eq('open handover still complete', c.rentalCompleted, true)
 
-// Disputed handover blocks completion.
+// Disputed handover is shown, but the rental stays completed.
 c = buildChecklist({ terms: { status: 'signed' }, submissions: [{ status: 'verified' }], handover: { status: 'disputed' } })
-eq('disputed stage', c.stage, 'handover_disputed'); eq('disputed not complete', c.rentalCompleted, false); eq('disputed blocked', c.items[2].state, 'blocked')
+eq('disputed stage', c.stage, 'handover_disputed'); eq('disputed still complete', c.rentalCompleted, true); eq('disputed blocked', c.items[2].state, 'blocked')
 
-// All three records: complete.
+// Everything done.
 c = buildChecklist({ terms: { status: 'signed' }, submissions: [{ status: 'verified' }], handover: { status: 'completed' } })
 eq('complete', c.rentalCompleted, true); eq('complete stage', c.stage, 'rental_completed'); eq('all done', keys(c), 'done,done,done,done')
 
@@ -59,8 +59,8 @@ eq('payment without signed agreement', c.rentalCompleted, false)
 // Listing label is never an input to completion, but a mismatch is reported.
 c = buildChecklist({ terms: { status: 'signed' }, listingStatus: 'rented' })
 eq('rented label does not complete', c.rentalCompleted, false); eq('mismatch flagged', c.listingMismatch, true)
-c = buildChecklist({ terms: { status: 'signed' }, submissions: [{ status: 'verified' }], handover: { status: 'completed' }, listingStatus: 'rented' })
-eq('no mismatch when complete', c.listingMismatch, false)
+c = buildChecklist({ terms: { status: 'signed' }, submissions: [{ status: 'verified' }], listingStatus: 'rented' })
+eq('no mismatch when paid', c.listingMismatch, false)
 c = buildChecklist({ terms: null, listingStatus: 'approved' })
 eq('null terms safe', c.stage, 'agreement_pending')
 

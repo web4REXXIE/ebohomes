@@ -80,7 +80,7 @@ export default function MyRentalJourneyHubPage() {
       if (!w.error && w.data === true) waiting.add(a.id)
     }))
 
-    const built = rows.map((app): Entry => {
+      const built = rows.map((app): Entry => {
       const t = pickTenancy(tenancies.filter((x) => x.application_id === app.id))
       const live = t ? terms.find((x) => x.tenancy_id === t.id && ['proposed', 'accepted', 'signed'].includes(x.status)) ?? null : null
       const journey = buildJourney({
@@ -89,8 +89,8 @@ export default function MyRentalJourneyHubPage() {
         tenancy: t ? { id: t.id, status: t.status } : null,
         terms: live,
         waitlisted: waiting.has(app.id),
+        paymentVerified: t && paymentsKnown ? verified.has(t.id) : undefined,
       })
-              paymentVerified: t && paymentsKnown ? verified.has(t.id) : undefined,
       return { app, journey }
     })
     setEntries(built)

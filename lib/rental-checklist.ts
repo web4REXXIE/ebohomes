@@ -1,11 +1,11 @@
 // Pure helpers (no imports) for the final-rental checklist shown in the tenant journey.
 // EVERYTHING is derived from records that already exist. Nothing is stored and nothing is marked done unless its
 // own record says so:
-//   Agreement recorded      -> rental_terms.status = 'signed'
+//   Agreement recorded        -> rental_terms.status = 'signed'
 //   Required payment verified -> payments.status = 'confirmed' AND verified_by set, OR payment_submissions.status = 'verified'
-//                               (the same rule the handover SQL uses). Uploaded evidence alone is never "verified".
-//   Key handover confirmed  -> tenancy_handovers.status = 'completed'
-//   Rental completed        -> all three above are true. A listing label or tenancy status is NOT an input.
+//                                Uploaded evidence alone is never "verified".
+//   Rental completed          -> agreement recorded AND payment verified. The property is then rented and off the public site.
+//   Key handover confirmed    -> tenancy_handovers.status = 'completed'. A follow-up step. It does NOT decide if the rental is complete.
 
 export type ChecklistState = 'done' | 'current' | 'upcoming' | 'blocked'
 
@@ -73,17 +73,14 @@ export function buildChecklist(inp: ChecklistInput): Checklist {
   const hs = inp.handover?.status ?? null
   const handoverConfirmed = hs === 'completed'
   const disputed = hs === 'disputed'
-  // Payment and handover only count once the step before them is real.
-  const rentalCompleted = agreementRecorded && paymentVerified && handoverConfirmed
+  // A verified payment on a signed agreement completes the rental. Handover is a follow-up.
+  const rentalCompleted = agreementRecorded && paymentVerified
   const listingMismatch = inp.listingStatus === 'rented' && !rentalCompleted
 
   let stage: RentalStage
   if (!agreementRecorded) stage = 'agreement_pending'
-  else if (rentalCompleted) stage = 'rental_completed'
-  else if (!paymentVerified) stage = awaiting ? 'payment_awaiting_check' : attention ? 'payment_needs_attention' : inp.submissions && subs.length === 0 && payments.length === 0 ? 'agreement_recorded' : 'payment_pending'
-  else if (disputed) stage = 'handover_disputed'
-  else if (hs === 'open' || hs === null) stage = 'handover_pending'
-  else stage = 'payment_verified'
+  else if (rentalCompleted) stage = disputed ? 'handover_disputed' : 'rental_completed'
+  else stage = awaiting ? 'payment_awaiting_check' : attention ? 'payment_needs_attention' : inp.submissions && subs.length === 0 && payments.length === 0 ? 'agreement_recorded' : 'payment_pending'
 
   const agreement: ChecklistItem = agreementRecorded
     ? { key: 'agreement', title: 'Agreement recorded', state: 'done', label: 'Recorded', detail: 'EboHomes recorded your signed agreement. A signed agreement alone does not make this property rented.' }
@@ -97,14 +94,14 @@ export function buildChecklist(inp: ChecklistInput): Checklist {
   else payment = { key: 'payment', title: 'Required payment verified', state: 'current', label: 'Payment due', detail: 'Pay the amount in your signed agreement, then send your evidence.' }
 
   let handover: ChecklistItem
-  if (!paymentVerified) handover = { key: 'handover', title: 'Key handover confirmed', state: 'upcoming', label: 'Not started', detail: 'Handover can be confirmed after EboHomes verifies your payment.' }
+  if (!paymentVerified) handover = { key: 'handover', title: 'Key handover confirmed', state: 'upcoming', label: 'Not started', detail: 'Handover comes after EboHomes verifies your payment.' }
   else if (handoverConfirmed) handover = { key: 'handover', title: 'Key handover confirmed', state: 'done', label: 'Both confirmed', detail: 'You and the landlord both confirmed the key handover.' }
   else if (disputed) handover = { key: 'handover', title: 'Key handover confirmed', state: 'blocked', label: 'Disputed', detail: 'EboHomes is reviewing a handover concern. Wait for the outcome.' }
-  else handover = { key: 'handover', title: 'Key handover confirmed', state: 'current', label: 'Waiting for confirmation', detail: 'Confirm once you have received the keys. The landlord confirms their side too.' }
+  else handover = { key: 'handover', title: 'Key handover confirmed', state: 'current', label: 'Next: collect your keys', detail: 'Confirm once you have received the keys. The landlord confirms their side too.' }
 
   const completed: ChecklistItem = rentalCompleted
-    ? { key: 'completed', title: 'Rental completed', state: 'done', label: 'Completed', detail: 'Agreement recorded, payment verified and key handover confirmed.' }
-    : { key: 'completed', title: 'Rental completed', state: 'upcoming', label: 'Not completed', detail: 'The rental is complete only after all three steps above are done.' }
+    ? { key: 'completed', title: 'Rental completed', state: 'done', label: 'Completed', detail: 'Your agreement is recorded and your payment is verified. This property is now yours and is off the public site.' }
+    : { key: 'completed', title: 'Rental completed', state: 'upcoming', label: 'Not completed', detail: 'The rental is complete once your agreement is recorded and your payment is verified.' }
 
   return { stage, items: [agreement, payment, handover, completed], agreementRecorded, paymentVerified, handoverConfirmed, rentalCompleted, listingMismatch }
 }
