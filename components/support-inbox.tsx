@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Send, ArrowLeft, Loader2, Plus, ShieldCheck, Lock, Info } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchTenantNames } from '@/lib/tenant-names'
 import { useNotifications } from '@/components/notification-provider'
 import {
   CATEGORY_LABELS, TENANT_CATEGORIES, LANDLORD_CATEGORIES, THREAD_COLUMNS, MESSAGE_COLUMNS,
@@ -171,6 +172,8 @@ function InboxInner({
     if (ids.length) {
       const { data: ps } = await supabase.from('profiles').select('id, full_name').in('id', ids)
       for (const p of ps ?? []) names[p.id] = p.full_name ?? 'User'
+      const missing = ids.filter((id) => !names[id])
+      if (missing.length) Object.assign(names, await fetchTenantNames(missing))
     }
     setLegacy(ids.map((p) => {
       const list = byPartner.get(p)!

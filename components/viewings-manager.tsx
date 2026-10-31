@@ -11,6 +11,7 @@ import {
 import { VIEWING_GROUP_ORDER, VIEWING_GROUP_TITLE, groupViewings, type ViewingGroup } from '@/lib/viewing-groups'
 import { displayTitle, listingIsLive } from '@/lib/property-display'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
+import { fetchTenantNames } from '@/lib/tenant-names'
 
 type Props = { role: 'tenant' | 'landlord' }
 
@@ -111,8 +112,8 @@ export function ViewingsManager({ role }: Props) {
       setPhones(Object.fromEntries((c ?? []).map((x: any) => [x.viewing_id, x.phone])))
     } else if (list.length) {
       const ids = Array.from(new Set(list.map((x: any) => x.tenant_id)))
-      const { data: p } = await supabase.from('profiles').select('id, full_name').in('id', ids)
-      setNames(Object.fromEntries((p ?? []).map((x: any) => [x.id, x.full_name || 'Applicant'])))
+      const found = await fetchTenantNames(ids)
+      setNames(Object.fromEntries(ids.map((id) => [id, found[id] || 'Applicant'])))
     }
 
     if (list.length) {

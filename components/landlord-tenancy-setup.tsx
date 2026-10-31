@@ -6,6 +6,7 @@ import { Loader2, MapPin } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { CreateTenancyModal } from '@/components/create-tenancy-modal'
 import { buildSetupRows, type SetupRow } from '@/lib/landlord-setup'
+import { fetchTenantNames } from '@/lib/tenant-names'
 
 const naira = (n: unknown) => (typeof n === 'number' || (typeof n === 'string' && n !== '') ? '₦' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 0 }) : 'Price not set')
 
@@ -40,8 +41,7 @@ export function LandlordTenancySetup() {
     if (ls.error) { setState('error'); return }
     setListings(Object.fromEntries((ls.data ?? []).map((l: any) => [l.id, l])))
     // Tenant names are a convenience. If the profile cannot be read, the row still works.
-    const pr = await supabase.from('profiles').select('id, full_name').in('id', Array.from(new Set(list.map((a: any) => a.tenant_id))))
-    setNames(Object.fromEntries((pr.data ?? []).map((p: any) => [p.id, p.full_name ?? ''])))
+    setNames(await fetchTenantNames(list.map((a: any) => a.tenant_id)))
     setRows(buildSetupRows(list as any[], (ten.data ?? []) as any[], (ls.data ?? []) as any[]))
     setState('ok')
   }, [router])

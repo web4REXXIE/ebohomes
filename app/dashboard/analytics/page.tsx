@@ -5,6 +5,7 @@ import { Eye, Heart, FileText, MessageSquare, Home, ShieldCheck, Clock } from 'l
 import { supabase } from '@/lib/supabase'
 import { listingStatusInfo } from '@/lib/listing-status'
 import { TONE_CLASS } from '@/lib/viewing-status'
+import { fetchTenantNames } from '@/lib/tenant-names'
 
 type ListingPerf = {
   id: string
@@ -145,7 +146,8 @@ export default function LandlordAnalyticsPage() {
       if (applications && applications.length > 0) {
         const recent = [...applications].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)).slice(0, 5)
         const tenantIds = [...new Set(recent.map((a) => a.tenant_id))]
-        const { data: tenants } = await supabase.from('profiles').select('id, full_name').in('id', tenantIds)
+        const tenantNames = await fetchTenantNames(tenantIds)
+        const tenants = Object.entries(tenantNames).map(([id, full_name]) => ({ id, full_name }))
 
         setRecentActivity(
           recent.map((a) => ({
@@ -437,7 +439,6 @@ export default function LandlordAnalyticsPage() {
           )}
         </div>
       </div>
-      
     </div>
   )
 }
