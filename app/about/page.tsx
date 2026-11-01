@@ -68,16 +68,16 @@ export default function AboutPage() {
             <button className="inline-flex items-center gap-2 bg-primary text-primary-foreground font-semibold px-5 py-3 rounded-xl hover:bg-primary/90 transition-colors">
               Get in Touch <ArrowRight size={16} />
             </button>
-          </Link>
+          </Link>j
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-foreground mb-4 border-l-4 border-primary pl-3">Our Impact So Far</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-4 border-l-4 border-primary pl-3">How EboHomes Works for You</h2>
           <div className="grid grid-cols-2 gap-4">
             {[
-              { icon: Home, value: '500+', label: 'Properties Listed' },
-              { icon: Users, value: '2,000+', label: 'Happy Users' },
-              { icon: Heart, value: '3', label: 'Cities We Operate In' },
-              { icon: Star, value: '4.8/5', label: 'Customer Rating' },
+              { icon: Home, value: '100%', label: 'Listings reviewed by EboHomes before going live' },
+              { icon: Users, value: 'Private', label: 'Tenant contact details stay with EboHomes' },
+             { icon: Heart, value: 'Ebonyi', label: 'State we serve' },
+              { icon: Star, value: 'Verified', label: 'Payments checked before a rental counts' },
             ].map((s, i) => (
               <div key={i} className="bg-card border border-border rounded-2xl p-5">
                 <span className="inline-flex bg-accent text-primary p-2.5 rounded-xl mb-3"><s.icon size={20} /></span>
@@ -122,7 +122,7 @@ export default function AboutPage() {
             <a href="tel:+2348001234567" className="flex items-center gap-2 border border-white/40 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors">
               <Phone size={16} /> Call Us
             </a>
-            <a href="mailto:ebohomesng@gmail.com" className="flex items-center gap-2 border border-white/40 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors">
+            <a href="mailto:support@ebohomes.com" className="flex items-center gap-2 border border-white/40 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors">
               <Mail size={16} /> Email Us
             </a>
           </div>
