@@ -16,8 +16,9 @@ eq('active + accepted terms', J({ app, tenancy: { id: 't', status: 'active' }, t
 eq('terms step is current, active step is upcoming', J({ app, tenancy: { id: 't', status: 'active' }, terms: { status: 'proposed' } }).steps.map((s) => s.state[0]).join(''), 'dddcu')
 // Signed agreement on an active tenancy still reaches the Active Tenancy step (payment and handover live there). Unchanged.
 eq('active + signed terms', J({ app, tenancy: { id: 't', status: 'active' }, terms: { status: 'signed' } }).phase, 'active')
-// Older tenancies with no terms record keep the old behaviour.
-eq('legacy active, no terms', J({ app, tenancy: { id: 't', status: 'active' } }).phase, 'active')
+// A tenancy with no terms record only counts as running once EboHomes has verified a payment.
+eq('active, no terms, payment unknown', J({ app, tenancy: { id: 't', status: 'active' } }).phase, 'terms_none')
+eq('active, no terms, payment verified', J({ app, tenancy: { id: 't', status: 'active' }, paymentVerified: true }).phase, 'active')
 eq('ended stays ended', J({ app, tenancy: { id: 't', status: 'ended' }, terms: { status: 'proposed' } }).phase, 'ended')
 eq('non-active tenancy, no terms', J({ app, tenancy: { id: 't', status: 'pending' } }).phase, 'terms_none')
 
