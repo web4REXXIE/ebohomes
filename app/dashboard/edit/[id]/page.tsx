@@ -2,7 +2,13 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { cleanDescription } from '@/lib/clean-description';
+
+const LocationPickerModal = dynamic(
+  () => import('@/components/location-picker-modal').then((mod) => ({ default: mod.LocationPickerModal })),
+  { ssr: false }
+);
 
 const PROPERTY_TYPES = [
   'Flat / Apartment',
@@ -26,6 +32,8 @@ export default function EditListingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [showMap, setShowMap] = useState(false);
+  const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
 
   const [formData, setFormData] = useState({
     location: '',
@@ -75,6 +83,13 @@ export default function EditListingPage() {
         phoneNumber: contactRow?.contact_info ?? '',
         availabilityDate: data.availability_date || '',
       });
+
+      if (data.lat != null && data.lng != null) {
+        const lat = Number(data.lat);
+        const lng = Number(data.lng);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) setPin({ lat, lng });
+      }
+
       setLoading(false);
     };
     fetchListing();
@@ -98,6 +113,8 @@ export default function EditListingPage() {
       .update({
         title: `${formData.bedrooms} bed ${formData.propertyType} in ${formData.location}`,
         location_text: formData.location,
+        lat: pin ? pin.lat : null,
+        lng: pin ? pin.lng : null,
         property_type: formData.propertyType,
         bedrooms: Number(formData.bedrooms),
         price_monthly: Number(formData.monthlyRent),
@@ -133,6 +150,26 @@ export default function EditListingPage() {
             style={inputStyle}
             required
           />
+        </div>
+
+        <div>
+          <label style={labelStyle}>Map location</label>
+          <button
+            type="button"
+            onClick={() => setShowMap(true)}
+            style={{
+              width: '100%', padding: 14, borderRadius: 8, cursor: 'pointer',
+              border: '2px dashed #d1d5db', background: '#fff', color: '#16a34a',
+              fontWeight: 700, fontSize: 14,
+            }}
+          >
+            {pin ? 'Pin set. Tap to change it' : 'Drop a pin on the map'}
+          </button>
+          {pin && (
+            <p style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+              Pin: {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}
+            </p>
+          )}
         </div>
 
         <div>
@@ -232,6 +269,17 @@ export default function EditListingPage() {
           </button>
         </div>
       </form>
+
+      {showMap && (
+        <LocationPickerModal
+          initial={pin}
+          onClose={() => setShowMap(false)}
+          onConfirm={(lat, lng) => {
+            setPin({ lat, lng });
+            setShowMap(false);
+          }}
+        />
+      )}
     </div>
   );
 }
