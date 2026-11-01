@@ -2,151 +2,134 @@
 
 import { useState, useEffect } from 'react'
 
-export function SplashScreen({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const [loading, setLoading] = useState(true)
+const SEEN_KEY = 'ebohomes-splash-seen'
+const BG = '#062D1A' // same green as the logo image, so there is no visible box
+const MIN_MS = 1400 // shortest time shown, so it never just flashes
+const MAX_MS = 3500 // longest time, even if the page is slow
+const FADE_MS = 450
+
+export function SplashScreen({ children }: { children: React.ReactNode }) {
+  const [visible, setVisible] = useState(true)
   const [fadeOut, setFadeOut] = useState(false)
 
   useEffect(() => {
-    const MIN_DISPLAY = 1400
-    const MAX_DISPLAY = 4000
+    // Full splash once per visit. After that, go straight to the page.
+    let seen = false
+    try {
+      seen = sessionStorage.getItem(SEEN_KEY) === '1'
+    } catch {
+      seen = false
+    }
+    if (seen) {
+      setVisible(false)
+      return
+    }
 
     const start = Date.now()
     let finished = false
-    let finishTimer: ReturnType<typeof setTimeout> | undefined
+    let waitTimer: ReturnType<typeof setTimeout> | undefined
     let fadeTimer: ReturnType<typeof setTimeout> | undefined
 
     const finish = () => {
       if (finished) return
       finished = true
-
-      const elapsed = Date.now() - start
-      const wait = Math.max(MIN_DISPLAY - elapsed, 0)
-
-      finishTimer = setTimeout(() => {
+      const wait = Math.max(MIN_MS - (Date.now() - start), 0)
+      waitTimer = setTimeout(() => {
         setFadeOut(true)
-
         fadeTimer = setTimeout(() => {
-          setLoading(false)
-        }, 500)
+          setVisible(false)
+          try {
+            sessionStorage.setItem(SEEN_KEY, '1')
+          } catch {
+            /* private mode: ignore */
+          }
+        }, FADE_MS)
       }, wait)
     }
 
-    if (document.readyState === 'complete') {
-      finish()
-    } else {
-      window.addEventListener('load', finish)
-    }
-
-    const maxTimer = setTimeout(finish, MAX_DISPLAY)
+    if (document.readyState === 'complete') finish()
+    else window.addEventListener('load', finish)
+    const maxTimer = setTimeout(finish, MAX_MS)
 
     return () => {
       window.removeEventListener('load', finish)
       clearTimeout(maxTimer)
-
-      if (finishTimer) {
-        clearTimeout(finishTimer)
-      }
-
-      if (fadeTimer) {
-        clearTimeout(fadeTimer)
-      }
+      if (waitTimer) clearTimeout(waitTimer)
+      if (fadeTimer) clearTimeout(fadeTimer)
     }
   }, [])
 
   useEffect(() => {
-    document.body.style.overflow = loading ? 'hidden' : ''
-
+    document.body.style.overflow = visible ? 'hidden' : ''
     return () => {
       document.body.style.overflow = ''
     }
-  }, [loading])
+  }, [visible])
 
   return (
     <>
-      {loading && (
+      {visible && (
         <div
-          className={`
-            fixed inset-0 z-[9999]
-            flex items-center justify-center
-            bg-[#0A2E1A]
-            transition-opacity duration-500 ease-out
-            ${fadeOut ? 'opacity-0' : 'opacity-100'}
-          `}
+          role="status"
+          aria-label="Loading EboHomes"
+          className={`fixed inset-0 z-[9999] flex h-[100dvh] flex-col items-center justify-center px-6 transition-opacity ease-out ${
+            fadeOut ? 'opacity-0' : 'opacity-100'
+          }`}
+          style={{ backgroundColor: BG, transitionDuration: `${FADE_MS}ms` }}
         >
-          {/* Main splash artwork */}
-          <div className="relative w-full h-full flex items-center justify-center">
-
-            <img
-              src="/splash-screen.png"
-              alt="EboHomes"
-              draggable={false}
-              className="
-                max-w-full
-                max-h-full
-                w-auto
-                h-auto
-                object-contain
-                select-none
-              "
+          <div className="relative flex w-[clamp(190px,58vw,320px)] items-center justify-center">
+            <span
+              className="ebo-ring absolute left-1/2 top-1/2 aspect-square w-[62%] rounded-full border border-[#24A65A]/50"
+              aria-hidden
             />
-
-            {/* Premium loading indicator */}
-          <div
-  className="
-    absolute
-    bottom-20
-    left-1/2
-    -translate-x-1/2
-    flex
-    flex-col
-    items-center
-    gap-3
-    z-[110]
-  "
->
-  <div
-    className="
-      relative
-      w-32
-      h-[4px]
-      overflow-hidden
-      rounded-full
-      bg-white/30
-    "
-  >
-    <div
-      className="
-        absolute
-        left-0
-        top-0
-        h-full
-        w-1/2
-        rounded-full
-        bg-[#24A65A]
-        shadow-[0_0_10px_rgba(36,166,90,0.7)]
-        animate-ebohomes-loading
-      "
-    />
-  </div>
-
-  <p
-    className="
-      text-white
-      text-sm
-      font-bold
-      tracking-[0.28em]
-      uppercase
-      drop-shadow-[0_2px_5px_rgba(0,0,0,0.8)]
-    "
-  >
-    EBOHOMES
-  </p>
-</div>
+            <img
+              src="/splash-mark.png"
+              alt=""
+              draggable={false}
+              decoding="sync"
+              className="ebo-mark relative w-full select-none"
+            />
           </div>
+
+          <p className="ebo-text -mt-3 text-[clamp(16px,4.8vw,24px)] font-extrabold tracking-[0.3em] text-white">
+            EBÔHOMES
+          </p>
+          <p className="ebo-text2 mt-2 text-center text-[clamp(9px,2.7vw,12px)] uppercase tracking-[0.2em] text-white/60">
+            Find homes. Skip the stress.
+          </p>
+
+          <div className="mt-9 h-[3px] w-28 overflow-hidden rounded-full bg-white/15">
+            <div className="ebo-bar h-full w-1/2 rounded-full bg-[#24A65A]" />
+          </div>
+
+          <style>{`
+            @keyframes ebo-mark-in {
+              0% { opacity: 0; transform: scale(0.85); }
+              100% { opacity: 1; transform: scale(1); }
+            }
+            @keyframes ebo-ring {
+              0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.7; }
+              100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+            }
+            @keyframes ebo-fade-up {
+              0% { opacity: 0; transform: translateY(8px); }
+              100% { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes ebo-bar {
+              0% { transform: translateX(-120%); }
+              100% { transform: translateX(220%); }
+            }
+            .ebo-mark { animation: ebo-mark-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+            .ebo-ring { animation: ebo-ring 2s ease-out 0.5s infinite; }
+            .ebo-text { animation: ebo-fade-up 0.6s ease-out 0.35s both; }
+            .ebo-text2 { animation: ebo-fade-up 0.6s ease-out 0.55s both; }
+            .ebo-bar { animation: ebo-bar 1.5s ease-in-out infinite; }
+            @media (prefers-reduced-motion: reduce) {
+              .ebo-mark, .ebo-text, .ebo-text2 { animation: none; }
+              .ebo-ring, .ebo-bar { animation: none; }
+              .ebo-ring { opacity: 0; }
+            }
+          `}</style>
         </div>
       )}
 
@@ -155,90 +138,3 @@ export function SplashScreen({
   )
 }
 
-export default function Loading() {
-  return (
-    <div
-      className="
-        fixed inset-0
-        z-[9999]
-        flex items-center justify-center
-        bg-[#0A2E1A]
-      "
-    >
-      <div className="relative w-full h-full flex items-center justify-center">
-
-        {/* Splash artwork */}
-        <img
-          src="/splash-screen.png"
-          alt="EboHomes"
-          draggable={false}
-          className="
-            max-w-full
-            max-h-full
-            w-auto
-            h-auto
-            object-contain
-            select-none
-          "
-        />
-
-        {/* Premium loading indicator */}
-        <div
-          className="
-            absolute
-            bottom-8
-            left-1/2
-            -translate-x-1/2
-            flex
-            flex-col
-            items-center
-            gap-3
-          "
-        >
-          {/* Loading bar */}
-          <div
-            className="
-              relative
-              w-28
-              sm:w-32
-              h-[3px]
-              overflow-hidden
-              rounded-full
-              bg-white/30
-              backdrop-blur-sm
-            "
-          >
-            <div
-              className="
-                absolute
-                left-0
-                top-0
-                h-full
-                w-1/2
-                rounded-full
-                bg-[#24A65A]
-                shadow-[0_0_8px_rgba(36,166,90,0.45)]
-                animate-ebohomes-loading
-              "
-            />
-          </div>
-
-          {/* Brand */}
-          <p
-            className="
-              text-white
-              text-[9px]
-              sm:text-[10px]
-              font-medium
-              tracking-[0.38em]
-              uppercase
-              drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]
-            "
-          >
-            EboHomes
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}

@@ -19,8 +19,8 @@ import {
   isValidOwnershipPath,
 } from '@/lib/ownership-docs'
 
-const MapPlaceholder = dynamic(
-  () => import('@/components/map-placeholder').then((mod) => ({ default: mod.MapPlaceholder })),
+const LocationPickerModal = dynamic(
+  () => import('@/components/location-picker-modal').then((mod) => ({ default: mod.LocationPickerModal })),
   { ssr: false }
 )
 
@@ -859,31 +859,20 @@ export default function ListPropertyPage() {
       </main>
 
       <Footer />
-
       {/* Map Modal */}
       {showMapModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-lg max-w-2xl w-full max-h-[28rem] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <h3 className="text-lg font-bold text-foreground">Drop a pin on map</h3>
-              <button onClick={() => setShowMapModal(false)} className="text-muted-foreground hover:text-foreground">
-                <X size={20} />
-              </button>
-            </div>
-            <MapPlaceholder
-              height="h-80"
-              onLocationSelect={(lat, lng) => setFormData((p) => ({ ...p, lat, lng }))}
-            />
-            <div className="p-4 border-t border-border flex gap-3">
-              <Button onClick={() => setShowMapModal(false)} variant="outline" className="flex-1 font-semibold">
-                Cancel
-              </Button>
-              <Button onClick={() => setShowMapModal(false)} className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold">
-                Confirm Location
-              </Button>
-            </div>
-          </div>
-        </div>
+        <LocationPickerModal
+          initial={
+            formData.lat != null && formData.lng != null
+              ? { lat: formData.lat, lng: formData.lng }
+              : null
+          }
+          onClose={() => setShowMapModal(false)}
+          onConfirm={(lat, lng) => {
+            setFormData((p) => ({ ...p, lat, lng }))
+            setShowMapModal(false)
+          }}
+        />
       )}
     </div>
   )
