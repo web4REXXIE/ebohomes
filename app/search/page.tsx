@@ -19,7 +19,8 @@ import {
   Copy,
   Send,
   MessageCircle,
-  Building2,
+   Building2,
+  Map as MapIcon,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -31,6 +32,15 @@ import { supabase } from '@/lib/supabase'
 import { RecentSearches, saveRecentSearch } from '@/components/recent-searches'
 import { SearchAlertBar } from '@/components/search-alert-bar'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
+import dynamic from 'next/dynamic'
+
+const SearchMap = dynamic(
+  () => import('@/components/search-map').then((mod) => ({ default: mod.SearchMap })),
+  {
+    ssr: false,
+    loading: () => <div className="h-[70vh] animate-pulse rounded-xl border border-border bg-card" />,
+  }
+)
 
 // Values must match what is stored in listings.property_type (same list as /list-property)
 const PROPERTY_TYPES = [
