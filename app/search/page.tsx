@@ -685,7 +685,7 @@ export default function SearchPage() {
     }
 
     let featured = r.filter((l) => l.featured)
-    let regular = r.filter((l) => !l.featured)
+    const regular = r.filter((l) => !l.featured)
 
     const priceLow = (a: any, b: any) => Number(a.price_monthly) - Number(b.price_monthly)
     const priceHigh = (a: any, b: any) => Number(b.price_monthly) - Number(a.price_monthly)
