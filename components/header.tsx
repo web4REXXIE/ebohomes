@@ -153,9 +153,9 @@ export function Header() {
 
               <Link href="/" className="flex items-center gap-2 shrink-0">
                 <img
-                  src="/logo-horizontal-compact.png"
+                  src="/logo-header.png"
                   alt="EboHomes"
-                  className="h-11 w-auto sm:h-12 lg:h-14 mix-blend-multiply dark:mix-blend-normal"
+                  className="h-9 w-auto sm:h-11 lg:h-12 dark:brightness-0 dark:invert"
                 />
               </Link>
             </div>
@@ -264,7 +264,7 @@ export function Header() {
           }`}
         >
           <div className="flex items-center justify-between h-16 px-5 border-b border-border shrink-0">
-            <img src="/logo-horizontal-compact.png" alt="EboHomes" className="h-10 w-auto mix-blend-multiply dark:mix-blend-normal" />
+            <img src="/logo-header.png" alt="EboHomes" className="h-10 w-auto dark:brightness-0 dark:invert" />
             <button
               onClick={() => setDrawerOpen(false)}
               className="flex h-11 w-11 items-center justify-center -mr-2 rounded-xl hover:bg-muted text-foreground"

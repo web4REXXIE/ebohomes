@@ -88,7 +88,7 @@ export function HelpBubble() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Help and frequently asked questions"
-        className={`fixed right-3 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-primary shadow-lg transition hover:bg-secondary sm:right-5 sm:h-12 sm:w-12 ${position}`}
+        className={`fixed right-3 z-40 flex h-10 w-10 opacity-90 items-center justify-center rounded-full border border-border bg-background text-primary shadow-lg transition hover:bg-secondary sm:right-5 sm:h-12 sm:w-12 ${position}`}
       >
         <HelpCircle size={22} />
       </button>

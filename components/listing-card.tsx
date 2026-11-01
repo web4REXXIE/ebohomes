@@ -351,7 +351,7 @@ export function ListingCard({
         <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-base font-extrabold leading-tight text-primary sm:text-lg">
+              <p className="whitespace-nowrap text-base font-extrabold leading-tight text-primary sm:text-lg">
                 ₦{Number(price_monthly || 0).toLocaleString('en-NG')}
                 <span className="text-[11px] font-medium text-muted-foreground sm:text-xs">
                   {' '}

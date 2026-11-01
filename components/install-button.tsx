@@ -34,11 +34,11 @@ export function InstallButton({ variant = 'hero', className = '' }: { variant?: 
   }
 
   const looks: Record<Exclude<Variant, 'drawer'>, string> = {
-    hero: 'mt-6 h-11 gap-2 rounded-full border border-amber-300/60 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20',
+    hero: 'mt-6 inline-flex h-11 gap-2 rounded-full border border-amber-300/60 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20',
     header:
       'hidden h-9 gap-1.5 rounded-full border border-amber-400/60 px-3.5 text-sm font-semibold text-primary hover:bg-amber-50 lg:inline-flex',
     footer:
-      'h-10 gap-2 rounded-full border border-amber-400/60 px-4 text-sm font-medium text-amber-400 hover:bg-amber-400/10',
+      'inline-flex h-10 gap-2 rounded-full border border-amber-400/60 px-4 text-sm font-medium text-amber-400 hover:bg-amber-400/10',
   }
 
   const label = variant === 'header' ? 'Get App' : 'Get the EboHomes App'
@@ -47,7 +47,7 @@ export function InstallButton({ variant = 'hero', className = '' }: { variant?: 
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center justify-center whitespace-nowrap transition active:translate-y-px ${looks[variant]} ${className}`}
+      className={`items-center justify-center whitespace-nowrap transition active:translate-y-px ${looks[variant]} ${className}`}
     >
       <Download size={variant === 'header' ? 15 : 16} />
       {label}

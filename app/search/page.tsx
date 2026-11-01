@@ -353,7 +353,7 @@ function PropertyCard({
       <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-base font-extrabold leading-tight text-primary sm:text-lg">
+            <p className="whitespace-nowrap text-base font-extrabold leading-tight text-primary sm:text-lg">
               {naira(listing.price_monthly)}
               <span className="text-[11px] font-medium text-muted-foreground sm:text-xs">
                 {' '}
@@ -965,8 +965,8 @@ export default function SearchPage() {
 
   const gridClass =
     viewMode === 'grid'
-      ? 'grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3'
-      : 'grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-1'
+      ? 'grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 md:grid-cols-3'
+      : 'grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 md:grid-cols-1'
 
   const chipBase =
     'shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors sm:text-sm'
@@ -978,17 +978,16 @@ export default function SearchPage() {
       <Header />
 
       {/* Search bar */}
-      <div className="sticky top-16 z-30 border-b border-border bg-card">
+      <div className="z-30 border-b border-border bg-card md:sticky md:top-20">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6 lg:px-8">
-          <div className="relative min-w-[160px] flex-1">
+          <div className="relative w-full min-w-0 sm:w-auto sm:min-w-[160px] sm:flex-1">
             <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
               size={18}
             />
             <input
               type="text"
-              placeholder="Search by location, property name..."
-              value={search}
+              placeholder="Search location or property"
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
@@ -997,7 +996,7 @@ export default function SearchPage() {
           <button
             type="button"
             onClick={() => setShowMobileFilters(true)}
-            className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary lg:hidden"
+            className="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary lg:hidden"
           >
             <SlidersHorizontal size={16} />
             Filters
@@ -1012,7 +1011,7 @@ export default function SearchPage() {
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
             aria-label="Sort properties"
-            className="rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary sm:flex-none"
           >
             <option value="recommended">Recommended</option>
             <option value="newest">Newest first</option>
@@ -1190,7 +1189,7 @@ export default function SearchPage() {
             )}
 
             {loading ? (
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 md:grid-cols-3">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
                   <div
                     key={i}
