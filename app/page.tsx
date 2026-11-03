@@ -1,16 +1,15 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Search,
   ShieldCheck,
-  Home as HomeIcon,
-  MessageCircle,
-  Tag,
   MapPin,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Key,
   Building2,
@@ -24,62 +23,59 @@ import {
   Warehouse,
   CalendarClock,
   Users,
-  ScanFace,
   BadgeCheck,
-  SearchCheck,
-  Headphones,
-  CheckCircle2,
-  Crown,
-  Eye,
-  Heart,
-  ChevronLeft,
-  ChevronRight,
-  Camera,
-  Loader2,
-  Play,
-  X,
-  Flag,
   Lock,
-  HelpCircle,
-  Clock,
-  Bath,
+  Flag,
+  Play,
+  Loader2,
+  X,
+  ArrowRight,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
-import { InstallButton, InstallPromoSection } from '@/components/install-button'
 import { ListingCard } from '@/components/listing-card'
 import { SignedInHome } from '@/components/signed-in-home'
-import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
-import useEmblaCarousel from 'embla-carousel-react'
-import AutoScroll from 'embla-carousel-auto-scroll'
 import { motion, animate, useInView, useReducedMotion } from 'motion/react'
 
+/* =====================================================================
+   CONTENT (edit copy here, not in the layout below)
+   ===================================================================== */
 
 const CATEGORIES = [
-  { value: 'Flat / Apartment', label: 'Apartments', desc: 'Modern apartments for comfortable living', icon: Building2 },
-  { value: 'Bungalow', label: 'Bungalows', desc: 'Spacious bungalows for families', icon: Home },
-  { value: 'Self Contain', label: 'Self-Contain', desc: 'Private self-contained apartments', icon: DoorOpen },
-  { value: 'Duplex', label: 'Duplexes', desc: 'Luxury duplexes with premium features', icon: Building },
-  { value: 'Penthouse', label: 'Penthouses', desc: 'Premium top-floor living', icon: Bed },
-  { value: 'Hostel', label: 'Hostels', desc: 'Shared spaces for students & professionals', icon: Users },
-  { value: 'Office', label: 'Offices', desc: 'Professional spaces for your business', icon: Briefcase },
-  { value: 'Shop / Mall', label: 'Shops & Malls', desc: 'Shops and commercial spaces', icon: Store },
-  { value: 'Warehouse', label: 'Warehouses', desc: 'Warehouse and storage facilities', icon: Warehouse },
-  { value: 'Land / Plot', label: 'Lands & Plots', desc: 'Residential and commercial lands', icon: MapPinned },
-  { value: 'Event Center', label: 'Event Centers', desc: 'Spaces for events and gatherings', icon: CalendarClock },
+  { value: 'Flat / Apartment', label: 'Apartments', icon: Building2 },
+  { value: 'Bungalow', label: 'Bungalows', icon: Home },
+  { value: 'Self Contain', label: 'Self-Contain', icon: DoorOpen },
+  { value: 'Duplex', label: 'Duplexes', icon: Building },
+  { value: 'Penthouse', label: 'Penthouses', icon: Bed },
+  { value: 'Hostel', label: 'Hostels', icon: Users },
+  { value: 'Office', label: 'Offices', icon: Briefcase },
+  { value: 'Shop / Mall', label: 'Shops & Malls', icon: Store },
+  { value: 'Warehouse', label: 'Warehouses', icon: Warehouse },
+  { value: 'Land / Plot', label: 'Lands & Plots', icon: MapPinned },
+  { value: 'Event Center', label: 'Event Centers', icon: CalendarClock },
 ]
 
 const RECENT_KEY = 'ebo_recent_searches'
 
-const naira = (v: unknown) => `₦${(Number(v) || 0).toLocaleString('en-NG')}`
+const STEPS = [
+  { icon: Search, title: 'Search', desc: 'Filter by area, type and budget until something fits.' },
+  { icon: ClipboardCheck, title: 'Request a viewing', desc: 'EboHomes arranges the inspection. You never chase an owner or agent.' },
+  { icon: BadgeCheck, title: 'Apply', desc: 'Apply online. EboHomes handles the paperwork with the owner.' },
+  { icon: Key, title: 'Move in', desc: 'Sign the agreement and collect your keys. Pay only through EboHomes.' },
+]
 
-// Cloudinary: smaller, faster images (auto format + quality + width). Non-Cloudinary URLs are left alone.
-function img(url: string | undefined, width: number) {
-  if (!url) return '/placeholder.jpg'
-  if (!url.includes('/upload/') || url.includes('/upload/f_auto')) return url
-  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`)
-}
+const PROMISES = [
+  { icon: BadgeCheck, title: 'Landlord checks', text: 'Landlords submit their details and documents for review before listing.' },
+  { icon: ShieldCheck, title: 'Reviewed listings', text: 'Every listing is checked by EboHomes before it goes live.' },
+  { icon: Lock, title: 'One safe channel', text: 'Viewings, applications and payments all go through EboHomes.' },
+  { icon: Flag, title: 'Report anything wrong', text: 'See a fake or misleading listing? Report it and we will review it.' },
+]
+
+const INSTITUTIONS = [
+  { short: 'EBSU', name: 'Ebonyi State University', logo: '/ebsu-logo.png' },
+  { short: 'FUNAI', name: 'Alex Ekwueme Federal University', logo: '/funai-logo.png' },
+]
 
 const FAQS = [
   { q: 'How do I see a property in person?', a: 'Open the listing and tap "Request a viewing". EboHomes arranges the inspection with the owner for you. You never have to chase anyone.' },
@@ -90,247 +86,106 @@ const FAQS = [
   { q: 'I still have a question. Who can I ask?', a: 'Open the Contact page or chat with the EboHomes support team on WhatsApp.' },
 ]
 
-const TRUST = [
-  { icon: BadgeCheck, title: 'Reviewed listings', text: 'Every listing is checked by EboHomes before it goes live.' },
-  { icon: Lock, title: 'One safe channel', text: 'Viewings, applications and payments all go through EboHomes. Never pay outside it.' },
-  { icon: Flag, title: 'Report anything wrong', text: 'See a fake or misleading listing? Report it and we will review it.' },
-]
+// Founder photo: the current /founder.jpg is an AI-art avatar, which weakens trust.
+// Set FOUNDER.photo to '/founder.jpg' once you replace that file with a real portrait (4:5 works best).
+// Until then the section shows a clean monogram instead.
+const FOUNDER = {
+  name: 'Onwe Rex',
+  role: 'Founder, EboHomes',
+  sub: 'Medical Laboratory Science student, EBSU',
+  photo: '' as string,
+  social: 'https://www.tiktok.com/@web4rexxie',
+  headline: 'I built EboHomes because I lived the problem.',
+  paragraphs: [
+    "I'm Onwe Rex, a 200 level Medical Laboratory Science student at EBSU.",
+    "When I got to uni, finding a house turned into a struggle. Agents' fees, inspection fees, and still nothing that matched what I needed. Prices kept jumping, and with no direct access to the owner, that extra money was simply wasted.",
+    'So I started building a better way: real, reviewed properties, one trusted platform, and no wasted inspection money.',
+  ],
+  highlight: 'Built by a student who needed it first, for everyone who still does.',
+  cta: 'Follow the journey',
+}
+
+/* =====================================================================
+   TYPES + HELPERS
+   ===================================================================== */
+
+type Listing = {
+  id: string
+  landlord_id?: string
+  title?: string
+  photos?: string[]
+  price_monthly: number
+  price_yearly?: number
+  location_text: string
+  property_type: string
+  bedrooms?: number
+  bathrooms?: number
+  featured?: boolean
+  video_url?: string
+  created_at?: string
+}
 
 type RecentSearch = { label: string; query: string }
 
-const WHY_CHOOSE = [
-  { title: 'Landlord Checks', desc: 'Landlords submit their details and documents for review before their listings go live.', icon: ShieldCheck },
-  { title: 'Secure & Safe', desc: 'Viewings, applications and payments all go through EboHomes, so you never deal with strangers.', icon: ScanFace },
-  { title: 'Quality Listings', desc: 'We approve every listing to ensure genuine properties.', icon: BadgeCheck },
-  { title: 'Easy Search', desc: 'Advanced filters help you find the perfect home fast.', icon: SearchCheck },
-  { title: 'Always Here', desc: 'Our support team is ready to help whenever you need us.', icon: Headphones },
-]
+const naira = (v: unknown) => `₦${(Number(v) || 0).toLocaleString('en-NG')}`
 
-// Continuous rolling row (Embla + AutoScroll): smooth, swipe/drag works, resumes after you let go.
-function Marquee({ slides, speed = 0.6 }: { slides: React.ReactNode[]; speed?: number }) {
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, dragFree: true, align: 'start' }, [
-    AutoScroll({ speed, startDelay: 0, stopOnInteraction: false, stopOnMouseEnter: true }),
-  ])
-
-  useEffect(() => {
-    if (!emblaApi) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      emblaApi.plugins().autoScroll?.stop()
-    }
-  }, [emblaApi])
-
-  return (
-    <div className="overflow-hidden" ref={emblaRef}>
-      <div className="-ml-4 flex touch-pan-y items-start">
-        {slides.map((s, i) => (
-          <div key={i} className="min-w-0 shrink-0 grow-0 pl-4">
-            {s}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+// Cloudinary: auto format + quality + width. Other URLs are left alone.
+function img(url: string | undefined, width: number) {
+  if (!url) return '/placeholder.jpg'
+  if (!url.includes('/upload/') || url.includes('/upload/f_auto')) return url
+  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`)
 }
 
-function FeaturedMarquee({ items }: { items: any[] }) {
-  return (
-    <Marquee
-      speed={0.6}
-      slides={items.map((listing) => (
-        <div key={listing.id} className="w-64 sm:w-72">
-          <ListingCard
-            id={listing.id}
-            landlord_id={listing.landlord_id}
-            title={listing.title}
-            image={img(listing.photos?.[0], 600)}
-            photoCount={Array.isArray(listing.photos) ? listing.photos.length : undefined}
-            bathrooms={listing.bathrooms}
-            price_monthly={listing.price_monthly}
-            price_yearly={listing.price_yearly}
-            location={listing.location_text}
-            property_type={listing.property_type}
-            bedrooms={listing.bedrooms}
-            verified={listing.verified}
-            featured={listing.featured}
-          />
-        </div>
-      ))}
-    />
-  )
+function cardProps(l: Listing) {
+  return {
+    id: l.id,
+    landlord_id: l.landlord_id,
+    title: l.title,
+    image: img(l.photos?.[0], 700),
+    photoCount: Array.isArray(l.photos) ? l.photos.length : undefined,
+    bathrooms: l.bathrooms,
+    price_monthly: l.price_monthly,
+    price_yearly: l.price_yearly,
+    location: l.location_text,
+    property_type: l.property_type,
+    bedrooms: l.bedrooms,
+    created_at: l.created_at,
+    featured: l.featured,
+  }
 }
 
-function addedText(createdAt?: string) {
-  if (!createdAt) return ''
-  const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000)
-  if (Number.isNaN(days) || days < 0) return ''
-  if (days === 0) return 'Added today'
-  if (days === 1) return 'Added yesterday'
-  if (days <= 7) return `Added ${days} days ago`
-  return ''
-}
+const inputClass =
+  'h-12 w-full rounded-lg border border-border bg-background px-3.5 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20'
 
-// Recently added: green box, fixed-size cards, same rolling motion as Featured.
-function RecentMarquee({ items }: { items: any[] }) {
-  const router = useRouter()
-  if (items.length === 0) return null
+/* =====================================================================
+   SMALL BUILDING BLOCKS
+   ===================================================================== */
 
-  return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-primary to-emerald-900 shadow-xl">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{ backgroundImage: 'radial-gradient(circle, #fbbf24 1px, transparent 1px)', backgroundSize: '24px 24px' }}
-      />
-      <div className="relative z-10 py-6 md:py-8">
-        <div className="mb-5 flex items-end justify-between gap-4 px-5 md:px-8">
-          <div>
-            <h2 className="text-xl font-extrabold text-white md:text-3xl">Recently Added</h2>
-            <p className="mt-1 text-sm text-white/70">The newest homes on EboHomes.</p>
-          </div>
-          <button
-            onClick={() => router.push('/search')}
-            className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-amber-300 hover:text-amber-200"
-          >
-            See all <ChevronRight size={16} />
-          </button>
-        </div>
-
-        <div className="pl-5 md:pl-8">
-          <Marquee
-            speed={0.5}
-            slides={items.map((l) => {
-              const added = addedText(l.created_at)
-              return (
-                <a
-                  key={l.id}
-                  href={`/listing/${l.id}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    router.push(`/listing/${l.id}`)
-                  }}
-                  draggable={false}
-                  className="block w-64 overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-white/10 sm:w-72"
-                >
-                  <div className="relative h-40 w-full overflow-hidden">
-                    <img
-                      src={img(l.photos?.[0], 600)}
-                      alt={`${l.property_type} in ${l.location_text}`}
-                      draggable={false}
-                      loading="lazy"
-                      className="absolute inset-0 h-full w-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.onerror = null
-                        e.currentTarget.src = '/placeholder.jpg'
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
-                    {Array.isArray(l.photos) && l.photos.length > 0 && (
-                      <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-white">
-                        <Camera size={11} /> {l.photos.length}
-                      </span>
-                    )}
-                    {added && (
-                      <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-primary shadow">
-                        {added}
-                      </span>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    <p className="text-lg font-extrabold text-primary">
-                      {naira(l.price_monthly)}
-                      <span className="text-sm font-medium text-muted-foreground">/month</span>
-                    </p>
-                    <p className="mt-1 line-clamp-1 text-sm font-semibold text-foreground">{l.title || l.property_type}</p>
-                    <p className="mt-0.5 flex items-center gap-1 text-sm text-muted-foreground">
-                      <MapPin size={13} className="shrink-0" />
-                      <span className="truncate">{l.location_text}</span>
-                    </p>
-                    <div className="mt-3 flex items-center gap-4 border-t border-border pt-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <HomeIcon size={13} /> {l.property_type}
-                      </span>
-                      {l.bedrooms ? (
-                        <span className="flex items-center gap-1.5">
-                          <Bed size={13} /> {l.bedrooms}
-                        </span>
-                      ) : null}
-                      {l.bathrooms ? (
-                        <span className="flex items-center gap-1.5">
-                          <Bath size={13} /> {l.bathrooms}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                </a>
-              )
-            })}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------- EBSU / FUNAI news-ticker ----------
-const INSTITUTIONS = [
-  { short: 'EBSU', name: 'Ebonyi State University', logo: '/ebsu-logo.png' },
-  { short: 'FUNAI', name: 'Alex Ekwueme Federal University', logo: '/funai-logo.png' },
-]
-
-function InstitutionsTicker() {
-  const group = (hidden: boolean) => (
-    <div className="flex shrink-0 items-center" aria-hidden={hidden || undefined}>
-      {Array.from({ length: 4 }).flatMap((_, r) =>
-        INSTITUTIONS.map((i) => (
-          <div key={`${r}-${i.short}`} className="flex shrink-0 items-center gap-3.5 pl-8 sm:pl-12">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-secondary/40 p-1.5">
-              <img src={i.logo} alt={hidden ? '' : i.short} className="h-full w-full object-contain" />
-            </div>
-            <div className="text-left">
-              <p className="text-base font-bold text-primary">{i.short}</p>
-              <p className="whitespace-nowrap text-xs text-muted-foreground">{i.name}</p>
-            </div>
-            <span className="ml-8 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/30 sm:ml-12" />
-          </div>
-        )),
-      )}
-    </div>
-  )
-
-  return (
-    <div className="rounded-3xl border border-border/60 bg-card py-8 shadow-lg md:py-10">
-      <style>{`
-        @keyframes eh-ticker { from { transform: translateX(0) } to { transform: translateX(-50%) } }
-        .eh-ticker-track { animation: eh-ticker 28s linear infinite }
-        .eh-ticker:hover .eh-ticker-track { animation-play-state: paused }
-        @media (prefers-reduced-motion: reduce) { .eh-ticker-track { animation: none } }
-      `}</style>
-      <div className="px-6 text-center">
-        <h3 className="mb-2 text-xl font-bold text-foreground md:text-2xl">Trusted by Students &amp; Professionals</h3>
-        <p className="mx-auto mb-7 max-w-md text-sm text-muted-foreground">
-          We are proud to serve students and staff from leading institutions in Ebonyi State.
-        </p>
-      </div>
-      <div className="eh-ticker overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
-        <div className="eh-ticker-track flex w-max">
-          {group(false)}
-          {group(true)}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------- Shared motion helpers ----------
-// Starts at 25% opacity (never fully blank) so a slow scroll can't leave an empty gap.
-function Reveal({ children, delay = 0, className = '' }: { children: React.ReactNode; delay?: number; className?: string }) {
+// The only entrance animation on the page: the hero text and search panel arrive in sequence on load.
+function HeroIn({ children, delay = 0, className = '' }: { children: React.ReactNode; delay?: number; className?: string }) {
   const reduce = useReducedMotion()
   return (
     <motion.div
       className={className}
-      initial={reduce ? false : { opacity: 0.25, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
+      initial={reduce ? false : { opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.8, delay, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+// Simple fade for below-the-fold blocks. Starts at 30% opacity so a fast scroll never shows a blank gap.
+function Fade({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const reduce = useReducedMotion()
+  return (
+    <motion.div
+      className={className}
+      initial={reduce ? false : { opacity: 0.3 }}
+      whileInView={{ opacity: 1 }}
       viewport={{ once: true, amount: 0.1 }}
-      transition={{ duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.7, ease: 'easeOut' }}
     >
       {children}
     </motion.div>
@@ -340,8 +195,13 @@ function Reveal({ children, delay = 0, className = '' }: { children: React.React
 function CountUp({ to }: { to: number }) {
   const ref = useRef<HTMLSpanElement>(null)
   const inView = useInView(ref, { once: true })
+  const reduce = useReducedMotion()
   useEffect(() => {
     if (!inView) return
+    if (reduce) {
+      if (ref.current) ref.current.textContent = to.toLocaleString()
+      return
+    }
     const c = animate(0, to, {
       duration: 1.2,
       ease: 'easeOut',
@@ -350,382 +210,80 @@ function CountUp({ to }: { to: number }) {
       },
     })
     return () => c.stop()
-  }, [inView, to])
+  }, [inView, to, reduce])
   return <span ref={ref}>0</span>
 }
 
-// ---------- How it works: timeline (vertical on phone, horizontal on desktop) ----------
-const STEPS = [
-  { icon: Search, title: 'Search', desc: 'Find properties that fit your needs.' },
-  { icon: ClipboardCheck, title: 'Request a viewing', desc: 'EboHomes arranges the inspection. You never chase an owner or agent.' },
-  { icon: MessageCircle, title: 'Apply', desc: 'Found the one? Apply online and EboHomes handles the paperwork.' },
-  { icon: Key, title: 'Move in', desc: 'Sign the agreement and get your keys. Pay only through EboHomes.' },
-]
-
-function HowItWorks() {
-  const reduce = useReducedMotion()
+function Section({ children, id, className = '' }: { children: React.ReactNode; id?: string; className?: string }) {
   return (
-    <section id="how-it-works" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 md:py-10 lg:px-8">
-      <Reveal className="mb-8 max-w-xl">
-        <span className="text-xs font-semibold uppercase tracking-wide text-primary">Getting started</span>
-        <h2 className="mt-2 text-2xl font-bold text-foreground md:text-4xl">
-          From search to move in, <span className="text-primary">four steps</span>
-        </h2>
-      </Reveal>
+    <section id={id} className={`mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-20 lg:px-8 ${className}`}>
+      {children}
+    </section>
+  )
+}
 
-      <div className="relative">
-        {/* connector line draws itself */}
-        <motion.div
-          className="absolute bottom-6 left-6 top-6 w-0.5 origin-top bg-primary/30 md:hidden"
-          initial={reduce ? false : { scaleY: 0 }}
-          whileInView={{ scaleY: 1 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={{ duration: 1.2, ease: 'easeOut' }}
-        />
-        <motion.div
-          className="absolute left-[12.5%] right-[12.5%] top-6 hidden h-0.5 origin-left bg-primary/30 md:block"
-          initial={reduce ? false : { scaleX: 0 }}
-          whileInView={{ scaleX: 1 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={{ duration: 1.2, ease: 'easeOut' }}
-        />
-
-        <ol className="relative grid gap-6 md:grid-cols-4 md:gap-4">
-          {STEPS.map((s, i) => (
-            <motion.li
-              key={s.title}
-              className="flex gap-4 md:flex-col md:items-center md:text-center"
-              initial={reduce ? false : { opacity: 0.25, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.5, delay: i * 0.12, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <span className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-background">
-                <s.icon size={20} />
-              </span>
-              <div className="pt-1 md:pt-3">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-primary/70">Step 0{i + 1}</p>
-                <p className="text-lg font-semibold text-foreground">{s.title}</p>
-                <p className="text-sm text-muted-foreground">{s.desc}</p>
-              </div>
-            </motion.li>
-          ))}
-        </ol>
+function SectionHead({ title, sub, href, cta = 'View all' }: { title: string; sub?: string; href?: string; cta?: string }) {
+  return (
+    <div className="mb-8 flex items-end justify-between gap-6 md:mb-10">
+      <div className="max-w-xl">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground md:text-4xl">{title}</h2>
+        {sub && <p className="mt-2 text-sm text-muted-foreground md:text-base">{sub}</p>}
       </div>
-
-      <Reveal className="mt-8">
-        <div className="flex items-center gap-4 rounded-2xl bg-secondary/40 p-5">
-          <ShieldCheck size={28} className="shrink-0 text-primary" />
-          <div>
-            <p className="font-bold text-foreground">Safe. Simple. Stress-free.</p>
-            <p className="text-sm text-muted-foreground">
-              Everything goes through EboHomes. Never pay anyone outside the platform.
-            </p>
-          </div>
-        </div>
-      </Reveal>
-    </section>
-  )
-}
-
-// ---------- Founder section ----------
-// EDIT THIS: name, photo, link, copy. Put your photo at /public/founder.jpg (portrait, 4:5 works best).
-const FOUNDER = {
-  name: 'Onwe Rex',
-  role: 'Founder, EboHomes',
-  sub: 'Medical Laboratory Science student, EBSU',
-  photo: '/founder.jpg',
-  social: 'https://www.tiktok.com/@web4rexxie',
-  eyebrow: 'The person building EboHomes',
-  headline: 'I built EboHomes because I lived the problem.',
-  paragraphs: [
-    "I'm Onwe Rex, a 200 level Medical Laboratory Science student at EBSU.",
-    "When I got to uni, finding a house turned into a struggle. Agents' fees, inspection fees, and still nothing that matched what I needed. Prices kept jumping, and with no direct access to the owner, that extra money was simply wasted.",
-    'So I started building a better way: real, reviewed properties, one trusted platform, and no wasted inspection money.',
-  ],
-  skillsLine: 'Beyond EboHomes, I build solutions to real problems with:',
-  skills: ['AI Agents', 'Automation', 'Web3 & Crypto', 'Web Building'],
-  highlight: 'Built by a student who needed it first, for everyone who still does.',
-  cta: 'Follow the EboHomes journey →',
-}
-
-function FounderSection() {
-  const reduce = useReducedMotion()
-  const [imgOk, setImgOk] = useState(true)
-  const initials = FOUNDER.name
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
-
-  return (
-    <section className="mx-auto max-w-6xl px-4 py-6 sm:px-6 md:py-10 lg:px-8">
-      <div className="grid items-center gap-10 md:grid-cols-[2fr_3fr] md:gap-14">
-        {/* Portrait */}
-        <Reveal className="mx-auto w-full max-w-xs md:max-w-none">
-          <div className="relative">
-            <div className="absolute -inset-2 rotate-3 rounded-[2rem] bg-gradient-to-br from-primary/30 via-amber-300/30 to-emerald-300/20" />
-            <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-primary to-emerald-900 shadow-2xl ring-1 ring-black/5">
-              {imgOk ? (
-                <img
-                  src={FOUNDER.photo}
-                  alt={`${FOUNDER.name}, ${FOUNDER.role}`}
-                  className="absolute inset-0 h-full w-full object-cover"
-                  onError={() => setImgOk(false)}
-                />
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-white/90">
-                  <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white/10 text-3xl font-extrabold">
-                    {initials}
-                  </span>
-                  <Camera size={20} className="opacity-70" />
-                  <p className="text-xs opacity-70">Add your photo at public/founder.jpg</p>
-                </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 pt-16">
-                <p className="text-base font-bold text-white">{FOUNDER.name}</p>
-                <p className="text-xs text-white/80">{FOUNDER.sub}</p>
-              </div>
-            </div>
-
-            {/* floating badge */}
-            <motion.div
-              className="absolute -right-2 top-6 flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-xs font-bold text-foreground shadow-lg md:-right-4"
-              animate={reduce ? undefined : { y: [0, -6, 0] }}
-              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-            >
-              <BadgeCheck size={14} className="text-primary" />
-              Founder
-            </motion.div>
-          </div>
-        </Reveal>
-
-        {/* Story */}
-        <div>
-          <Reveal>
-            <span className="text-xs font-bold uppercase tracking-widest text-primary md:text-sm">{FOUNDER.eyebrow}</span>
-            <h2 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-foreground text-balance sm:text-4xl lg:text-5xl">
-              {FOUNDER.headline}
-            </h2>
-          </Reveal>
-
-          <Reveal delay={0.1} className="mt-4 space-y-3 text-base leading-relaxed text-muted-foreground md:text-lg">
-            {FOUNDER.paragraphs.map((p, i) => (
-              <p key={i}>{p}</p>
-            ))}
-          </Reveal>
-
-          <Reveal delay={0.15} className="mt-4">
-            <p className="text-sm font-medium text-foreground">{FOUNDER.skillsLine}</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {FOUNDER.skills.map((s, i) => (
-                <motion.span
-                  key={s}
-                  className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary md:text-sm"
-                  initial={reduce ? false : { opacity: 0.25, scale: 0.9 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.2 + i * 0.08 }}
-                >
-                  {s}
-                </motion.span>
-              ))}
-            </div>
-          </Reveal>
-
-          <Reveal delay={0.2}>
-            <blockquote className="mt-5 border-l-4 border-primary pl-4 text-lg font-bold text-foreground md:text-xl">
-              {FOUNDER.highlight}
-            </blockquote>
-            <motion.a
-              href={FOUNDER.social}
-              target="_blank"
-              rel="noopener noreferrer"
-              whileHover={reduce ? undefined : { scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-primary px-7 py-3.5 text-base font-semibold text-primary-foreground shadow-md hover:bg-primary/90 sm:w-auto"
-            >
-              {FOUNDER.cta}
-            </motion.a>
-          </Reveal>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ---------- EboHomes AI: coming-soon announcement (static, no AI functionality) ----------
-function AiComingSoon() {
-  return (
-    <section className="mx-auto max-w-6xl px-4 py-6 sm:px-6 md:py-10 lg:px-8" aria-labelledby="ebohomes-ai-heading">
-      <Reveal>
-        <div className="relative overflow-hidden rounded-3xl border border-primary/15 bg-gradient-to-br from-secondary/60 via-background to-secondary/30 px-6 py-10 sm:px-10 md:px-14 md:py-14">
-          <div className="grid items-center gap-8 md:grid-cols-[1.2fr_1fr] md:gap-12">
-            <div>
-              <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-400/10 px-3 py-1 text-[11px] font-bold tracking-widest text-amber-700 dark:text-amber-300">
-                COMING SOON
-              </span>
-              <h2
-                id="ebohomes-ai-heading"
-                className="mt-4 text-4xl font-extrabold tracking-tight text-emerald-950 dark:text-white sm:text-5xl"
-              >
-                EboHomes AI
-              </h2>
-              <p className="mt-3 text-lg font-semibold text-primary md:text-xl">
-                Intelligence for Nigerian Real Estate.
-              </p>
-              <p className="mt-3 max-w-md text-sm text-muted-foreground md:text-base">
-                We&apos;re building a smarter way to navigate real estate in Nigeria.
-              </p>
-            </div>
-
-            {/* Abstract: a house outline drawn as connected points. Decorative only. */}
-            <svg
-              viewBox="0 0 240 180"
-              className="mx-auto h-auto w-full max-w-[240px] text-primary md:max-w-[280px]"
-              fill="none"
-              aria-hidden="true"
-            >
-              <g stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.5">
-                <path d="M30 95 L120 28 L210 95" />
-                <path d="M48 84 V150 H192 V84" />
-                <path d="M48 118 H192" opacity="0.5" />
-                <path d="M120 28 V118" opacity="0.5" />
-              </g>
-              <g fill="currentColor" opacity="0.8">
-                <circle cx="30" cy="95" r="3.5" />
-                <circle cx="120" cy="28" r="3.5" />
-                <circle cx="210" cy="95" r="3.5" />
-                <circle cx="48" cy="150" r="3" />
-                <circle cx="192" cy="150" r="3" />
-                <circle cx="48" cy="118" r="2.5" />
-                <circle cx="192" cy="118" r="2.5" />
-              </g>
-              <circle cx="120" cy="118" r="5" className="fill-amber-400" />
-            </svg>
-          </div>
-        </div>
-      </Reveal>
-    </section>
-  )
-}
-
-// ---------- Hero background: slow crossfade between your own photos ----------
-// Put your photos in /public and list them here. Files that don't exist are skipped,
-// and if none load, the old /hero.jpg is used so the hero is never empty.
-const HERO_IMAGES = ['/hero-home.jpg', '/hero-2.jpg', '/hero-3.jpg']
-const HERO_FALLBACK = '/hero.jpg'
-const HERO_FADE_MS = 1400 // how long one photo takes to fade in
-const HERO_HOLD_MS = 6500 // how long each photo stays before the next one fades in
-
-// One photo layer. The incoming photo fades in ON TOP of the previous one, which stays fully
-// visible underneath until the fade is done, so the hero never dips to dark between photos.
-function HeroSlide({ src, state, reduce }: { src: string; state: 'current' | 'previous' | 'hidden'; reduce: boolean }) {
-  const [entered, setEntered] = useState(false)
-
-  useEffect(() => {
-    // Mount invisible, then fade in on the next frame, so even the first photo fades in
-    const id = requestAnimationFrame(() => setEntered(true))
-    return () => cancelAnimationFrame(id)
-  }, [])
-
-  const shown = entered && state !== 'hidden'
-
-  return (
-    <div
-      className="absolute inset-0 bg-cover bg-center"
-      style={{
-        backgroundImage: `url('${src}')`,
-        opacity: shown ? 1 : 0,
-        zIndex: state === 'current' ? 2 : state === 'previous' ? 1 : 0,
-        transform: shown && !reduce ? 'scale(1.06)' : 'scale(1)',
-        transition: reduce
-          ? 'none'
-          : state === 'hidden'
-            ? `opacity ${HERO_FADE_MS}ms ease-in-out`
-            : `opacity ${HERO_FADE_MS}ms ease-in-out, transform 9000ms linear`,
-      }}
-    />
-  )
-}
-
-function HeroBackground() {
-  const reduceMotion = useReducedMotion()
-  const reduce = Boolean(reduceMotion)
-  const [images, setImages] = useState<string[]>([])
-  const [pos, setPos] = useState({ current: 0, previous: -1 })
-
-  // Each photo is added the moment it finishes loading, so the hero never waits for all three.
-  // If every photo fails, the old /hero.jpg is used.
-  useEffect(() => {
-    let cancelled = false
-    let settled = 0
-    let loadedAny = false
-
-    const settle = () => {
-      settled += 1
-      if (!cancelled && settled === HERO_IMAGES.length && !loadedAny) setImages([HERO_FALLBACK])
-    }
-
-    HERO_IMAGES.forEach((src) => {
-      const img = new window.Image()
-      img.onload = () => {
-        if (!cancelled) {
-          loadedAny = true
-          setImages((prev) => (prev.includes(src) ? prev : [...prev, src]))
-        }
-        settle()
-      }
-      img.onerror = () => {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn(`Hero image not found or not loadable: ${src}`)
-        }
-        settle()
-      }
-      img.src = src
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Move to the next photo every few seconds (not at all if the visitor prefers reduced motion)
-  useEffect(() => {
-    if (reduce || images.length < 2) return
-    const t = setInterval(() => {
-      setPos((p) => ({ current: (p.current + 1) % images.length, previous: p.current }))
-    }, HERO_HOLD_MS)
-    return () => clearInterval(t)
-  }, [reduce, images.length])
-
-  return (
-    <div className="absolute inset-0 overflow-hidden bg-emerald-950" aria-hidden="true">
-      {images.map((src, i) => (
-        <HeroSlide
-          key={src}
-          src={src}
-          reduce={reduce}
-          state={i === pos.current ? 'current' : i === pos.previous ? 'previous' : 'hidden'}
-        />
-      ))}
+      {href && (
+        <Link href={href} className="group hidden shrink-0 items-center gap-1.5 text-sm font-semibold text-primary sm:inline-flex">
+          {cta}
+          <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      )}
     </div>
   )
 }
 
-function SectionHead({ title, sub, onClick, cta = 'See all' }: { title: string; sub?: string; onClick?: () => void; cta?: string }) {
+// Hero photo: one image, a single slow settle on load. No slideshow.
+function HeroImage() {
+  const reduce = useReducedMotion()
+  const [src, setSrc] = useState('/hero-home.jpg')
   return (
-    <div className="flex items-end justify-between gap-4">
-      <div>
-        <h2 className="text-xl font-extrabold tracking-tight text-foreground md:text-3xl">{title}</h2>
-        {sub && <p className="mt-1 text-sm text-muted-foreground">{sub}</p>}
+    <div className="absolute inset-0 overflow-hidden bg-emerald-950" aria-hidden="true">
+      <motion.img
+        src={src}
+        alt=""
+        onError={() => setSrc('/hero.jpg')}
+        className="h-full w-full object-cover"
+        initial={reduce ? false : { scale: 1.08 }}
+        animate={{ scale: 1 }}
+        transition={{ duration: 2.4, ease: [0.22, 1, 0.36, 1] }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/90 via-emerald-950/60 to-emerald-950/30" />
+      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/50 to-transparent" />
+    </div>
+  )
+}
+
+// Horizontal scroller: swipe on phones, arrow buttons on desktop. Nothing moves on its own.
+function Scroller({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const by = (dir: number) => {
+    const el = ref.current
+    if (!el) return
+    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' })
+  }
+  const arrow =
+    'absolute top-1/2 z-10 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md transition hover:scale-105 md:flex'
+  return (
+    <div className="relative">
+      <div
+        ref={ref}
+        className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth px-4 pb-2 sm:mx-0 sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {children}
       </div>
-      {onClick && (
-        <button onClick={onClick} className="inline-flex shrink-0 items-center text-sm font-semibold text-primary hover:underline">
-          {cta} <ChevronRight size={16} />
-        </button>
-      )}
+      <button type="button" aria-label="Previous" onClick={() => by(-1)} className={`${arrow} -left-5`}>
+        <ChevronLeft size={20} />
+      </button>
+      <button type="button" aria-label="Next" onClick={() => by(1)} className={`${arrow} -right-5`}>
+        <ChevronRight size={20} />
+      </button>
     </div>
   )
 }
@@ -733,65 +291,92 @@ function SectionHead({ title, sub, onClick, cta = 'See all' }: { title: string; 
 function FaqList() {
   const [open, setOpen] = useState<number | null>(0)
   return (
-    <div className="space-y-2">
-      {FAQS.map((f, i) => (
-        <div key={f.q} className="rounded-2xl border border-border bg-card">
-          <button
-            type="button"
-            onClick={() => setOpen(open === i ? null : i)}
-            aria-expanded={open === i}
-            className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-sm font-semibold text-foreground md:text-base"
-          >
-            {f.q}
-            <ChevronDown size={18} className={`shrink-0 transition-transform ${open === i ? 'rotate-180' : ''}`} />
-          </button>
-          {open === i && <p className="px-5 pb-5 text-sm leading-relaxed text-muted-foreground">{f.a}</p>}
-        </div>
-      ))}
+    <div className="divide-y divide-border border-y border-border">
+      {FAQS.map((f, i) => {
+        const isOpen = open === i
+        return (
+          <div key={f.q}>
+            <button
+              type="button"
+              onClick={() => setOpen(isOpen ? null : i)}
+              aria-expanded={isOpen}
+              className="flex w-full items-center justify-between gap-6 py-5 text-left text-base font-medium text-foreground"
+            >
+              {f.q}
+              <ChevronDown size={18} className={`shrink-0 text-muted-foreground transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+            <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+              <div className="overflow-hidden">
+                <p className="pb-5 pr-8 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-// Floating "?" button: opens a sheet with the FAQs and a link to EboHomes support.
-function HelpBubble() {
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
+function FounderSection() {
+  const [photoOk, setPhotoOk] = useState(true)
+  const initials = FOUNDER.name
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+  const hasPhoto = Boolean(FOUNDER.photo) && photoOk
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Help and frequently asked questions"
-        className="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-primary shadow-lg md:bottom-6"
-      >
-        <HelpCircle size={24} />
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 md:items-center" onClick={() => setOpen(false)} role="dialog" aria-modal="true" aria-label="Help">
-          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-background p-5 shadow-xl md:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-extrabold text-foreground">How can we help?</h2>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close help" className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-secondary">
-                <X size={18} />
-              </button>
+    <Section>
+      <div className="grid items-start gap-10 md:grid-cols-[2fr_3fr] md:gap-16">
+        <Fade className="mx-auto w-full max-w-xs md:max-w-none">
+          <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-emerald-950">
+            {hasPhoto ? (
+              <img
+                src={FOUNDER.photo}
+                alt={`${FOUNDER.name}, ${FOUNDER.role}`}
+                className="absolute inset-0 h-full w-full object-cover"
+                onError={() => setPhotoOk(false)}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-7xl font-semibold tracking-tight text-white/90">{initials}</span>
+              </div>
+            )}
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5 pt-20">
+              <p className="text-base font-semibold text-white">{FOUNDER.name}</p>
+              <p className="text-xs text-white/75">{FOUNDER.sub}</p>
             </div>
-            <FaqList />
-            <Link href="/contact" onClick={() => setOpen(false)} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-bold text-primary-foreground">
-              <Headphones size={18} /> Contact EboHomes support
-            </Link>
           </div>
-        </div>
-      )}
-    </>
+        </Fade>
+
+        <Fade>
+          <h2 className="text-balance text-3xl font-semibold leading-tight tracking-tight text-foreground md:text-5xl">{FOUNDER.headline}</h2>
+          <div className="mt-6 max-w-xl space-y-4 text-base leading-relaxed text-muted-foreground md:text-lg">
+            {FOUNDER.paragraphs.map((p, i) => (
+              <p key={i}>{p}</p>
+            ))}
+          </div>
+          <p className="mt-8 max-w-xl border-l-2 border-primary pl-4 text-lg font-medium text-foreground">{FOUNDER.highlight}</p>
+          <a
+            href={FOUNDER.social}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group mt-6 inline-flex items-center gap-2 text-sm font-semibold text-primary"
+          >
+            {FOUNDER.cta}
+            <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+          </a>
+        </Fade>
+      </div>
+    </Section>
   )
 }
+
+/* =====================================================================
+   PAGE
+   ===================================================================== */
 
 export default function HomePage() {
   const router = useRouter()
@@ -800,15 +385,14 @@ export default function HomePage() {
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
 
-  const [featured, setFeatured] = useState<any[]>([])
-  const [recent, setRecent] = useState<any[]>([])
-  const [videos, setVideos] = useState<any[]>([])
+  const [featured, setFeatured] = useState<Listing[]>([])
+  const [recent, setRecent] = useState<Listing[]>([])
+  const [videos, setVideos] = useState<Listing[]>([])
   const [areas, setAreas] = useState<{ name: string; count: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({})
   const [stats, setStats] = useState({ properties: 0, landlords: 0 })
-  const [featuredIndex, setFeaturedIndex] = useState(0)
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([])
   const [isSearching, startSearch] = useTransition()
 
@@ -817,7 +401,7 @@ export default function HomePage() {
       setLoading(true)
       setLoadError(false)
 
-      // One query (only the columns the home page needs), everything else is derived from it
+      // One query; everything else on the page is derived from it
       const { data, error } = await supabase
         .from('listings')
         .select('id, landlord_id, title, photos, price_monthly, price_yearly, location_text, property_type, bedrooms, bathrooms, featured, video_url, created_at')
@@ -832,9 +416,9 @@ export default function HomePage() {
         return
       }
 
-      const rows = data ?? []
+      const rows = (data ?? []) as Listing[]
 
-      // Every featured listing is shown; order is shuffled on each visit so none is always first
+      // Featured order is shuffled per visit so no listing is always first
       const shuffled = rows.filter((l) => l.featured)
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1))
@@ -847,8 +431,8 @@ export default function HomePage() {
       const types: Record<string, number> = {}
       const places: Record<string, { name: string; count: number }> = {}
       for (const r of rows) {
-        if (r.property_type) types[r.property_type] = (types[r.property_type] || 0) + 1
-        const name = (r.location_text || '').trim()
+        if (r.property_type) types[r.property_type] = (types[r.property_type] ?? 0) + 1
+        const name = (r.location_text ?? '').trim()
         if (name) {
           const key = name.toLowerCase()
           places[key] = { name: places[key]?.name ?? name, count: (places[key]?.count ?? 0) + 1 }
@@ -861,28 +445,28 @@ export default function HomePage() {
     }
     fetchHome()
 
+    // Only landlords who were actually verified are counted
     const fetchLandlords = async () => {
-      const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'landlord')
+      const { count } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'landlord')
+        .eq('verification_status', 'verified')
       setStats((s) => ({ ...s, landlords: count ?? 0 }))
     }
     fetchLandlords()
 
     try {
-      const saved = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
-      if (Array.isArray(saved)) setRecentSearches(saved.slice(0, 4))
+      const saved = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
+      if (Array.isArray(saved)) setRecentSearches(saved.slice(0, 3))
     } catch {}
   }, [])
 
-  const saveRecentSearch = (item: RecentSearch) => {
-    const next = [item, ...recentSearches.filter((r) => r.query !== item.query)].slice(0, 4)
+  const persistRecent = (next: RecentSearch[]) => {
     setRecentSearches(next)
-    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch {}
-  }
-
-  const removeRecentSearch = (query: string) => {
-    const next = recentSearches.filter((r) => r.query !== query)
-    setRecentSearches(next)
-    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch {}
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+    } catch {}
   }
 
   const handleSearch = (e: React.FormEvent) => {
@@ -897,635 +481,466 @@ export default function HomePage() {
       const label = [
         location.trim(),
         propertyType,
-        minPrice && `from ${naira(minPrice)}`,
-        maxPrice && `up to ${naira(maxPrice)}`,
-      ].filter(Boolean).join(' · ')
-      saveRecentSearch({ label, query })
+        minPrice ? `from ${naira(minPrice)}` : '',
+        maxPrice ? `up to ${naira(maxPrice)}` : '',
+      ]
+        .filter(Boolean)
+        .join(', ')
+      persistRecent([{ label, query }, ...recentSearches.filter((r) => r.query !== query)].slice(0, 3))
     }
-    // isSearching stays true until the search page has loaded, so the button shows a spinner
+    // isSearching stays true until the search page has loaded, so the button keeps its spinner
     startSearch(() => {
       router.push('/search' + (query ? '?' + query : ''))
     })
   }
 
-  // Area suggestions come from real listings, nothing invented
-  const locationSuggestions = Array.from(
-    new Set([...featured, ...recent].map((l) => l.location_text).filter(Boolean)),
-  ) as string[]
-
+  const locationSuggestions = Array.from(new Set(areas.map((a) => a.name)))
   const sortedCats = [...CATEGORIES].sort((a, b) => (categoryCounts[b.value] ?? 0) - (categoryCounts[a.value] ?? 0))
+  const activeCats = sortedCats.filter((c) => (categoryCounts[c.value] ?? 0) > 0)
+  const shownCats = (activeCats.length > 0 ? activeCats : sortedCats).slice(0, 8)
 
-  const steps = [
-    { n: 1, icon: Search, title: 'Search', desc: 'Find properties that fit your needs' },
-    { n: 2, icon: MessageCircle, title: 'Contact', desc: 'Chat with EboHomes to arrange viewings.' },
-    { n: 3, icon: ClipboardCheck, title: 'Inspect', desc: 'Schedule viewing and inspect' },
-    { n: 4, icon: Key, title: 'Move In', desc: 'Sign agreement and move in' },
+  const chips = [
+    { label: 'Under ₦100k', href: '/search?maxPrice=100000' },
+    { label: '2 bedroom', href: '/search?bedrooms=2' },
+    ...activeCats.slice(0, 4).map((c) => ({ label: c.label, href: '/search?type=' + encodeURIComponent(c.value) })),
   ]
 
-  const TRUST_MINI = [
-    { icon: ShieldCheck, label: 'Reviewed Listings' },
-    { icon: MessageCircle, label: 'Secure Messaging' },
-    { icon: BadgeCheck, label: 'Trusted Platform' },
-    { icon: Headphones, label: '24/7 Support' },
-  ]
+  const trustItems = [
+    stats.properties > 0 ? (
+      <>
+        <CountUp to={stats.properties} /> live listings
+      </>
+    ) : null,
+    stats.landlords > 0 ? (
+      <>
+        <CountUp to={stats.landlords} /> verified landlords
+      </>
+    ) : null,
+    <>Every listing reviewed</>,
+    <>Pay only through EboHomes</>,
+  ].filter(Boolean) as React.ReactNode[]
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <Header />
 
       <main className="flex-1">
-        {/* Hero */}
-        <section>
-          <div className="relative isolate overflow-hidden">
-            <HeroBackground />
-            {/* Dark overlay so text stays readable on every photo */}
-            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/60 via-black/45 to-black/70" />
-
-            <div className="relative z-10 mx-auto max-w-3xl px-4 pb-32 pt-14 text-center sm:px-6 md:pb-40 md:pt-24 lg:px-8">
-              <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/25 bg-black/20 px-4 py-1.5 text-sm font-medium text-white">
-                <ShieldCheck size={16} className="text-emerald-300" />
-                Reviewed Rentals. Real People.
-              </span>
-              <h1 className="text-balance text-4xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Find Verified Homes in <span className="text-emerald-300">Ebonyi State</span>
-              </h1>
-              <p className="mx-auto mt-4 max-w-xl text-pretty text-base text-white/90 md:text-lg">
-                A safer way to find and rent properties in Ebonyi State, with every listing reviewed before it goes live.
-              </p>
-              <InstallButton variant="hero" />
+        {/* ---------- Hero ---------- */}
+        <section className="relative isolate overflow-hidden">
+          <HeroImage />
+          <div className="relative z-10 mx-auto max-w-7xl px-4 pb-10 pt-16 sm:px-6 md:pb-14 md:pt-28 lg:px-8">
+            <div className="max-w-2xl">
+              <HeroIn>
+                <h1 className="text-balance text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
+                  Find a home in Ebonyi State you can trust.
+                </h1>
+              </HeroIn>
+              <HeroIn delay={0.1}>
+                <p className="mt-5 max-w-lg text-pretty text-base leading-relaxed text-white/80 md:text-lg">
+                  Every listing is reviewed. Viewings, applications and payments all go through EboHomes, so you never deal with strangers.
+                </p>
+              </HeroIn>
             </div>
-          </div>
 
-          {/* Search: one row on laptops, stacked on phones. Overlaps the bottom of the hero. */}
-          <div className="relative z-20 mx-auto -mt-24 max-w-5xl px-4 sm:px-6 md:-mt-28 lg:px-8">
-            <form
-              onSubmit={handleSearch}
-              className="grid gap-3 rounded-2xl border border-border bg-card p-4 shadow-xl sm:grid-cols-2 md:p-5 lg:grid-cols-[1.4fr_1fr_1.3fr_auto] lg:items-end lg:gap-4"
-            >
-              <div>
-                <label htmlFor="home-location" className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                  <MapPin size={14} className="text-primary" />
-                  Location
-                </label>
-                <input
-                  id="home-location"
-                  type="text"
-                  list="home-location-options"
-                  placeholder="Where are you looking?"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <datalist id="home-location-options">
-                  {locationSuggestions.map((s) => (
-                    <option key={s} value={s} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <label htmlFor="home-type" className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                  <HomeIcon size={14} className="text-primary" />
-                  Property Type
-                </label>
-                <div className="relative">
-                  <select
-                    id="home-type"
-                    value={propertyType}
-                    onChange={(e) => setPropertyType(e.target.value)}
-                    className="h-12 w-full appearance-none rounded-xl border border-border bg-background pl-3 pr-9 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">Any Type</option>
-                    {CATEGORIES.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                </div>
-              </div>
-
-              <div className="sm:col-span-2 lg:col-span-1">
-                <span className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                  <Tag size={14} className="text-primary" />
-                  Budget
-                </span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    aria-label="Minimum price"
-                    placeholder="Min Price"
-                    value={minPrice}
-                    onChange={(e) => setMinPrice(e.target.value)}
-                    className="h-12 w-full min-w-0 rounded-xl border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                  <span className="text-sm text-muted-foreground">–</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    aria-label="Maximum price"
-                    placeholder="Max Price"
-                    value={maxPrice}
-                    onChange={(e) => setMaxPrice(e.target.value)}
-                    className="h-12 w-full min-w-0 rounded-xl border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-              </div>
-
-              <Button
-                type="submit"
-                disabled={isSearching}
-                className="h-12 rounded-xl bg-primary px-8 font-semibold text-primary-foreground hover:bg-primary/90 sm:col-span-2 lg:col-span-1"
+            <HeroIn delay={0.25} className="mt-8 md:mt-12">
+              <form
+                onSubmit={handleSearch}
+                className="grid gap-3 rounded-2xl bg-card p-3 shadow-2xl ring-1 ring-black/5 sm:grid-cols-2 md:p-4 lg:grid-cols-[1.5fr_1fr_1.2fr_auto] lg:items-end lg:gap-3"
               >
-                {isSearching ? (
-                  <>
-                    <Loader2 size={18} className="mr-2 animate-spin" />
-                    Searching
-                  </>
-                ) : (
-                  <>
-                    <Search size={18} className="mr-2" />
-                    Search Homes
-                  </>
-                )}
-              </Button>
-            </form>
+                <div>
+                  <label htmlFor="home-location" className="mb-1.5 block px-0.5 text-xs font-medium text-muted-foreground">
+                    Location
+                  </label>
+                  <input
+                    id="home-location"
+                    type="text"
+                    list="home-location-options"
+                    placeholder="Where are you looking?"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className={inputClass}
+                  />
+                  <datalist id="home-location-options">
+                    {locationSuggestions.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
+                </div>
 
-            {/* Quick searches: only property types that really have listings, plus budget shortcuts */}
-            <div className="-mx-4 sm:mx-0 mt-4 flex gap-2 overflow-x-auto px-4 sm:px-0 sm:flex-wrap sm:justify-center sm:overflow-visible pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {[
-                { label: 'Under ₦100k', href: '/search?maxPrice=100000' },
-                { label: '₦100k – ₦300k', href: '/search?minPrice=100000&maxPrice=300000' },
-                { label: '2 Bedroom', href: '/search?bedrooms=2' },
-                ...CATEGORIES.filter((c) => (categoryCounts[c.value] ?? 0) > 0)
-                  .slice(0, 5)
-                  .map((c) => ({ label: c.label, href: '/search?type=' + encodeURIComponent(c.value) })),
-              ].map((chip) => (
-                <button
-                  key={chip.label}
-                  type="button"
-                  onClick={() => router.push(chip.href)}
-                  className="shrink-0 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:border-primary hover:text-primary"
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Safety strip */}
-        <section className="mx-auto max-w-5xl px-4 pt-5 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
-            <Lock size={18} className="shrink-0 text-primary" />
-            <p><span className="font-bold">Never pay outside EboHomes.</span> Viewings, applications and payments all go through us.</p>
-          </div>
-
-          {recentSearches.length > 0 && (
-            <div className="mt-6">
-              <h2 className="text-base font-bold text-foreground md:text-lg">Your recent searches</h2>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {recentSearches.map((r) => (
-                  <div key={r.query} className="flex items-center gap-1 rounded-lg border border-border bg-secondary/60 pl-3">
-                    <Link href={`/search?${r.query}`} className="py-2 text-sm font-medium text-primary">{r.label}</Link>
-                    <button type="button" onClick={() => removeRecentSearch(r.query)} aria-label={`Remove ${r.label}`} className="px-2 py-2 text-muted-foreground hover:text-foreground">
-                      <X size={14} />
-                    </button>
+                <div>
+                  <label htmlFor="home-type" className="mb-1.5 block px-0.5 text-xs font-medium text-muted-foreground">
+                    Property type
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="home-type"
+                      value={propertyType}
+                      onChange={(e) => setPropertyType(e.target.value)}
+                      className={`${inputClass} appearance-none pr-9`}
+                    >
+                      <option value="">Any type</option>
+                      {CATEGORIES.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   </div>
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <span className="mb-1.5 block px-0.5 text-xs font-medium text-muted-foreground">Budget per month (₦)</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      aria-label="Minimum price"
+                      placeholder="Min"
+                      value={minPrice}
+                      onChange={(e) => setMinPrice(e.target.value)}
+                      className={`${inputClass} min-w-0`}
+                    />
+                    <span className="text-muted-foreground">–</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      aria-label="Maximum price"
+                      placeholder="Max"
+                      value={maxPrice}
+                      onChange={(e) => setMaxPrice(e.target.value)}
+                      className={`${inputClass} min-w-0`}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSearching}
+                  className="flex h-12 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:scale-[0.98] disabled:opacity-70 sm:col-span-2 lg:col-span-1"
+                >
+                  {isSearching ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
+                  {isSearching ? 'Searching' : 'Search homes'}
+                </button>
+              </form>
+
+              <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {chips.map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => router.push(chip.href)}
+                    className="shrink-0 rounded-full border border-white/25 bg-white/10 px-4 py-1.5 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/20"
+                  >
+                    {chip.label}
+                  </button>
                 ))}
               </div>
-            </div>
-          )}
 
-          {loadError && (
-            <div className="mt-6 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground">
-              We could not load properties right now. Check your connection and{' '}
-              <button type="button" onClick={() => window.location.reload()} className="font-semibold text-primary underline">try again</button>.
-            </div>
-          )}
+              {recentSearches.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/70">
+                  <span>Recent:</span>
+                  {recentSearches.map((r) => (
+                    <span key={r.query} className="inline-flex items-center gap-1">
+                      <Link href={`/search?${r.query}`} className="underline-offset-4 hover:text-white hover:underline">
+                        {r.label}
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => persistRecent(recentSearches.filter((x) => x.query !== r.query))}
+                        aria-label={`Remove ${r.label}`}
+                        className="hover:text-white"
+                      >
+                        <X size={13} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </HeroIn>
+          </div>
         </section>
 
-        {/* Featured Properties */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 md:py-8">
-          <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className="text-amber-500 text-xl">★</span>
-            <h2 className="text-xl md:text-3xl font-bold text-foreground">Recommended for you</h2>
-            <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-2.5 py-1 rounded-full">
-              Featured
-            </span>
+        {/* ---------- Trust bar: the one place trust is stated as facts ---------- */}
+        <div className="border-b border-border bg-card">
+          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-x-6 gap-y-3 px-4 py-4 sm:px-6 md:flex md:items-center md:justify-between lg:px-8">
+            {trustItems.map((node, i) => (
+              <p key={i} className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                <span>{node}</span>
+              </p>
+            ))}
           </div>
-          <p className="text-muted-foreground text-sm mb-5">Featured homes, reviewed before they go live</p>
+        </div>
 
+        {loadError && (
+          <div className="mx-auto mt-6 max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground">
+              We could not load properties right now. Check your connection and{' '}
+              <button type="button" onClick={() => window.location.reload()} className="font-semibold text-primary underline">
+                try again
+              </button>
+              .
+            </div>
+          </div>
+        )}
+
+        {/* Signed-in dashboard (renders nothing for visitors) */}
+        <SignedInHome />
+
+        {/* ---------- Featured ---------- */}
+        <Section>
+          <SectionHead title="Featured homes" sub="Hand-picked listings, reviewed before they went live." href="/search" />
           {loading ? (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex gap-4 overflow-hidden">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="bg-card rounded-lg overflow-hidden border border-border animate-pulse h-64" />
+                <div key={i} className="h-80 w-64 shrink-0 animate-pulse rounded-2xl bg-muted sm:w-72" />
               ))}
             </div>
           ) : featured.length === 0 ? (
-            <div className="bg-card border border-border rounded-lg p-8 text-center text-muted-foreground text-sm">
-              No featured properties yet.
+            <div className="rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+              No featured homes right now.{' '}
+              <Link href="/search" className="font-semibold text-primary">
+                Browse all listings
+              </Link>
             </div>
           ) : (
-            <FeaturedMarquee items={featured} />
+            <Scroller>
+              {featured.map((l) => (
+                <div key={l.id} className="w-[78%] shrink-0 snap-start sm:w-72">
+                  <ListingCard {...cardProps(l)} />
+                </div>
+              ))}
+            </Scroller>
           )}
-        </section>
+        </Section>
 
-        {/* Signed-in dashboard: tenant or landlord sections (nothing for visitors) */}
-        <SignedInHome />
+        {/* ---------- Browse by type ---------- */}
+        <Section className="pt-0 md:pt-0">
+          <SectionHead title="Browse by property type" href="/search" cta="All types" />
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+            {shownCats.map((cat) => {
+              const n = categoryCounts[cat.value] ?? 0
+              return (
+                <Link
+                  key={cat.value}
+                  href={'/search?type=' + encodeURIComponent(cat.value)}
+                  className="group flex h-full flex-col justify-between gap-6 rounded-2xl border border-border bg-card p-4 transition duration-300 hover:border-primary/40 hover:shadow-lg md:p-5"
+                >
+                  <cat.icon size={22} className="text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground md:text-base">{cat.label}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {n} {n === 1 ? 'listing' : 'listings'}
+                    </p>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </Section>
 
-        {/* Recently Added */}
+        {/* ---------- Newest ---------- */}
         {(loading || recent.length > 0) && (
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 md:py-5">
+          <Section className="pt-0 md:pt-0">
+            <SectionHead title="Recently added" sub="The newest homes on EboHomes." href="/search" />
             {loading ? (
-              <div className="h-64 animate-pulse rounded-3xl bg-muted/60" />
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-80 animate-pulse rounded-2xl bg-muted" />
+                ))}
+              </div>
             ) : (
-              <RecentMarquee items={recent} />
+              <div className="grid gap-4 sm:grid-cols-2 md:gap-6 lg:grid-cols-3">
+                {recent.map((l) => (
+                  <ListingCard key={l.id} {...cardProps(l)} />
+                ))}
+              </div>
             )}
-          </section>
+          </Section>
         )}
 
-        {/* Explore by area: real counts from approved listings */}
+        {/* ---------- Areas ---------- */}
         {areas.length > 0 && (
-          <section className="mx-auto max-w-7xl px-4 py-5 sm:px-6 md:py-8 lg:px-8">
-            <SectionHead title="Explore by area" sub="Real listing counts. Tap an area to see its properties." onClick={() => router.push('/search')} cta="All areas" />
-            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+          <Section className="pt-0 md:pt-0">
+            <SectionHead title="Explore by area" sub="Counts come from approved listings." href="/search" cta="All areas" />
+            <div className="grid gap-x-12 md:grid-cols-2">
               {areas.slice(0, 8).map((a) => (
                 <Link
                   key={a.name}
                   href={`/search?location=${encodeURIComponent(a.name)}`}
-                  className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4 transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md sm:p-5"
+                  className="group flex items-center justify-between border-b border-border py-4 transition-colors hover:border-primary/50"
                 >
-                  <p className="text-4xl font-extrabold leading-none text-foreground sm:text-5xl">{a.count}</p>
-                  <div className="mt-6">
-                    <p className="line-clamp-1 text-base font-bold text-foreground">{a.name}</p>
-                    <p className="text-xs text-muted-foreground">{a.count === 1 ? 'property' : 'properties'} available</p>
-                    <p className="mt-2 inline-flex items-center text-sm font-semibold text-primary">Explore <ChevronRight size={15} /></p>
-                  </div>
+                  <span className="flex items-center gap-3 text-base font-medium text-foreground">
+                    <MapPin size={16} className="text-primary" />
+                    <span className="line-clamp-1 capitalize">{a.name}</span>
+                  </span>
+                  <span className="flex items-center gap-3 text-sm text-muted-foreground">
+                    {a.count} {a.count === 1 ? 'property' : 'properties'}
+                    <ArrowRight size={16} className="transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+                  </span>
                 </Link>
               ))}
             </div>
-          </section>
+          </Section>
         )}
 
-        {/* Homes with videos: only appears when real videos exist */}
+        {/* ---------- Video tours (only when real videos exist) ---------- */}
         {videos.length > 0 && (
-          <section className="mx-auto max-w-7xl px-4 py-5 sm:px-6 md:py-8 lg:px-8">
-            <SectionHead title="Homes with videos" sub="Walk through the real property before you request a viewing." />
-            <div className="-mx-4 mt-5 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Section className="pt-0 md:pt-0">
+            <SectionHead title="Video tours" sub="See the real property before you request a viewing." />
+            <Scroller>
               {videos.map((l) => (
-                <Link key={l.id} href={`/listing/${l.id}`} className="w-[72%] shrink-0 snap-start overflow-hidden rounded-xl border border-border bg-card sm:w-[46%] md:w-[31%]">
-                  <div className="relative bg-black">
-                    <video src={`${l.video_url}#t=0.5`} preload="metadata" muted playsInline className="aspect-video w-full object-cover" />
-                    <span className="absolute inset-0 flex items-center justify-center">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black"><Play size={22} className="ml-0.5 fill-current" /></span>
+                <Link
+                  key={l.id}
+                  href={`/listing/${l.id}`}
+                  className="group w-[80%] shrink-0 snap-start overflow-hidden rounded-2xl border border-border bg-card sm:w-80"
+                >
+                  <div className="relative overflow-hidden bg-black">
+                    <video
+                      src={`${l.video_url}#t=0.5`}
+                      preload="metadata"
+                      muted
+                      playsInline
+                      className="aspect-video w-full object-cover transition duration-500 group-hover:scale-105"
+                    />
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/10">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/95 text-black shadow-lg">
+                        <Play size={20} className="ml-0.5 fill-current" />
+                      </span>
                     </span>
                   </div>
-                  <div className="p-3">
-                    <p className="font-extrabold text-primary">{naira(l.price_monthly)}<span className="text-[11px] font-medium text-muted-foreground"> /month</span></p>
-                    <p className="line-clamp-1 text-sm font-semibold text-foreground">{l.title || l.property_type}</p>
+                  <div className="p-4">
+                    <p className="font-semibold text-primary">
+                      {naira(l.price_monthly)}
+                      <span className="text-xs font-normal text-muted-foreground"> /month</span>
+                    </p>
+                    <p className="mt-0.5 line-clamp-1 text-sm font-medium text-foreground">{l.title ?? l.property_type}</p>
                     <p className="line-clamp-1 text-xs text-muted-foreground">{l.location_text}</p>
                   </div>
                 </Link>
               ))}
-            </div>
-          </section>
+            </Scroller>
+          </Section>
         )}
 
-        {/* A safer way to find and rent homes (replaces "See More Properties") */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="relative isolate overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 text-white">
-            <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.2fr_2fr_auto] lg:items-center">
-              <h3 className="text-2xl font-extrabold leading-tight sm:text-3xl">A safer way to find and rent homes.</h3>
-              <div className="grid gap-4 sm:grid-cols-3">
-                {[
-                  { icon: BadgeCheck, title: 'Reviewed listings', text: 'Checked before they go live' },
-                  { icon: ShieldCheck, title: 'Inspected homes', text: 'Look for the Inspected badge' },
-                  { icon: Headphones, title: 'Support', text: 'Message EboHomes any time' },
-                ].map((p) => (
-                  <div key={p.title} className="flex items-start gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
-                      <p.icon size={18} />
-                    </span>
-                    <div>
-                      <p className="text-sm font-bold">{p.title}</p>
-                      <p className="text-xs text-white/70">{p.text}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => router.push('/search')}
-                className="inline-flex w-fit items-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-emerald-950 hover:bg-amber-300"
-              >
-                <Search size={16} /> Search properties
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* Property Types */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 md:py-8">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <h2 className="text-xl md:text-3xl font-bold text-foreground">Browse by property type</h2>
-              <p className="text-muted-foreground text-sm mt-1">Most popular first.</p>
-            </div>
-            <button
-              onClick={() => router.push('/search')}
-              className="shrink-0 text-sm font-semibold text-primary hover:underline"
-            >
-              View all →
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {sortedCats.slice(0, 4).map((cat) => (
-              <button
-                key={cat.value}
-                onClick={() => router.push('/search?type=' + encodeURIComponent(cat.value))}
-                className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                  <cat.icon size={22} className="text-primary" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-foreground">{cat.label}</span>
-                  <span className="block text-xs text-muted-foreground">{categoryCounts[cat.value] ?? 0} listings</span>
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {sortedCats.slice(4).map((cat) => (
-              <button
-                key={cat.value}
-                onClick={() => router.push('/search?type=' + encodeURIComponent(cat.value))}
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-              >
-                <cat.icon size={15} className="text-primary" />
-                {cat.label}
-                <span className="text-xs text-muted-foreground">{categoryCounts[cat.value] ?? 0}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* How It Works */}
-        <HowItWorks />
-
-        {/* Why Choose EboHomes */}
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10">
-          <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
-            <div className="relative">
-              <img
-                src="/hero.jpg"
-                alt="Verified home in Ebonyi State"
-                className="rounded-2xl object-cover w-full h-56 md:h-[440px]"
-              />
-              {stats.landlords > 0 && (
-                <div className="absolute -bottom-6 -right-2 sm:-right-6 bg-card border border-border rounded-xl px-5 py-4 shadow-lg">
-                  <p className="text-2xl font-extrabold text-foreground"><CountUp to={stats.landlords} />+</p>
-                  <p className="text-xs text-muted-foreground max-w-[140px]">Verified landlords ready to rent to you</p>
+        {/* ---------- How it works (a real sequence, so numbered) ---------- */}
+        <Section id="how-it-works" className="border-t border-border">
+          <SectionHead title="From search to move-in in four steps" />
+          <ol className="grid gap-10 md:grid-cols-4 md:gap-8">
+            {STEPS.map((s, i) => (
+              <li key={s.title} className="list-none">
+                <div className="mb-5 flex items-center gap-4">
+                  <span className="text-sm font-semibold tabular-nums text-primary">0{i + 1}</span>
+                  <span className="h-px flex-1 bg-border" />
+                  <s.icon size={20} className="text-primary" />
                 </div>
-              )}
-              {stats.properties > 0 && (
-                <div className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-bold text-primary shadow">
-                  <CountUp to={stats.properties} /> live listings
-                </div>
-              )}
-            </div>
+                <h3 className="text-lg font-semibold text-foreground">{s.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.desc}</p>
+              </li>
+            ))}
+          </ol>
+        </Section>
 
+        {/* ---------- Why EboHomes (the one dark block on the page) ---------- */}
+        <section className="bg-emerald-950 text-white">
+          <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 md:py-24 lg:grid-cols-[1fr_1.4fr] lg:gap-20 lg:px-8">
             <div>
-              <span className="text-primary text-xs font-semibold tracking-wide uppercase">Our promise</span>
-              <h2 className="text-2xl md:text-4xl font-bold text-foreground mt-2 mb-4">
-                Why trust <span className="text-primary">EboHomes?</span>
+              <h2 className="text-balance text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
+                Renting shouldn&apos;t feel like a risk.
               </h2>
-              <p className="text-muted-foreground text-sm mb-8 max-w-md">
-                We built EboHomes because finding a home in Ebonyi State shouldn't mean risking a scam. Here's what that actually means for you.
+              <p className="mt-5 max-w-md text-base leading-relaxed text-white/70">
+                Finding a home in Ebonyi State shouldn&apos;t mean risking a scam. This is what we do about it.
               </p>
-              <ul className="space-y-5">
-                {WHY_CHOOSE.map((item) => (
-                  <li key={item.title} className="flex gap-3">
-                    <CheckCircle2 size={20} className="text-primary shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-foreground text-sm">{item.title}</p>
-                      <p className="text-muted-foreground text-sm">{item.desc}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <Link href="/about" className="group mt-8 inline-flex items-center gap-2 text-sm font-semibold text-amber-300">
+                About EboHomes
+                <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </div>
+
+            <div className="grid gap-x-10 gap-y-9 sm:grid-cols-2">
+              {PROMISES.map((p) => (
+                <div key={p.title}>
+                  <p.icon size={22} className="text-emerald-300" />
+                  <h3 className="mt-4 text-lg font-semibold">{p.title}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-white/65">{p.text}</p>
+                </div>
+              ))}
             </div>
           </div>
         </section>
 
-        {/* Trusted by Students & Professionals (rolling ticker) */}
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 md:py-5">
-          <InstitutionsTicker />
-        </section>
-
-        {/* Why EboHomes: trust cards */}
-        <section className="mx-auto max-w-6xl px-4 py-5 sm:px-6 md:py-8 lg:px-8">
-          <SectionHead title="Why people rent through EboHomes" />
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            {TRUST.map(({ icon: Icon, title, text }) => (
-              <div key={title} className="flex gap-4 rounded-2xl border border-border bg-card p-5">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon size={22} /></span>
-                <div>
-                  <h3 className="font-bold text-foreground">{title}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{text}</p>
+        {/* ---------- Institutions (static, quiet) ---------- */}
+        <Section className="py-10 md:py-14">
+          <div className="flex flex-col items-center gap-6 text-center md:flex-row md:justify-between md:text-left">
+            <p className="max-w-xs text-sm text-muted-foreground">Used by students and staff from leading institutions in Ebonyi State.</p>
+            <div className="flex items-center gap-8 md:gap-12">
+              {INSTITUTIONS.map((i) => (
+                <div key={i.short} className="flex items-center gap-3 opacity-80 grayscale transition hover:opacity-100 hover:grayscale-0">
+                  <img src={i.logo} alt="" className="h-10 w-10 object-contain" />
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-foreground">{i.short}</p>
+                    <p className="hidden text-xs text-muted-foreground sm:block">{i.name}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </section>
+        </Section>
 
-        {/* Founder */}
+        {/* ---------- Founder ---------- */}
         <FounderSection />
 
-        {/* FAQ */}
-        <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-4 py-5 sm:px-6 md:py-8">
-          <SectionHead title="Frequently asked questions" />
-          <div className="mt-5"><FaqList /></div>
-          <p className="mt-4 text-center text-sm text-muted-foreground">
+        {/* ---------- FAQ ---------- */}
+        <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-4 py-12 sm:px-6 md:py-20">
+          <SectionHead title="Questions, answered" />
+          <FaqList />
+          <p className="mt-6 text-sm text-muted-foreground">
             Still stuck?{' '}
-            <Link href="/contact" className="font-semibold text-primary hover:underline">Contact EboHomes support</Link>
+            <Link href="/contact" className="font-semibold text-primary hover:underline">
+              Contact EboHomes support
+            </Link>
           </p>
         </section>
 
-        {/* EboHomes AI: coming soon */}
-        <AiComingSoon />
-
-        {/* App install call-to-action */}
-        <InstallPromoSection />
-
-        {/* Featured Upgrade Banner with Carousel */}
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 md:py-5">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-primary to-emerald-900 shadow-2xl">
-            <div
-              className="absolute inset-0 opacity-[0.07]"
-              style={{
-                backgroundImage: 'radial-gradient(circle, #fbbf24 1px, transparent 1px)',
-                backgroundSize: '24px 24px',
-              }}
-            />
-
-            <div className="relative z-10 grid md:grid-cols-2 gap-10 md:gap-12 items-center p-8 md:p-14">
+        {/* ---------- Two-audience CTA ---------- */}
+        <Section className="pt-0 md:pt-0">
+          <div className="grid gap-4 md:grid-cols-2 md:gap-6">
+            <div className="flex h-full flex-col justify-between gap-10 rounded-2xl border border-border bg-card p-8 md:p-10">
               <div>
-                <span className="inline-flex items-center gap-1.5 bg-white/10 backdrop-blur-md border border-amber-400/30 text-amber-300 text-xs font-bold px-4 py-1.5 rounded-full mb-6 tracking-wide">
-                  <Crown size={13} className="text-amber-400" />
-                  FEATURED LISTING
-                </span>
-
-                <h3 className="text-3xl md:text-5xl font-extrabold text-white leading-tight mb-4">
-                  List Your Property as{' '}
-                  <span className="bg-gradient-to-r from-amber-300 to-amber-500 bg-clip-text text-transparent">
-                    Featured
-                  </span>
-                </h3>
-
-                <p className="text-white/70 text-sm md:text-base mb-6 max-w-sm leading-relaxed">
-                  Increase visibility, get more inquiries, and close deals faster by upgrading to a Featured Listing.
+                <h3 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">Looking for a home?</h3>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                  Browse reviewed properties across Ebonyi State and let EboHomes handle viewings, applications and payments.
                 </p>
-
-                <div className="inline-flex items-center gap-2.5 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-3 mb-7">
-                  <div className="w-8 h-8 rounded-full bg-amber-400/15 flex items-center justify-center shrink-0">
-                    <Eye size={15} className="text-amber-400" />
-                  </div>
-                  <p className="text-xs md:text-sm text-white/90">
-                    Featured listings get up to <span className="font-bold text-amber-400">5× more views</span>
-                  </p>
-                </div>
-
-                <Button
-                  onClick={() => router.push(featured.length > 0 ? `/listing/${featured[featuredIndex].id}/feature` : '/dashboard/listings')}
-                  className="bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-amber-950 font-bold px-7 py-6 rounded-full shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.03] transition-all duration-300"
-                >
-                  Upgrade to Featured
-                  <ChevronRight size={18} className="ml-1" />
-                </Button>
               </div>
+              <Link
+                href="/search"
+                className="inline-flex w-fit items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:scale-[0.98]"
+              >
+                <Search size={16} /> Browse homes
+              </Link>
+            </div>
 
-              <div className="relative">
-                {featured.length > 0 && (
-                  <div className="relative bg-white rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-500">
-                    <div className="relative h-52 md:h-60">
-                      <img
-                        src={img(featured[featuredIndex]?.photos?.[0], 800)}
-                        alt={featured[featuredIndex]?.property_type ?? 'Featured property'}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
-                      <span className="absolute top-3.5 left-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 text-xs font-bold px-3 py-1.5 rounded-full shadow">
-                        Featured
-                      </span>
-                      <button
-                        aria-label="Save property"
-                        className="absolute top-3.5 right-3.5 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow hover:bg-white hover:scale-110 transition-all duration-200"
-                      >
-                        <Heart size={16} className="text-foreground" />
-                      </button>
-                    </div>
-
-                    <div className="p-5">
-                      <p className="text-xl font-extrabold text-primary mb-1.5">
-                        {naira(featured[featuredIndex]?.price_monthly)}
-                        <span className="text-sm font-medium text-muted-foreground">/month</span>
-                      </p>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1 mb-3">
-                        <MapPin size={13} />
-                        {featured[featuredIndex]?.location_text}
-                      </p>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground border-t border-border pt-3">
-                        <span className="flex items-center gap-1.5">
-                          <HomeIcon size={13} /> {featured[featuredIndex]?.property_type}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <Bed size={13} /> {featured[featuredIndex]?.bedrooms} Beds
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {featured.length > 1 && (
-                  <>
-                    <button
-                      aria-label="Previous featured property"
-                      onClick={() => setFeaturedIndex((i) => (i - 1 + featured.length) % featured.length)}
-                      className="absolute top-1/2 -translate-y-1/2 -left-4 md:-left-5 w-10 h-10 rounded-full bg-white/95 backdrop-blur-md shadow-lg flex items-center justify-center hover:bg-white hover:scale-110 transition-all duration-200"
-                    >
-                      <ChevronLeft size={18} className="text-foreground" />
-                    </button>
-                    <button
-                      aria-label="Next featured property"
-                      onClick={() => setFeaturedIndex((i) => (i + 1) % featured.length)}
-                      className="absolute top-1/2 -translate-y-1/2 -right-4 md:-right-5 w-10 h-10 rounded-full bg-white/95 backdrop-blur-md shadow-lg flex items-center justify-center hover:bg-white hover:scale-110 transition-all duration-200"
-                    >
-                      <ChevronRight size={18} className="text-foreground" />
-                    </button>
-
-                    <div className="flex justify-center gap-1.5 mt-5">
-                      {featured.map((_, i) => (
-                        <button
-                          key={i}
-                          aria-label={`Go to featured property ${i + 1}`}
-                          onClick={() => setFeaturedIndex(i)}
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
-                            i === featuredIndex
-                              ? 'bg-gradient-to-r from-amber-300 to-amber-500 w-7'
-                              : 'bg-white/30 w-1.5 hover:bg-white/50'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
+            <div className="flex h-full flex-col justify-between gap-10 rounded-2xl bg-emerald-950 p-8 text-white md:p-10">
+              <div>
+                <h3 className="text-2xl font-semibold tracking-tight md:text-3xl">Own a property?</h3>
+                <p className="mt-3 text-sm leading-relaxed text-white/70">
+                  Reach tenants across Ebonyi State. Every listing is reviewed before it goes live, and EboHomes manages the viewings.
+                </p>
               </div>
+              <Link
+                href="/list-property"
+                className="inline-flex w-fit items-center gap-2 rounded-lg bg-amber-400 px-6 py-3 text-sm font-semibold text-emerald-950 transition hover:bg-amber-300 active:scale-[0.98]"
+              >
+                <Home size={16} /> List your property
+              </Link>
             </div>
           </div>
-        </section>
-
-        {/* Ready to Get Started */}
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-10">
-          <div className="relative overflow-hidden bg-gradient-to-br from-secondary/60 to-secondary/20 border border-border/60 rounded-3xl p-8 md:p-12 flex flex-col md:flex-row items-center gap-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-emerald-700 flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
-              <Home size={28} className="text-white" />
-            </div>
-
-            <div className="flex-1 text-center md:text-left">
-              <h3 className="text-xl md:text-2xl font-bold text-foreground mb-1.5">Ready to get started?</h3>
-              <p className="text-muted-foreground text-sm md:text-base">
-                List your property or explore verified properties across Ebonyi State.
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3 shrink-0 w-full md:w-auto">
-              <Button
-                onClick={() => router.push('/list-property')}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full px-7 py-6 shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-300"
-              >
-                <Home size={16} className="mr-2" />
-                List Your Property
-              </Button>
-              <Button
-                onClick={() => router.push('/search')}
-                variant="outline"
-                className="border-primary/40 text-primary hover:bg-primary/5 hover:border-primary font-semibold rounded-full px-7 py-6 hover:scale-[1.02] transition-all duration-300"
-              >
-                <Search size={16} className="mr-2" />
-                Browse Properties
-              </Button>
-            </div>
-          </div>
-        </section>
+        </Section>
       </main>
 
-    
       <Footer />
     </div>
   )
