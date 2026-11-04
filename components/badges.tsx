@@ -1,24 +1,25 @@
-import { CheckCircle } from 'lucide-react'
+import { CheckCircle, Clock } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 
 export function VerifiedBadge() {
   return (
-    <div className="flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1 rounded-full text-xs font-semibold">
-      <CheckCircle size={14} />
+    <Badge variant="verified">
+      <CheckCircle aria-hidden="true" />
       Verified
-    </div>
+    </Badge>
   )
 }
 
 export function FeaturedBadge() {
+  return <Badge variant="featured">Featured</Badge>
+}
+
+// Phase 3: for listings or landlords that are still under review.
+export function PendingVerificationBadge() {
   return (
-    <div
-      style={{
-        backgroundColor: 'var(--featured)',
-        color: 'white',
-      }}
-      className="px-3 py-1 rounded-full text-xs font-semibold"
-    >
-      Featured
-    </div>
+    <Badge variant="warning">
+      <Clock aria-hidden="true" />
+      Pending review
+    </Badge>
   )
 }
