@@ -1,3 +1,4 @@
+
 // Pure helpers for the "Trust and verification" block on the property details page.
 // They only read records the system already has. They never create or guess a verification.
 
