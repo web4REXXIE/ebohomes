@@ -71,7 +71,7 @@
   --secondary-foreground: #111827;
 
   --muted: #F3F4F6;
-  --muted-foreground: #6B7280;
+  --muted-foreground: #656C79;
 
   /* Soft green tint for hover/accent states */
   --accent: #E8F5EC;
@@ -208,4 +208,34 @@
 
 .animate-ebohomes-loading {
   animation: ebhomes-loading 1.5s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------
+   Mobile and accessibility fixes (unlayered on purpose, so they win over utility classes)
+   --------------------------------------------------------------------- */
+
+/* iPhone Safari zooms the whole page when you tap an input whose text is smaller than 16px.
+   On phones, keep every text field at 16px so the page never jumps. */
+@media (max-width: 767px) {
+  :where(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='submit']):not([type='button']), select, textarea) {
+    font-size: 16px;
+  }
+}
+
+/* The footer logo file has a solid black background. On the dark green footer that shows as a black box.
+   "screen" blending makes the black part disappear and keeps the white logo. */
+footer img[src='/logo-white.png'] {
+  mix-blend-mode: screen;
+}
+
+/* Respect "reduce motion" on every page: no looping or sliding animations, no smooth scrolling. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
