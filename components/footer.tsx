@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { MessageCircle, Shield, ChevronDown, Phone, Mail } from 'lucide-react'
-import { EBOHOMES_WHATSAPP, EBOHOMES_EMAIL } from '@/lib/contact'
+import { EBOHOMES_WHATSAPP, EBOHOMES_EMAIL, EBOHOMES_PHONE_DISPLAY } from '@/lib/contact'
 import { InstallButton } from '@/components/install-button'
 
 function FacebookIcon() {
@@ -153,7 +153,7 @@ function SocialRow() {
       </div>
       <div className="mt-4 space-y-2 text-sm text-white/70">
         <a href={`tel:+${EBOHOMES_WHATSAPP}`} className="flex items-center gap-2 hover:text-white transition-colors">
-          <Phone size={14} /> +{EBOHOMES_WHATSAPP}
+          <Phone size={14} /> {EBOHOMES_PHONE_DISPLAY}
         </a>
         <a href={`mailto:${EBOHOMES_EMAIL}`} className="flex items-center gap-2 hover:text-white transition-colors">
           <Mail size={14} /> {EBOHOMES_EMAIL}
@@ -180,7 +180,7 @@ export function Footer() {
               Find Homes. <span className="text-emerald-400">Skip the Stress.</span>
             </p>
             <p className="text-sm text-white/60 leading-relaxed mb-6 max-w-[220px]">
-              Connecting people with places they can trust.
+              Rental homes across Ebonyi State, Nigeria.
             </p>
             <div className="mb-6 md:mb-8"><SocialRow /></div>
             <InstallButton variant="footer" className="-mt-2 mb-6 md:-mt-3 md:mb-8" />
