@@ -43,7 +43,6 @@ const NAV_GROUPS = [
     title: 'Explore',
     links: [
       { href: '/search', label: 'Browse Properties' },
-      { href: '/search', label: 'Map & Locations' },
       { href: '/saved', label: 'Saved Properties' },
       { href: '/#how-it-works', label: 'How It Works' },
     ],
@@ -53,7 +52,10 @@ const NAV_GROUPS = [
     links: [
       { href: '/search?location=Abakaliki', label: 'Abakaliki' },
       { href: '/search?location=Abakaliki%20GRA', label: 'Abakaliki GRA' },
-      { href: '/search', label: 'All areas' },
+      { href: '/search?location=Ikwo', label: 'Ikwo (FUNAI area)' },
+      { href: '/search?location=Afikpo', label: 'Afikpo' },
+      { href: '/search?location=Onueke', label: 'Onueke' },
+      { href: '/search?location=Edda', label: 'Edda' },
     ],
   },
   {
@@ -245,7 +247,7 @@ export function Footer() {
                       className={`text-white/50 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
                     />
                   </button>
-                  <div className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-56 pb-4' : 'max-h-0'}`}>
+                  <div className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-72 pb-4' : 'max-h-0'}`}>
                     <ul className="space-y-3 text-sm text-white/70">
                       {group.links.map((link) => (
                         <li key={link.label}>
