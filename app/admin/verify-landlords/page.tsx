@@ -132,73 +132,43 @@ export default function VerifyLandlordsPage() {
     not_submitted: landlords.filter((l) => statusOf(l) === 'not_submitted').length,
   }
 
-  async function handleVerify(id: string) {
+  async function decide(id: string, decision: 'verify' | 'reject') {
     const target = landlords.find((l) => l.id === id)
     if (!target || missingItems(target).length > 0) {
       alert('This landlord has not submitted every required item.')
       return
     }
-    setUpdating(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const nowIso = new Date().toISOString()
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        verification_status: 'verified',
-        verified: true,
-        verification_reviewed_by: user?.id ?? null,
-        verification_reviewed_at: nowIso,
-        rejection_reason: null,
-      })
-      .eq('id', id)
-      .eq('role', 'landlord')
-
-    if (!error) {
-      setLandlords((prev) => prev.map((l) =>
-        l.id === id
-          ? { ...l, verification_status: 'verified', verified: true, verification_reviewed_at: nowIso, rejection_reason: null }
-          : l
-      ))
-    } else {
-      alert('Failed to verify: ' + error.message)
-    }
-    setUpdating(false)
-  }
-
-  async function handleReject(id: string) {
-    if (!rejectReason.trim()) {
+    const reason = rejectReason.trim()
+    if (decision === 'reject' && !reason) {
       alert('Please enter a rejection reason before rejecting.')
       return
     }
     setUpdating(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const nowIso = new Date().toISOString()
-    const reason = rejectReason.trim()
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        verification_status: 'rejected',
-        verified: false,
-        verification_reviewed_by: user?.id ?? null,
-        verification_reviewed_at: nowIso,
-        rejection_reason: reason,
-      })
-      .eq('id', id)
-
-    if (!error) {
-      setLandlords((prev) => prev.map((l) =>
-        l.id === id
-          ? { ...l, verification_status: 'rejected', verified: false, verification_reviewed_at: nowIso, rejection_reason: reason }
-          : l
-      ))
-      setRejectReason('')
-    } else {
-      alert('Failed to reject: ' + error.message)
+    // Server-side decision: checks admin, state and required items, and records the reviewer.
+    const { error } = await supabase.rpc('admin_decide_landlord_verification', {
+      p_landlord: id,
+      p_decision: decision,
+      p_reason: decision === 'reject' ? reason : null,
+    })
+    if (error) {
+      alert((decision === 'verify' ? 'Failed to verify: ' : 'Failed to reject: ') + error.message)
+      setUpdating(false)
+      return
     }
+    const nowIso = new Date().toISOString()
+    setLandlords((prev) => prev.map((l) =>
+      l.id === id
+        ? decision === 'verify'
+          ? { ...l, verification_status: 'verified', verified: true, verification_reviewed_at: nowIso, rejection_reason: null }
+          : { ...l, verification_status: 'rejected', verified: false, verification_reviewed_at: nowIso, rejection_reason: reason }
+        : l
+    ))
+    if (decision === 'reject') setRejectReason('')
     setUpdating(false)
   }
+
+  const handleVerify = (id: string) => decide(id, 'verify')
+  const handleReject = (id: string) => decide(id, 'reject')
 
   const cards = [
     { label: 'Pending Review', value: counts.pending, icon: Clock, tint: 'text-amber-600 bg-amber-50' },
