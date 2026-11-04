@@ -42,7 +42,6 @@ import { Footer } from '@/components/footer'
 import { InstallButton, InstallPromoSection } from '@/components/install-button'
 import { ListingCard } from '@/components/listing-card'
 import { SignedInHome } from '@/components/signed-in-home'
-import { TapFeedback } from '@/components/tap-feedback'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import useEmblaCarousel from 'embla-carousel-react'
@@ -837,9 +836,6 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Shows a ring + small press effect whenever a button or link is touched */}
-      <TapFeedback />
-
       <Header />
 
       <main className="flex-1">
@@ -1412,4 +1408,4 @@ export default function HomePage() {
       <Footer />
     </div>
   )
-      }
+    }
