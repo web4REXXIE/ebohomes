@@ -7,22 +7,7 @@ import {
   Share2,
   MessageCircle,
   ShieldCheck,
-  ShieldOff,
   Flag,
-  Calendar,
-  FileText,
-  Route,
-  Droplet,
-  Zap,
-  Wifi,
-  Lock,
-  Building2,
-  ChevronDown,
-  ChevronUp,
-  CheckCircle2,
-  AlertTriangle,
-  Leaf,
-  Home,
   Copy,
   Check,
   Send,
@@ -47,6 +32,15 @@ import {
 import { displayTitle } from '@/lib/property-display'
 import { cleanMediaUrls } from '@/lib/property-media'
 import { PropertyVideo } from '@/components/property-video'
+import { PropertyTrust } from '@/components/property-trust'
+import { identityState } from '@/lib/property-trust'
+import {
+  PropertyActionsBar,
+  PropertyActionsSidebar,
+} from '@/components/property-actions'
+import { decidePropertyActions } from '@/lib/property-actions'
+import { OPEN_STATUSES as APPLICATION_OPEN_STATUSES } from '@/lib/application-form'
+import { OPEN_STATUSES as VIEWING_OPEN_STATUSES } from '@/lib/viewing-status'
 
 const ListingLocation = dynamic(
   () =>
@@ -94,6 +88,26 @@ function formatDate(value?: string | null) {
   })
 }
 
+// Reads whether this tenant already saved this listing. Returns null if it could not be checked,
+// which is different from "not saved".
+async function checkSaved(
+  tenantId: string,
+  listingId: string
+): Promise<boolean | null> {
+  const { data, error } = await supabase
+    .from('saved_properties')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('listing_id', listingId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Failed to check saved property:', error.message)
+    return null
+  }
+  return !!data
+}
+
 export default function ListingDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -104,15 +118,24 @@ export default function ListingDetailPage() {
   const [landlord, setLandlord] = useState<any>(null)
   const [inspection, setInspection] = useState<any>(null)
   const [trust, setTrust] = useState<any>(null)
+  const [trustFailed, setTrustFailed] = useState(false)
+  const [inspectionFailed, setInspectionFailed] = useState(false)
   const [dates, setDates] = useState<{
     created_at: string | null
     updated_at: string | null
   }>({ created_at: null, updated_at: null })
-  const [inspectionExpanded, setInspectionExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const [saved, setSaved] = useState(false)
   const [savedBusy, setSavedBusy] = useState(false)
+  const [savedKnown, setSavedKnown] = useState(true)
+  const [saveMessage, setSaveMessage] = useState('')
+  const [onHold, setOnHold] = useState(false)
+  const [myApplication, setMyApplication] = useState<{
+    id: string
+    status: string
+  } | null>(null)
+  const [myViewing, setMyViewing] = useState<{ status: string } | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [showReportModal, setShowReportModal] = useState(false)
   const [notAvailable, setNotAvailable] = useState(false)
@@ -332,6 +355,7 @@ export default function ListingDetailPage() {
             .maybeSingle()
 
         if (!cancelled) {
+          setInspectionFailed(Boolean(inspectionError))
           if (inspectionError) {
             console.error(
               'Failed to load listing inspection:',
@@ -348,6 +372,7 @@ export default function ListingDetailPage() {
         )
 
         if (!cancelled) {
+          setTrustFailed(Boolean(trustError))
           if (trustError) {
             console.error(
               'Failed to load listing trust information:',
@@ -357,6 +382,21 @@ export default function ListingDetailPage() {
             setTrust(
               Array.isArray(trustRows) ? trustRows[0] ?? null : null
             )
+          }
+        }
+
+        // Is the property on hold? New applications and viewings are blocked in the
+        // database while it is. This only lets the page explain it before the tenant types.
+        const { data: holdData, error: holdError } = await supabase.rpc(
+          'listing_on_hold',
+          { p_listing: data.id }
+        )
+
+        if (!cancelled) {
+          if (holdError) {
+            console.error('Failed to check property hold:', holdError.message)
+          } else {
+            setOnHold(holdData === true)
           }
         }
 
@@ -374,22 +414,56 @@ export default function ListingDetailPage() {
         const uid = user?.id ?? null
         setUserId(uid)
 
-        if (uid) {
-          const { data: existing, error: savedError } = await supabase
-            .from('saved_properties')
-            .select('id')
-            .eq('tenant_id', uid)
-            .eq('listing_id', data.id)
-            .maybeSingle()
+        if (uid && data.landlord_id !== uid) {
+          const savedState = await checkSaved(uid, data.id)
 
           if (!cancelled) {
-            if (savedError) {
-              console.error(
-                'Failed to check saved property:',
-                savedError.message
-              )
+            if (savedState === null) {
+              setSavedKnown(false)
             } else {
-              setSaved(!!existing)
+              setSavedKnown(true)
+              setSaved(savedState)
+            }
+          }
+
+          // The tenant's own open application and viewing for this listing.
+          // Only their own rows are read, so no other tenant's data is involved.
+          const { data: appRows, error: appError } = await supabase
+            .from('applications')
+            .select('id, status')
+            .eq('listing_id', data.id)
+            .eq('tenant_id', uid)
+            .in('status', [...APPLICATION_OPEN_STATUSES])
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+          if (cancelled) return
+
+          if (appError) {
+            console.error('Failed to check your application:', appError.message)
+          } else if (appRows && appRows.length > 0) {
+            const app = appRows[0] as { id: string; status: string }
+            setMyApplication({ id: app.id, status: app.status })
+
+            const { data: viewingRows, error: viewingError } = await supabase
+              .from('viewings')
+              .select('id, status')
+              .eq('application_id', app.id)
+              .in('status', VIEWING_OPEN_STATUSES)
+              .order('created_at', { ascending: false })
+              .limit(1)
+
+            if (!cancelled) {
+              if (viewingError) {
+                console.error(
+                  'Failed to check your viewing:',
+                  viewingError.message
+                )
+              } else if (viewingRows && viewingRows.length > 0) {
+                setMyViewing({
+                  status: (viewingRows[0] as { status: string }).status,
+                })
+              }
             }
           }
         }
@@ -422,11 +496,39 @@ export default function ListingDetailPage() {
       return
     }
 
+    // The owner never saves their own listing.
+    if (listing.landlord_id === userId) return
+
     setSavedBusy(true)
     setPageError('')
+    setSaveMessage('')
 
     try {
-      if (saved) {
+      let isSaved = saved
+
+      // The first check failed earlier, so the heart may be wrong. Check again before acting.
+      if (!savedKnown) {
+        const state = await checkSaved(userId, listing.id)
+
+        if (state === null) {
+          setPageError(
+            'We could not check your saved list. Please try again.'
+          )
+          return
+        }
+
+        setSavedKnown(true)
+        setSaved(state)
+
+        if (state) {
+          setSaveMessage('This property is already in your saved list.')
+          return
+        }
+
+        isSaved = false
+      }
+
+      if (isSaved) {
         const { error } = await supabase
           .from('saved_properties')
           .delete()
@@ -442,21 +544,26 @@ export default function ListingDetailPage() {
         }
 
         setSaved(false)
+        setSaveMessage('Removed from your saved properties.')
       } else {
         const { error } = await supabase.from('saved_properties').insert({
           tenant_id: userId,
           listing_id: listing.id,
         })
 
-        if (error) {
+        // 23505 = already saved (unique rule on tenant and listing). Not a failure.
+        if (error && error.code !== '23505') {
           console.error('Failed to save property:', error.message)
-          setPageError(
-            'Could not save this property. Please try again.'
-          )
+          setPageError('Could not save this property. Please try again.')
           return
         }
 
         setSaved(true)
+        setSaveMessage(
+          error
+            ? 'This property is already in your saved list.'
+            : 'Saved. You can find it under Saved properties.'
+        )
       }
     } catch (error) {
       console.error('Unexpected save error:', error)
@@ -583,71 +690,18 @@ export default function ListingDetailPage() {
 
   const cleanedDescription = cleanDescription(listing.description ?? '')
 
-  const inspectionFields = inspection
-    ? [
-        {
-          key: 'road_condition',
-          label: 'Road',
-          icon: Route,
-          value: inspection.road_condition,
-          match: inspection.road_matches,
-        },
-        {
-          key: 'water_source',
-          label: 'Water',
-          icon: Droplet,
-          value: inspection.water_source,
-          match: inspection.water_matches,
-        },
-        {
-          key: 'electricity_notes',
-          label: 'Electricity',
-          icon: Zap,
-          value: inspection.electricity_notes,
-          match: inspection.electricity_matches,
-        },
-        {
-          key: 'network_notes',
-          label: 'Network',
-          icon: Wifi,
-          value: inspection.network_notes,
-          match: inspection.network_matches,
-        },
-        {
-          key: 'security_notes',
-          label: 'Security',
-          icon: Lock,
-          value: inspection.security_notes,
-          match: inspection.security_matches,
-        },
-        {
-          key: 'neighborhood_type',
-          label: 'Neighbourhood',
-          icon: Building2,
-          value: inspection.neighborhood_type,
-          match: null as boolean | null,
-        },
-      ].filter((field) => field.value)
-    : []
+  const isOwner =
+    !!userId && !!listing.landlord_id && listing.landlord_id === userId
 
-  const inspectionNotes = inspection
-    ? [
-        {
-          key: 'environment',
-          label: 'Environment',
-          icon: Leaf,
-          value: inspection.environment_notes,
-          match: inspection.environment_matches,
-        },
-        {
-          key: 'condition',
-          label: 'Condition',
-          icon: Home,
-          value: inspection.overall_notes || inspection.condition_notes,
-          match: inspection.condition_matches,
-        },
-      ].filter((field) => field.value)
-    : []
+  const actions = decidePropertyActions({
+    listingId: String(listing.id),
+    listingStatus: listing.status,
+    signedIn: !!userId,
+    isOwner,
+    onHold,
+    application: myApplication,
+    viewing: myViewing,
+  })
 
   /* ---------------- Main render ---------------- */
 
@@ -655,7 +709,7 @@ export default function ListingDetailPage() {
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:py-6">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-36 lg:py-6">
         <button
           type="button"
           onClick={() => {
@@ -688,7 +742,8 @@ export default function ListingDetailPage() {
                 title={displayTitle(listing)}
               />
 
-              {/* Save property */}
+              {/* Save property (hidden for the listing owner) */}
+              {actions.canSave && (
               <button
                 type="button"
                 onClick={handleToggleSave}
@@ -708,6 +763,7 @@ export default function ListingDetailPage() {
                   }
                 />
               </button>
+              )}
 
               {/* Share property */}
               <button
@@ -718,6 +774,20 @@ export default function ListingDetailPage() {
               >
                 <Share2 size={18} className="text-foreground" />
               </button>
+            </div>
+
+            {/* Save feedback: also read out by screen readers */}
+            <div
+              role="status"
+              aria-live="polite"
+              className={
+                saveMessage
+                  ? 'mb-4 flex items-center gap-2 text-xs text-primary'
+                  : 'sr-only'
+              }
+            >
+              {saveMessage && <Check size={14} aria-hidden />}
+              {saveMessage}
             </div>
 
             {/* Share feedback */}
@@ -777,201 +847,13 @@ export default function ListingDetailPage() {
 
             <PropertyAmenities amenities={listing.amenities} className="mb-6" />
 
-            {(trust?.identity_checked ||
-              trust?.documents_reviewed ||
-              inspection) && (
-              <div className="mb-6 flex flex-wrap gap-2">
-                {trust?.identity_checked && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
-                    <ShieldCheck size={14} />
-                    Identity checked
-                  </span>
-                )}
-
-                {trust?.documents_reviewed && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
-                    <FileText size={14} />
-                    Documents reviewed
-                  </span>
-                )}
-
-                {inspection && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
-                    <CheckCircle2 size={14} />
-                    Physically inspected by EboHomes.
-                  </span>
-                )}
-              </div>
-            )}
-
-            {inspection && (
-              <div className="mb-6 rounded-xl border-2 border-emerald-300 bg-emerald-50 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setInspectionExpanded((value) => !value)}
-                  aria-expanded={inspectionExpanded}
-                  className="w-full flex items-center justify-between gap-2.5 px-5 py-4 text-left"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center shrink-0">
-                      <ShieldCheck size={18} className="text-white" />
-                    </div>
-
-                    <div className="min-w-0">
-                      <p className="font-extrabold text-emerald-900 leading-tight">
-                        Physically inspected by EboHomes.
-                      </p>
-
-                      <p className="text-xs text-emerald-700 truncate">
-                        Inspected{' '}
-                        {new Date(inspection.inspected_at).toLocaleDateString(
-                          'en-NG',
-                          {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                          }
-                        )}{' '}
-                        · Tap for details
-                      </p>
-                    </div>
-                  </div>
-
-                  {inspectionExpanded ? (
-                    <ChevronUp
-                      size={20}
-                      className="text-emerald-700 shrink-0"
-                    />
-                  ) : (
-                    <ChevronDown
-                      size={20}
-                      className="text-emerald-700 shrink-0"
-                    />
-                  )}
-                </button>
-
-                {inspectionExpanded && (
-                  <div className="border-t border-emerald-200">
-                    {inspectionFields.length > 0 && (
-                      <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {inspectionFields.map(
-                          ({ key, label, icon: Icon, value, match }) => (
-                            <div
-                              key={key}
-                              className="flex items-start gap-2"
-                            >
-                              <Icon
-                                size={16}
-                                className="text-emerald-600 shrink-0 mt-0.5"
-                              />
-
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">
-                                    {label}
-                                  </p>
-
-                                  {match === true && (
-                                    <CheckCircle2
-                                      size={12}
-                                      className="text-emerald-600 shrink-0"
-                                    />
-                                  )}
-
-                                  {match === false && (
-                                    <AlertTriangle
-                                      size={12}
-                                      className="text-amber-600 shrink-0"
-                                    />
-                                  )}
-                                </div>
-
-                                <p className="text-sm text-emerald-950 font-medium">
-                                  {value}
-                                </p>
-
-                                {match === false && (
-                                  <p className="text-[11px] text-amber-700 mt-0.5">
-                                    Differs from listing description
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        )}
-                      </div>
-                    )}
-
-                    {inspectionNotes.length > 0 && (
-                      <div className="px-5 pb-4 space-y-3 border-t border-emerald-200 pt-3">
-                        {inspectionNotes.map(
-                          ({ key, label, icon: Icon, value, match }) => (
-                            <div
-                              key={key}
-                              className="flex items-start gap-2"
-                            >
-                              <Icon
-                                size={16}
-                                className="text-emerald-600 shrink-0 mt-0.5"
-                              />
-
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">
-                                    {label}
-                                  </p>
-
-                                  {match === true && (
-                                    <CheckCircle2
-                                      size={12}
-                                      className="text-emerald-600 shrink-0"
-                                    />
-                                  )}
-
-                                  {match === false && (
-                                    <AlertTriangle
-                                      size={12}
-                                      className="text-amber-600 shrink-0"
-                                    />
-                                  )}
-                                </div>
-
-                                <p className="text-sm text-emerald-950">
-                                  {value}
-                                </p>
-
-                                {match === false && (
-                                  <p className="text-[11px] text-amber-700 mt-0.5">
-                                    Differs from listing description
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        )}
-                      </div>
-                    )}
-
-                  
-                 <div className="px-5 pb-3">
-                      <p className="text-[11px] text-emerald-800">
-                        This is a physical inspection of the property only. It does not confirm ownership, the
-                        right to rent it out, the rental terms or availability.
-                      </p>
-                    </div>
-                    
-                    {inspection.nearby_landmarks && (
-                      <div className="px-5 pb-4">
-                        <p className="text-sm text-emerald-800">
-                          <span className="font-semibold">Nearby: </span>
-                          {inspection.nearby_landmarks}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+            <PropertyTrust
+              trust={trust}
+              trustFailed={trustFailed}
+              inspection={inspection}
+              inspectionFailed={inspectionFailed}
+              className="mb-6"
+            />
 
             {listing.lat != null && listing.lng != null ? (
               <ListingLocation
@@ -1060,147 +942,48 @@ export default function ListingDetailPage() {
 
               <div className="bg-card border border-border rounded-lg p-4 sm:p-5">
                 {landlord && (
-                  <div className="mb-4 pb-4 border-b border-border">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-semibold text-foreground shrink-0">
+                  <div className="mb-4 border-b border-border pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-foreground">
                         {landlord.full_name?.[0] ?? 'L'}
                       </div>
 
-                      <p className="text-sm font-medium text-foreground truncate min-w-0">
-                        {landlord.full_name}
-                      </p>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {landlord.full_name}
+                        </p>
+
+                        <a
+                          href="#trust"
+                          className="text-caption font-semibold text-primary hover:underline"
+                        >
+                          {identityState(trust, trustFailed) === 'yes'
+                            ? 'Identity checked'
+                            : identityState(trust, trustFailed) === 'no'
+                              ? 'Identity not yet checked'
+                              : 'Verification details'}
+                          {' · see details'}
+                        </a>
+                      </div>
                     </div>
-
-                    {landlord.verified ? (
-                      <div className="flex items-start gap-2 sm:gap-2.5 bg-emerald-50 border-2 border-emerald-300 rounded-xl px-3 py-2.5 sm:px-3.5 sm:py-3">
-                        <ShieldCheck
-                          size={20}
-                          className="text-emerald-600 shrink-0 mt-0.5"
-                        />
-
-                        <div className="min-w-0">
-                          <p className="text-sm sm:text-base font-extrabold text-emerald-800 leading-tight">
-                            Verified Landlord
-                          </p>
-
-                          <p className="text-[11px] sm:text-xs text-emerald-700 leading-snug mt-0.5">
-                            Identity and ownership documents reviewed by
-                            EboHomes.
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start gap-2 sm:gap-2.5 bg-secondary border-2 border-border rounded-xl px-3 py-2.5 sm:px-3.5 sm:py-3">
-                        <ShieldOff
-                          size={20}
-                          className="text-muted-foreground shrink-0 mt-0.5"
-                        />
-
-                        <div className="min-w-0">
-                          <p className="text-sm sm:text-base font-bold text-foreground leading-tight">
-                            Not Yet Verified
-                          </p>
-
-                          <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug mt-0.5">
-                            EboHomes has not confirmed this landlord&apos;s
-                            identity.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    <p className="mt-2 text-[10px] sm:text-[11px] text-muted-foreground leading-snug">
-                      Identity verification does not by itself confirm the
-                      condition of this specific property. Check the property
-                      and relevant documents before paying.
-                    </p>
                   </div>
                 )}
 
-                <div>
-                  <Button
-                    type="button"
-                    onClick={() => openEboHomesChat('property')}
-                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold mb-4 flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle size={16} />
-                    Chat with EboHomes
-                  </Button>
-
-                  <p className="text-sm font-semibold text-foreground mb-3">
-                    Interested?
-                  </p>
-
-                  <Button
-                    type="button"
-                    onClick={() => router.push(`/journey/apply/${listing.id}`)}
-                    disabled={listing.status !== 'approved'}
-                    className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold mt-2 flex items-center justify-center gap-2"
-                  >
-                    <FileText size={16} />
-                    Apply Now
-                  </Button>
-
-                  <Button
-                    type="button"
-                    onClick={() => openEboHomesChat('viewing')}
-                    variant="outline"
-                    className="w-full font-semibold mt-2 flex items-center justify-center gap-2"
-                  >
-                    <Calendar size={16} />
-                    Request a Viewing
-                  </Button>
-
-                  <p className="mt-3 text-[11px] text-muted-foreground leading-snug">
-                    EboHomes coordinates viewing requests and applications.
-                    Arrange viewings through EboHomes. Inspect the property
-                    yourself and confirm the rent, agreement, ownership
-                    documents, and payment arrangements before paying.
-                  </p>
-                </div>
+                <PropertyActionsSidebar
+                  actions={actions}
+                  onChat={() => openEboHomesChat('property')}
+                />
               </div>
             </div>
           </div>
         </div>
       </main>
 
-      {/* Sticky action bar (mobile and tablet) */}
-      <div
-        className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-background/95 px-3 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur md:bottom-0 lg:hidden"
-        role="region"
-        aria-label="Property actions"
-      >
-        <div className="mx-auto flex max-w-xl items-center gap-2">
-          <button
-            type="button"
-            onClick={() => openEboHomesChat('property')}
-            aria-label="Contact EboHomes"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-primary transition hover:bg-secondary"
-          >
-            <MessageCircle size={20} />
-          </button>
-
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => openEboHomesChat('viewing')}
-            className="h-11 flex-1 gap-1.5 px-2 text-[13px] font-semibold"
-          >
-            <Calendar size={16} />
-            Request a viewing
-          </Button>
-
-          <Button
-            type="button"
-            onClick={() => router.push(`/journey/apply/${listing.id}`)}
-            disabled={listing.status !== 'approved'}
-            className="h-11 flex-[1.3] gap-1.5 bg-primary px-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <FileText size={16} />
-            Apply now
-          </Button>
-        </div>
-      </div>
+      {/* Sticky action bar (mobile and tablet). Same decision as the sidebar. */}
+      <PropertyActionsBar
+        actions={actions}
+        onChat={() => openEboHomesChat('property')}
+      />
 
       {/* Share sheet */}
       {showShareMenu && (
