@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
+import { PageShell } from '@/components/page-shell'
 
-// Metadata only. This page is a Client Component, so its metadata lives in
-// this server-side sibling layout. It adds no markup and no logic.
+// Metadata lives here because the page is a Client Component.
+// The layout also adds the standard Header and Footer.
 export const metadata: Metadata = {
   title: 'Contact us',
   description:
@@ -10,5 +11,5 @@ export const metadata: Metadata = {
 }
 
 export default function ContactLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  return <PageShell>{children}</PageShell>
 }
