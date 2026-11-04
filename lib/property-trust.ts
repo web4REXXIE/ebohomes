@@ -74,19 +74,21 @@ export function inspectionDetails(inspection: unknown): { facts: InspectionItem[
   if (!isObject(inspection)) return { facts: [], notes: [] }
   const i = inspection
 
-  const facts: InspectionItem[] = [
+  const allFacts: InspectionItem[] = [
     { key: 'road', label: 'Road', icon: 'route', value: text(i.road_condition), match: matchOf(i.road_matches) },
     { key: 'water', label: 'Water', icon: 'droplet', value: text(i.water_source), match: matchOf(i.water_matches) },
     { key: 'electricity', label: 'Electricity', icon: 'zap', value: text(i.electricity_notes), match: matchOf(i.electricity_matches) },
     { key: 'network', label: 'Network', icon: 'wifi', value: text(i.network_notes), match: matchOf(i.network_matches) },
     { key: 'security', label: 'Security', icon: 'lock', value: text(i.security_notes), match: matchOf(i.security_matches) },
     { key: 'neighbourhood', label: 'Neighbourhood', icon: 'building', value: text(i.neighborhood_type), match: null },
-  ].filter((item) => item.value)
+  ]
+  const facts = allFacts.filter((item) => item.value)
 
-  const notes: InspectionItem[] = [
+  const allNotes: InspectionItem[] = [
     { key: 'environment', label: 'Environment', icon: 'leaf', value: text(i.environment_notes), match: matchOf(i.environment_matches) },
     { key: 'condition', label: 'Condition', icon: 'home', value: firstText(i.overall_notes, i.condition_notes), match: matchOf(i.condition_matches) },
-  ].filter((item) => item.value)
+  ]
+  const notes = allNotes.filter((item) => item.value)
 
   return { facts, notes }
 }
