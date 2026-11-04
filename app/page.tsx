@@ -54,7 +54,7 @@ import { motion, animate, useInView, useReducedMotion } from 'motion/react'
    2  Trust bar ....... live numbers, said once
    3  Your dashboard .. signed-in only
    4  Featured ........ rolling slider
-   5  Browse by type .. only types that have listings
+   5  Browse by type .. photo tiles, only types that have listings
    6  Recently added .. rolling slider in a dark panel
    7  Explore by area .
    8  Video tours ..... only when real videos exist
@@ -707,6 +707,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({})
+  const [categoryPhotos, setCategoryPhotos] = useState<Record<string, string>>({})
   const [stats, setStats] = useState({ properties: 0, landlords: 0 })
   const [featuredIndex, setFeaturedIndex] = useState(0)
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([])
@@ -744,9 +745,14 @@ export default function HomePage() {
       setVideos(rows.filter((l) => l.video_url).slice(0, 6))
 
       const types: Record<string, number> = {}
+      const typePhotos: Record<string, string> = {}
       const places: Record<string, { name: string; count: number }> = {}
       for (const r of rows) {
-        if (r.property_type) types[r.property_type] = (types[r.property_type] ?? 0) + 1
+        if (r.property_type) {
+          types[r.property_type] = (types[r.property_type] ?? 0) + 1
+          // rows are newest first, so the first photo we see is the newest listing's photo
+          if (!typePhotos[r.property_type] && r.photos?.[0]) typePhotos[r.property_type] = r.photos[0]
+        }
         const name = (r.location_text ?? '').trim()
         if (name) {
           const key = name.toLowerCase()
@@ -754,6 +760,7 @@ export default function HomePage() {
         }
       }
       setCategoryCounts(types)
+      setCategoryPhotos(typePhotos)
       setAreas(Object.values(places).sort((a, b) => b.count - a.count))
       setStats((s) => ({ ...s, properties: rows.length }))
       setLoading(false)
@@ -1063,45 +1070,44 @@ export default function HomePage() {
           )}
         </Section>
 
-        {/* ============ 5. BROWSE BY TYPE (only types with listings) ============ */}
+        {/* ============ 5. BROWSE BY TYPE (photo tiles, only types with listings) ============ */}
         {activeCats.length > 0 && (
           <Section className="pt-0 md:pt-0">
             <SectionHead title="Browse by property type" sub="Most popular first." href="/search" cta="View all" />
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {activeCats.slice(0, 4).map((cat) => (
-                <button
-                  key={cat.value}
-                  onClick={() => router.push('/search?type=' + encodeURIComponent(cat.value))}
-                  className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
-                >
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 transition-colors group-hover:bg-primary/15">
-                    <cat.icon size={22} className="text-primary" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-foreground">{cat.label}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {categoryCounts[cat.value] ?? 0} {(categoryCounts[cat.value] ?? 0) === 1 ? 'listing' : 'listings'}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {activeCats.length > 4 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {activeCats.slice(4).map((cat) => (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {activeCats.map((cat) => {
+                const photo = categoryPhotos[cat.value]
+                const count = categoryCounts[cat.value] ?? 0
+                return (
                   <button
                     key={cat.value}
                     onClick={() => router.push('/search?type=' + encodeURIComponent(cat.value))}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                    className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-emerald-950 via-primary to-emerald-900 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
                   >
-                    <cat.icon size={15} className="text-primary" />
-                    {cat.label}
-                    <span className="text-xs text-muted-foreground">{categoryCounts[cat.value] ?? 0}</span>
+                    {photo ? (
+                      <img
+                        src={img(photo, 500)}
+                        alt={cat.label}
+                        loading="lazy"
+                        className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : (
+                      <cat.icon size={44} className="absolute right-4 top-4 text-white/25" />
+                    )}
+                    <span className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+                    <span className="absolute inset-x-0 bottom-0 p-3.5">
+                      <span className="flex items-center gap-1.5 text-sm font-bold text-white md:text-base">
+                        <cat.icon size={15} className="shrink-0 text-amber-300" />
+                        {cat.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-white/80">
+                        {count} {count === 1 ? 'listing' : 'listings'}
+                      </span>
+                    </span>
                   </button>
-                ))}
-              </div>
-            )}
+                )
+              })}
+            </div>
           </Section>
         )}
 
@@ -1408,4 +1414,4 @@ export default function HomePage() {
       <Footer />
     </div>
   )
-    }
+                      }
