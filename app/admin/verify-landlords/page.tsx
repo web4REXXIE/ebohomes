@@ -3,10 +3,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   ShieldCheck, Clock, XCircle, Users, Search, FileText,
-  Loader2, Check, X, Phone, MapPin, Building2, Landmark,
+  Loader2, Check, X, Phone, MapPin, Building2, Landmark, AlertTriangle,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getOwnershipSignedUrl } from '@/lib/ownership-docs'
+import { verificationBucket, missingItems, type VerificationBucket } from '@/lib/landlord-verification'
 
 type Landlord = {
   id: string
@@ -19,9 +20,6 @@ type Landlord = {
   account_type: string | null
   representative_name: string | null
   representative_role: string | null
-  bank_name: string | null
-  bank_account_name: string | null
-  bank_account_number: string | null
   ownership_doc_url: string | null
   id_document_type: string | null
   id_document_url: string | null
@@ -35,7 +33,14 @@ type Landlord = {
   rejection_reason: string | null
 }
 
-type Tab = 'pending' | 'verified' | 'rejected'
+type Tab = VerificationBucket
+
+const TAB_LABEL: Record<Tab, string> = {
+  pending: 'Pending',
+  verified: 'Verified',
+  rejected: 'Rejected',
+  not_submitted: 'Not submitted',
+}
 
 export default function VerifyLandlordsPage() {
   const [landlords, setLandlords] = useState<Landlord[]>([])
@@ -53,7 +58,7 @@ export default function VerifyLandlordsPage() {
     setLoading(true)
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, full_name, phone, location, business_name, business_address, cac_number, account_type, representative_name, representative_role, ownership_doc_url, id_document_type, id_document_url, selfie_url, verification_status, verified, badge, avatar_url, created_at, verification_reviewed_at, rejection_reason')
       .eq('role', 'landlord')
       .order('created_at', { ascending: false })
 
@@ -64,9 +69,7 @@ export default function VerifyLandlordsPage() {
   useEffect(() => { fetchLandlords() }, [fetchLandlords])
 
   function statusOf(l: Landlord): Tab {
-    if (l.verification_status === 'verified' || l.verified === true) return 'verified'
-    if (l.verification_status === 'rejected') return 'rejected'
-    return 'pending'
+    return verificationBucket(l)
   }
 
   const filtered = landlords.filter((l) => {
@@ -126,9 +129,15 @@ export default function VerifyLandlordsPage() {
     pending: landlords.filter((l) => statusOf(l) === 'pending').length,
     verified: landlords.filter((l) => statusOf(l) === 'verified').length,
     rejected: landlords.filter((l) => statusOf(l) === 'rejected').length,
+    not_submitted: landlords.filter((l) => statusOf(l) === 'not_submitted').length,
   }
 
   async function handleVerify(id: string) {
+    const target = landlords.find((l) => l.id === id)
+    if (!target || missingItems(target).length > 0) {
+      alert('This landlord has not submitted every required item.')
+      return
+    }
     setUpdating(true)
     const { data: { user } } = await supabase.auth.getUser()
     const nowIso = new Date().toISOString()
@@ -143,6 +152,7 @@ export default function VerifyLandlordsPage() {
         rejection_reason: null,
       })
       .eq('id', id)
+      .eq('role', 'landlord')
 
     if (!error) {
       setLandlords((prev) => prev.map((l) =>
@@ -194,6 +204,7 @@ export default function VerifyLandlordsPage() {
     { label: 'Pending Review', value: counts.pending, icon: Clock, tint: 'text-amber-600 bg-amber-50' },
     { label: 'Verified Landlords', value: counts.verified, icon: ShieldCheck, tint: 'text-emerald-600 bg-emerald-50' },
     { label: 'Rejected', value: counts.rejected, icon: XCircle, tint: 'text-red-600 bg-red-50' },
+    { label: 'Not submitted', value: counts.not_submitted, icon: AlertTriangle, tint: 'text-slate-600 bg-slate-100' },
     { label: 'Total Landlords', value: landlords.length, icon: Users, tint: 'text-primary bg-primary/10' },
   ]
 
@@ -202,7 +213,7 @@ export default function VerifyLandlordsPage() {
       <h1 className="text-2xl font-bold text-foreground mb-1">Verify Landlords</h1>
       <p className="text-sm text-muted-foreground mb-6">Review and verify landlord registrations and documents.</p>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         {cards.map((c) => (
           <div key={c.label} className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${c.tint}`}>
@@ -227,15 +238,15 @@ export default function VerifyLandlordsPage() {
       </div>
 
       <div className="flex gap-2 mb-6">
-        {(['pending', 'verified', 'rejected'] as const).map((t) => (
+        {(['pending', 'verified', 'rejected', 'not_submitted'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
               tab === t ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:bg-secondary'
             }`}
           >
-            {t} ({counts[t]})
+            {TAB_LABEL[t]} ({counts[t]})
           </button>
         ))}
       </div>
@@ -244,7 +255,7 @@ export default function VerifyLandlordsPage() {
         <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" size={24} /></div>
       ) : filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-lg p-12 text-center text-muted-foreground">
-          No {tab} landlords.
+          No landlords in “{TAB_LABEL[tab]}”.
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -301,7 +312,7 @@ export default function VerifyLandlordsPage() {
                     : statusOf(selected) === 'rejected' ? 'bg-red-50 text-red-700'
                     : 'bg-amber-50 text-amber-700'
                   }`}>
-                    {statusOf(selected)}
+                    {TAB_LABEL[statusOf(selected)]}
                   </span>
                 </div>
 
@@ -337,7 +348,7 @@ export default function VerifyLandlordsPage() {
                   )}
                 </div>
 
-                {statusOf(selected) !== 'pending' && selected.verification_reviewed_at && (
+                {(statusOf(selected) === 'verified' || statusOf(selected) === 'rejected') && selected.verification_reviewed_at && (
                   <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
                     {statusOf(selected) === 'verified' ? 'Verified' : 'Rejected'} on {new Date(selected.verification_reviewed_at).toLocaleString()}
                   </p>
@@ -349,18 +360,14 @@ export default function VerifyLandlordsPage() {
                 )}
               </div>
 
-              {(selected.bank_name || selected.bank_account_name || selected.bank_account_number) && (
-                <div className="bg-card border border-border rounded-lg p-5">
-                  <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-                    <Landmark size={16} className="text-primary" /> Bank Details
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                    <p><span className="text-muted-foreground block text-xs">Bank</span> {selected.bank_name ?? '—'}</p>
-                    <p><span className="text-muted-foreground block text-xs">Account Name</span> {selected.bank_account_name ?? '—'}</p>
-                    <p><span className="text-muted-foreground block text-xs">Account Number</span> {selected.bank_account_number ?? '—'}</p>
-                  </div>
-                </div>
-              )}
+              <div className="bg-card border border-border rounded-lg p-4 text-sm text-muted-foreground flex items-start gap-3">
+                <Landmark size={16} className="text-primary mt-0.5 shrink-0" />
+                <p>
+                  Payout accounts are reviewed separately on the{' '}
+                  <a href="/admin/payout-accounts" className="font-semibold text-primary underline">Payout accounts</a> page.
+                  Check the account name matches this landlord&apos;s identity there.
+                </p>
+              </div>
 
               <div className="bg-card border border-border rounded-lg p-5">
                 <h3 className="font-semibold text-foreground mb-3">Documents</h3>
@@ -385,13 +392,6 @@ export default function VerifyLandlordsPage() {
                       <span className="text-muted-foreground">No selfie uploaded</span>
                     )}
                   </div>
-                  {selected.bank_account_name &&
-                    selected.full_name &&
-                    selected.bank_account_name.toLowerCase().trim() !== selected.full_name.toLowerCase().trim() && (
-                      <p className="text-xs text-destructive">
-                        Warning: the bank account name differs from the profile name. Check before approving.
-                      </p>
-                    )}
                 </div>
 
                 {docUrl ? (
@@ -402,6 +402,13 @@ export default function VerifyLandlordsPage() {
                   <p className="text-sm text-muted-foreground">No ownership document uploaded</p>
                 )}
               </div>
+
+              {statusOf(selected) === 'not_submitted' && (
+                <div className="bg-card border border-border rounded-lg p-5 text-sm">
+                  <p className="font-semibold text-foreground mb-1">Not submitted yet</p>
+                  <p className="text-muted-foreground">Still missing: {missingItems(selected).join(', ')}. This landlord cannot be verified until everything is submitted.</p>
+                </div>
+              )}
 
               {statusOf(selected) === 'pending' && (
                 <div className="bg-card border border-border rounded-lg p-5 space-y-3">
