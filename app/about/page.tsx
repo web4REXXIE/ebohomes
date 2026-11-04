@@ -76,7 +76,7 @@ export default function AboutPage() {
             <button className="inline-flex items-center gap-2 bg-primary text-primary-foreground font-semibold px-5 py-3 rounded-xl hover:bg-primary/90 transition-colors">
               Get in Touch <ArrowRight size={16} />
             </button>
-          </Link>j
+          </Link>
         </div>
         <div>
           <h2 className="text-2xl font-bold text-foreground mb-4 border-l-4 border-primary pl-3">How EboHomes Works for You</h2>
