@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { AdminNeedsAttention } from '@/components/admin-needs-attention'
+import { verificationBucket } from '@/lib/landlord-verification'
 
 type Stats = {
   totalUsers: number
@@ -64,7 +65,7 @@ export default function AdminDashboardPage() {
         { count: landlords },
         { count: tenants },
         { count: pendingReview },
-        { count: pendingVerification },
+        { data: pendingVerificationRows },
         { count: totalListings },
         { count: totalBookings },
         unreadResult,
@@ -76,7 +77,7 @@ export default function AdminDashboardPage() {
         supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'landlord'),
         supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'tenant'),
         supabase.from('listings').select('*', { count: 'exact', head: true }).or('status.eq.pending,status.is.null'),
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'landlord').eq('verification_status', 'pending'),
+        supabase.from('profiles').select('verification_status, verified, account_type, business_name, business_address, cac_number, representative_name, representative_role, id_document_type, id_document_url, selfie_url, ownership_doc_url').eq('role', 'landlord').eq('verification_status', 'pending'),
         supabase.from('listings').select('*', { count: 'exact', head: true }),
         supabase.from('bookings').select('*', { count: 'exact', head: true }),
         user
@@ -134,7 +135,8 @@ export default function AdminDashboardPage() {
         landlords: landlords ?? 0,
         tenants: tenants ?? 0,
         pendingReview: pendingReview ?? 0,
-        pendingVerification: pendingVerification ?? 0,
+        // Same rule as the Verify Landlords page: pending means a complete submission.
+        pendingVerification: (pendingVerificationRows ?? []).filter((r: any) => verificationBucket(r) === 'pending').length,
         totalListings: totalListings ?? 0,
         unreadAdminMessages: (unreadResult as any)?.count ?? 0,
         totalBookings: totalBookings ?? 0,
@@ -411,4 +413,4 @@ export default function AdminDashboardPage() {
       </div>
     </div>
   )
-}
+                  }
