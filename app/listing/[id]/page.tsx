@@ -5,13 +5,11 @@ import { useParams, useRouter } from 'next/navigation'
 import {
   Heart,
   Share2,
-  MapPin,
   MessageCircle,
   ShieldCheck,
   ShieldOff,
   Flag,
   Calendar,
-  Clock,
   FileText,
   Route,
   Droplet,
@@ -37,6 +35,16 @@ import { supabase } from '@/lib/supabase'
 import dynamic from 'next/dynamic'
 import { ReportListingModal } from '@/components/report-listing-modal'
 import { PropertyGallery } from '@/components/property-gallery'
+import { AvailabilityNote } from '@/components/availability-note'
+import {
+  PropertyHeader,
+  PropertyKeyFacts,
+  PropertyRentCard,
+  PropertyDescription,
+  PropertyAmenities,
+  PropertyLocationFallback,
+} from '@/components/property-details'
+import { displayTitle } from '@/lib/property-display'
 
 const ListingLocation = dynamic(
   () =>
@@ -649,10 +657,17 @@ export default function ListingDetailPage() {
 
       <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:py-6">
         <button
-          onClick={() => router.back()}
-          className="text-sm text-primary font-medium hover:underline mb-4"
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.history.length > 1) {
+              router.back()
+            } else {
+              router.push('/search')
+            }
+          }}
+          className="mb-4 text-sm font-medium text-primary hover:underline"
         >
-          ← Back to search
+          ← Back
         </button>
 
         {pageError && (
@@ -716,63 +731,38 @@ export default function ListingDetailPage() {
               </div>
             )}
 
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-1">
-              <h1 className="text-2xl font-bold text-foreground">
-                {listing.title}
-              </h1>
-
-              {(listing.properties?.public_id || listedByLabel) && (
-                <p className="text-xs font-medium text-muted-foreground sm:text-right">
-                  {listing.properties?.public_id && (
-                    <>Property ID: {listing.properties.public_id}</>
-                  )}
-
-                  {listing.properties?.public_id && listedByLabel && ' · '}
-
-                  {listedByLabel && <>Listed by {listedByLabel}</>}
-                </p>
-              )}
+            <div className="mb-4">
+              <PropertyHeader
+                title={displayTitle(listing)}
+                location={listing.location_text}
+                publicId={listing.properties?.public_id}
+                listedByLabel={listedByLabel}
+                addedText={addedText}
+                updatedText={showUpdated ? updatedText : undefined}
+              />
             </div>
 
-            <p className="flex items-center gap-1 text-muted-foreground text-sm mb-2">
-              <MapPin size={14} />
-              {listing.location_text}
-            </p>
+            <AvailabilityNote
+              listingId={listing.id}
+              listingStatus={listing.status}
+              className="mb-4"
+            />
 
-            {/* Date added / updated */}
-            {addedText && (
-              <p className="mb-4 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-                <Clock size={12} className="shrink-0" />
-                <span>Added {addedText}</span>
-                {showUpdated && <span>· Updated {updatedText}</span>}
-              </p>
-            )}
+            {/* Rent card: shown here on phones and tablets, in the side column on desktop */}
+            <PropertyRentCard
+              priceMonthly={listing.price_monthly}
+              serviceCharge={listing.service_charge}
+              cautionDeposit={listing.caution_deposit}
+              className="mb-4 lg:hidden"
+            />
 
-            <div className="flex flex-wrap gap-2 mb-6">
-              {listing.property_type && (
-                <span className="bg-secondary text-foreground text-xs font-medium px-3 py-1.5 rounded-full">
-                  {listing.property_type}
-                </span>
-              )}
-
-              {listing.bedrooms != null && (
-                <span className="bg-secondary text-foreground text-xs font-medium px-3 py-1.5 rounded-full">
-                  {listing.bedrooms} Bedrooms
-                </span>
-              )}
-
-              {listing.bathrooms != null && (
-                <span className="bg-secondary text-foreground text-xs font-medium px-3 py-1.5 rounded-full">
-                  {listing.bathrooms} Bathrooms
-                </span>
-              )}
-
-              {listing.availability_date && (
-                <span className="bg-primary/10 text-primary text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1">
-                  <Calendar size={12} />
-                  Available: {listing.availability_date}
-                </span>
-              )}
+            <div className="mb-6">
+              <PropertyKeyFacts
+                propertyType={listing.property_type}
+                bedrooms={listing.bedrooms}
+                bathrooms={listing.bathrooms}
+                availabilityDate={listing.availability_date}
+              />
             </div>
 
             {listing.video_url && (
@@ -790,37 +780,9 @@ export default function ListingDetailPage() {
               </div>
             )}
 
-            {cleanedDescription && (
-              <div className="mb-6">
-                <h3 className="font-semibold text-foreground mb-2">
-                  Description
-                </h3>
+            <PropertyDescription text={cleanedDescription} className="mb-6" />
 
-                <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-line">
-                  {cleanedDescription}
-                </p>
-              </div>
-            )}
-
-            {listing.amenities?.length > 0 && (
-              <div className="mb-6">
-                <h3 className="font-semibold text-foreground mb-3">
-                  Amenities
-                </h3>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {listing.amenities.map((amenity: string) => (
-                    <span
-                      key={amenity}
-                      className="text-sm text-foreground flex items-center gap-2"
-                    >
-                      <ShieldCheck size={14} className="text-primary" />
-                      {amenity}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
+            <PropertyAmenities amenities={listing.amenities} className="mb-6" />
 
             {(trust?.identity_checked ||
               trust?.documents_reviewed ||
@@ -1018,12 +980,17 @@ export default function ListingDetailPage() {
               </div>
             )}
 
-            {listing.lat != null && listing.lng != null && (
+            {listing.lat != null && listing.lng != null ? (
               <ListingLocation
                 lat={Number(listing.lat)}
                 lng={Number(listing.lng)}
-                title={listing.title}
+                title={displayTitle(listing)}
                 address={listing.location_text}
+              />
+            ) : (
+              <PropertyLocationFallback
+                address={listing.location_text}
+                className="mb-6"
               />
             )}
 
@@ -1091,50 +1058,14 @@ export default function ListingDetailPage() {
 
           <div className="lg:col-span-1">
             <div className="sticky top-24 space-y-4">
+              <PropertyRentCard
+                priceMonthly={listing.price_monthly}
+                serviceCharge={listing.service_charge}
+                cautionDeposit={listing.caution_deposit}
+                className="hidden lg:block"
+              />
+
               <div className="bg-card border border-border rounded-lg p-4 sm:p-5">
-                <p className="text-2xl font-bold text-primary">
-                  ₦{Number(listing.price_monthly ?? 0).toLocaleString('en-NG')}
-                </p>
-
-                <p className="text-xs text-muted-foreground mb-4">
-                  per month
-                </p>
-
-                {(Number(listing.service_charge) > 0 ||
-                  Number(listing.caution_deposit) > 0) && (
-                  <div className="mb-4 space-y-1 text-sm">
-                    {Number(listing.service_charge) > 0 && (
-                      <div className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">
-                          Service charge
-                        </span>
-
-                        <span className="font-semibold text-foreground">
-                          ₦
-                          {Number(listing.service_charge).toLocaleString(
-                            'en-NG'
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    {Number(listing.caution_deposit) > 0 && (
-                      <div className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">
-                          Caution / deposit
-                        </span>
-
-                        <span className="font-semibold text-foreground">
-                          ₦
-                          {Number(listing.caution_deposit).toLocaleString(
-                            'en-NG'
-                          )}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {landlord && (
                   <div className="mb-4 pb-4 border-b border-border">
                     <div className="flex items-center gap-3 mb-3">
@@ -1383,4 +1314,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-}
+                }
