@@ -10,6 +10,7 @@ import { InstallSheet } from '@/components/install-sheet'
 import { NotificationProvider } from '@/components/notification-provider'
 import { PushSync } from '@/components/push-sync'
 import { PushPrompt } from '@/components/push-prompt'
+import { TapFeedback } from '@/components/tap-feedback'
 
 export const metadata: Metadata = {
   title: 'EboHomes - Find Your Perfect Home in Ebonyi',
@@ -61,6 +62,8 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased bg-background text-foreground">
+        {/* Ring + press effect when any button or link is touched, on every page */}
+        <TapFeedback />
         <InstallProvider>
           <NotificationProvider>
             <PushSync />
