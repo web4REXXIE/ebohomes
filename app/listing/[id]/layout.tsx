@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
+import { isValidListingId } from '@/lib/listing-id'
 
 type RouteParams = { id: string }
 
@@ -30,13 +31,13 @@ export async function generateMetadata({
 
   const fallback: Metadata = {
     title: 'Property on EboHomes',
-    description: 'Verified rental properties in Ebonyi State.',
+    description: 'Rental properties in Ebonyi State on EboHomes.',
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  if (!supabaseUrl || !supabaseKey || !id) return fallback
+  if (!supabaseUrl || !supabaseKey || !isValidListingId(id)) return fallback
 
   try {
     const supabase = createClient(supabaseUrl, supabaseKey)
