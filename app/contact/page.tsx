@@ -2,15 +2,16 @@
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { EBOHOMES_WHATSAPP, EBOHOMES_EMAIL, EBOHOMES_PHONE_DISPLAY } from '@/lib/contact'
 import { MessageCircle, Phone, Mail, MapPin, Clock, ShieldAlert, ChevronDown, Send, ShieldCheck, Lock, Users, Headphones, Home } from 'lucide-react'
 
 const faqs = [
   { q: 'How do I contact a landlord?', a: 'EboHomes handles communication for you. Open the listing and tap "Chat with EboHomes". Once your interest is approved and an inspection is arranged, we coordinate the next steps with the landlord..' },
   { q: 'How do I list my property?', a: 'Sign up as a landlord, click "List Your Property," and follow the guided form — photos, price, location, and proof of ownership.' },
-  { q: 'Is EboHomes free to use?', a: 'Browsing and searching is free for tenants. Landlords pay a small listing fee to publish and manage properties.' },
+  { q: 'Is EboHomes free to use?', a: 'Browsing and searching is free for tenants. Landlords can submit properties for review. Featured placement is an optional paid upgrade, and the price is shown before you pay.' },
   { q: 'How long does verification take?', a: 'We review documents as quickly as we can. You can see your status in your dashboard.' },
   { q: 'What if I see a scam listing?', a: 'Use the "Report a Scam Listing" button below or on any listing page — our team reviews reports within 24 hours.' },
-  { q: 'How do payments work?', a: 'EboHomes does not collect rent online yet. Our team will guide you on WhatsApp. We cannot protect payments made outside EboHomes..' },
+  { q: 'How do payments work?', a: 'Pay only to the official EboHomes payment details shown on your tenancy page after you sign in. EboHomes checks each payment before it counts. We cannot protect payments made anywhere else, so if you are unsure, message our team on WhatsApp first.' },
 ]
 
 export default function ContactPage() {
@@ -146,23 +147,23 @@ export default function ContactPage() {
         <div className="lg:col-span-1">
           <h2 className="font-semibold text-lg text-foreground mb-5">Other ways to reach us</h2>
           <div className="grid grid-cols-2 gap-4">
-            <a href="https://wa.me/2349169069445." target="_blank" rel="noopener noreferrer" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href={`https://wa.me/${EBOHOMES_WHATSAPP}`} target="_blank" rel="noopener noreferrer" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><MessageCircle size={18} /></span>
               <p className="font-medium text-sm text-foreground">WhatsApp Support</p>
               <p className="text-xs text-muted-foreground mb-1">Chat with us instantly</p>
               <span className="text-xs text-primary font-medium">Chat now →</span>
             </a>
-            <a href="tel:+2349169069445" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href={`tel:+${EBOHOMES_WHATSAPP}`} className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Phone size={18} /></span>
               <p className="font-medium text-sm text-foreground">Call Support</p>
               <p className="text-xs text-muted-foreground mb-1">Speak with our team</p>
-              <span className="text-xs text-primary font-medium">+234 801 234 5678</span>
+              <span className="text-xs text-primary font-medium">{EBOHOMES_PHONE_DISPLAY}</span>
             </a>
-            <a href="mailto:EboHomesng@gmail.com" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href={`mailto:${EBOHOMES_EMAIL}`} className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Mail size={18} /></span>
               <p className="font-medium text-sm text-foreground">Email Support</p>
               <p className="text-xs text-muted-foreground mb-1">We&apos;ll get back to you</p>
-              <span className="text-xs text-primary font-medium">EboHomesng@gmail.com</span>
+              <span className="text-xs text-primary font-medium">{EBOHOMES_EMAIL}</span>
             </a>
             <div className="bg-card border border-border rounded-2xl p-4">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Headphones size={18} /></span>
