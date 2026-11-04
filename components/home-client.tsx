@@ -535,6 +535,7 @@ export default function HomeClient() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({})
+  const [categoryPhotos, setCategoryPhotos] = useState<Record<string, string>>({})
   const [verifiedLandlords, setVerifiedLandlords] = useState(0)
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([])
   const [isSearching, startSearch] = useTransition()
@@ -568,9 +569,14 @@ export default function HomeClient() {
       setVideos(rows.filter((l) => l.video_url).slice(0, 6))
 
       const types: Record<string, number> = {}
+      const typePhotos: Record<string, string> = {}
       const places: Record<string, { name: string; count: number }> = {}
       for (const r of rows) {
-        if (r.property_type) types[r.property_type] = (types[r.property_type] ?? 0) + 1
+        if (r.property_type) {
+          types[r.property_type] = (types[r.property_type] ?? 0) + 1
+          // rows are newest first, so the first photo seen is the newest listing's photo
+          if (!typePhotos[r.property_type] && r.photos?.[0]) typePhotos[r.property_type] = r.photos[0]
+        }
         const name = (r.location_text ?? '').trim()
         if (name) {
           const key = name.toLowerCase()
@@ -578,6 +584,7 @@ export default function HomeClient() {
         }
       }
       setCategoryCounts(types)
+      setCategoryPhotos(typePhotos)
       setAreas(Object.values(places).sort((a, b) => b.count - a.count))
       setTotal(rows.length)
       setLoading(false)
@@ -814,18 +821,25 @@ export default function HomeClient() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {activeCats.map((cat) => {
                 const count = categoryCounts[cat.value] ?? 0
+                const photo = categoryPhotos[cat.value]
                 return (
                   <Link
                     key={cat.value}
                     href={'/search?type=' + encodeURIComponent(cat.value)}
-                    className="group flex h-28 flex-col justify-between rounded-2xl border border-border bg-card p-4 transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
+                    className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-emerald-950 via-primary to-emerald-900 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
                   >
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                      <cat.icon size={20} />
-                    </span>
-                    <span>
-                      <span className="block text-sm font-bold text-foreground md:text-base">{cat.label}</span>
-                      <span className="block text-xs text-muted-foreground">{count} {count === 1 ? 'listing' : 'listings'}</span>
+                    {photo ? (
+                      <img src={img(photo, 500)} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    ) : (
+                      <cat.icon size={44} aria-hidden="true" className="absolute right-4 top-4 text-white/25" />
+                    )}
+                    <span className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+                    <span className="absolute inset-x-0 bottom-0 p-3.5">
+                      <span className="flex items-center gap-1.5 text-sm font-bold text-white md:text-base">
+                        <cat.icon size={15} aria-hidden="true" className="shrink-0 text-amber-300" />
+                        {cat.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-white/80">{count} {count === 1 ? 'listing' : 'listings'}</span>
                     </span>
                   </Link>
                 )
