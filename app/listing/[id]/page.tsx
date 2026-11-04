@@ -45,6 +45,8 @@ import {
   PropertyLocationFallback,
 } from '@/components/property-details'
 import { displayTitle } from '@/lib/property-display'
+import { cleanMediaUrls } from '@/lib/property-media'
+import { PropertyVideo } from '@/components/property-video'
 
 const ListingLocation = dynamic(
   () =>
@@ -121,9 +123,7 @@ export default function ListingDetailPage() {
   const [canNativeShare, setCanNativeShare] = useState(false)
 
   // Derived early so gallery handlers and hooks below can use it
-  const photos: string[] = Array.isArray(listing?.photos)
-    ? listing.photos
-    : []
+  const photos: string[] = cleanMediaUrls(listing?.photos)
 
   /* ---------------- Share ---------------- */
 
@@ -685,7 +685,7 @@ export default function ListingDetailPage() {
               <PropertyGallery
                 key={listing.id}
                 images={photos}
-                title={listing.title}
+                title={displayTitle(listing)}
               />
 
               {/* Save property */}
@@ -765,20 +765,13 @@ export default function ListingDetailPage() {
               />
             </div>
 
-            {listing.video_url && (
-              <div className="mb-6">
-                <h3 className="font-semibold text-foreground mb-2">
-                  Property Walkthrough
-                </h3>
-
-                <video
-                  src={listing.video_url}
-                  controls
-                  preload="metadata"
-                  className="w-full rounded-lg max-h-96 bg-black"
-                />
-              </div>
-            )}
+            <PropertyVideo
+              key={String(listing.video_url ?? '')}
+              url={listing.video_url}
+              title={displayTitle(listing)}
+              posterPhoto={photos[0]}
+              className="mb-6"
+            />
 
             <PropertyDescription text={cleanedDescription} className="mb-6" />
 
@@ -1314,4 +1307,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-                }
+          }
