@@ -137,7 +137,7 @@ function TrustBadge() {
         <Shield size={18} />
       </span>
       <div>
-        <p className="text-sm font-medium text-amber-400">Real Estate You Can Trust.</p>
+        <p className="text-sm font-medium text-amber-400">Every listing reviewed before it goes live.</p>
         <span className="block w-8 h-[2px] bg-amber-400/70 mt-1" />
       </div>
     </div>
@@ -171,107 +171,58 @@ export function Footer() {
       <BuildingArt className="hidden md:block absolute right-0 bottom-0 w-[520px] h-auto opacity-[0.07] pointer-events-none" />
       <BuildingArt className="md:hidden absolute left-0 bottom-0 w-full h-auto opacity-[0.05] pointer-events-none" />
 
-      <div className="relative max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 pt-16 pb-8">
-        {/* Desktop */}
-        <div className="hidden md:grid grid-cols-[1.3fr_1fr_1fr_1fr_1fr] gap-10">
+      <div className="relative max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 pt-12 md:pt-16 pb-8">
+        {/* One markup for every screen size: stacked on phones (groups collapse), five columns on desktop */}
+        <div className="md:grid md:grid-cols-[1.3fr_1fr_1fr_1fr_1fr] md:gap-10">
           <div>
-            <img src="/logo-white.png" alt="EboHomes" className="h-12 w-auto mb-5" />
+            <img src="/logo-white.png" alt="EboHomes" className="h-11 md:h-12 w-auto mb-5" />
             <p className="text-lg font-semibold mb-2">
               Find Homes. <span className="text-emerald-400">Skip the Stress.</span>
             </p>
             <p className="text-sm text-white/60 leading-relaxed mb-6 max-w-[220px]">
               Connecting people with places they can trust.
             </p>
-            <div className="mb-8"><SocialRow /></div>
-            <InstallButton variant="footer" className="-mt-3 mb-8" />
-            <TrustBadge />
-          </div>
-
-          {NAV_GROUPS.map((group) => (
-            <div key={group.title}>
-              <h4 className="text-xs font-semibold tracking-wide uppercase text-white mb-1.5">
-                {group.title}
-              </h4>
-              <span className="block w-6 h-[2px] bg-amber-400/70 mb-4" />
-              <ul className="space-y-3 text-sm text-white/70">
-                {group.links.map((link) => (
-                  <li key={link.label}>
-                    {'external' in link && link.external ? (
-                      <a href={link.href} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
-                        {link.label}
-                      </a>
-                    ) : (
-                      <Link href={link.href} className="hover:text-white transition-colors">
-                        {link.label}
-                      </Link>
-                    )}
-                  </li>
-                ))}
-              </ul>
+            <div className="mb-6 md:mb-8"><SocialRow /></div>
+            <InstallButton variant="footer" className="-mt-2 mb-6 md:-mt-3 md:mb-8" />
+            <div className="border-t border-white/10 pt-5 md:border-0 md:pt-0">
+              <TrustBadge />
             </div>
-          ))}
-        </div>
-
-        {/* Mobile */}
-        <div className="md:hidden">
-          <img src="/logo-white.png" alt="EboHomes" className="h-11 w-auto mb-5" />
-          <p className="text-lg font-semibold mb-2">
-            Find Homes. <span className="text-emerald-400">Skip the Stress.</span>
-          </p>
-          <p className="text-sm text-white/60 leading-relaxed mb-6">
-            Connecting people with places they can trust.
-          </p>
-
-          <div className="mb-6"><SocialRow /></div>
-          <InstallButton variant="footer" className="-mt-2 mb-6" />
-
-          <div className="border-t border-white/10 pt-5">
-            <TrustBadge />
           </div>
 
-          <div className="mt-4 divide-y divide-white/10 border-t border-white/10">
-            {NAV_GROUPS.map((group) => {
-              const isOpen = openGroup === group.title
-              return (
-                <div key={group.title}>
-                  <button
-                    onClick={() => setOpenGroup(isOpen ? null : group.title)}
-                    className="w-full flex items-center justify-between py-4 text-left"
-                    aria-expanded={isOpen}
-                  >
-                    <span className="text-xs font-semibold tracking-wide uppercase text-white">
-                      {group.title}
-                    </span>
-                    <ChevronDown
-                      size={16}
-                      className={`text-white/50 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                  <div className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-72 pb-4' : 'max-h-0'}`}>
-                    <ul className="space-y-3 text-sm text-white/70">
-                      {group.links.map((link) => (
-                        <li key={link.label}>
-                          {'external' in link && link.external ? (
-                            <a href={link.href} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
-                              {link.label}
-                            </a>
-                          ) : (
-                            <Link href={link.href} className="hover:text-white transition-colors">
-                              {link.label}
-                            </Link>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+          {NAV_GROUPS.map((group, gi) => {
+            const isOpen = openGroup === group.title
+            return (
+              <div key={group.title} className={`border-t border-white/10 md:border-0 ${gi === 0 ? 'mt-5 md:mt-0' : ''}`}>
+                <button
+                  type="button"
+                  onClick={() => setOpenGroup(isOpen ? null : group.title)}
+                  aria-expanded={isOpen}
+                  aria-controls={`footer-group-${gi}`}
+                  className="w-full flex items-center justify-between py-4 text-left md:py-0 md:mb-1.5 md:cursor-default md:pointer-events-none"
+                >
+                  <span className="text-xs font-semibold tracking-wide uppercase text-white">{group.title}</span>
+                  <ChevronDown size={16} aria-hidden="true" className={`text-white/50 transition-transform duration-200 md:hidden ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+                <span className="hidden md:block w-6 h-[2px] bg-amber-400/70 mb-4" />
+                <div id={`footer-group-${gi}`} className={`overflow-hidden transition-all duration-200 md:max-h-none md:pb-0 ${isOpen ? 'max-h-72 pb-4' : 'max-h-0'}`}>
+                  <ul className="space-y-3 text-sm text-white/70">
+                    {group.links.map((link) => (
+                      <li key={link.label}>
+                        {'external' in link && link.external ? (
+                          <a href={link.href} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">{link.label}</a>
+                        ) : (
+                          <Link href={link.href} className="hover:text-white transition-colors">{link.label}</Link>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              )
-            })}
-          </div>
+              </div>
+            )
+          })}
         </div>
 
-        {/* Bottom bar */}
-        <div className="mt-12 pt-6 border-t border-white/10 flex items-center justify-center">
+        <div className="mt-10 md:mt-12 pt-6 border-t border-white/10 flex items-center justify-center">
           <p className="text-xs text-white/50 text-center">
             &copy; {new Date().getFullYear()} EboHomes. All rights reserved.
           </p>
