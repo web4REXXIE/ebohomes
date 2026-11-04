@@ -5,6 +5,38 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* =====================================================================
+   EBOHOMES DESIGN TOKENS  (Phase 2)
+
+   How to use this file
+   - Existing tokens (primary, accent, muted, card, border, ...) are UNCHANGED.
+   - Everything marked "Phase 2" is additive. Nothing was renamed or removed.
+   - Components should use token utilities (bg-forest, text-primary,
+     rounded-card, shadow-rest, py-section ...) and NOT emerald-*, amber-*
+     or arbitrary hex values.
+
+   Colour roles
+     primary          #0A7A3B  actions: buttons, links, active states
+     forest           #0A2E1A  deep brand surfaces: hero overlay, footer, banners
+     cream            #FAF7F2  warm section background (dark mode: card colour)
+     featured         #F59E0B  gold accent, "Featured" only. Text on it must use
+                               featured-foreground (white on gold fails contrast)
+     background/card  page and surface colours        border  hairlines, dividers
+     foreground       body text                       muted-foreground  secondary text
+
+   Typography: Poppins 400/500/600/700 (unchanged). Use weights up to 700.
+     text-display  text-h1  text-h2  text-h3  text-body-lg  text-body  text-caption
+     (responsive; the sizes switch at the md breakpoint)
+
+   Layout: Tailwind default breakpoints (sm 640, md 768, lg 1024, xl 1280).
+     container-wide (1280) | container-content (1152) | container-reading (768)
+     | container-narrow (448), each centred with responsive side gutters.
+     py-section / py-section-sm for vertical rhythm, p-card, gap-grid.
+
+   Radius:  rounded-control (inputs, buttons)  rounded-card  rounded-panel
+   Shadow:  shadow-rest (cards at rest)  shadow-raised (hover)  shadow-overlay (modals)
+   ===================================================================== */
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
@@ -48,6 +80,48 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* ---- Phase 2 additions (additive) ---- */
+
+  /* Brand surfaces */
+  --color-forest: var(--forest);
+  --color-forest-foreground: var(--forest-foreground);
+  --color-cream: var(--cream);
+  --color-cream-foreground: var(--cream-foreground);
+  --color-featured-foreground: var(--featured-foreground);
+
+  /* Type scale (responsive: values come from the --fs-* and --lh-* variables below) */
+  --text-display: var(--fs-display);
+  --text-display--line-height: var(--lh-display);
+  --text-h1: var(--fs-h1);
+  --text-h1--line-height: var(--lh-h1);
+  --text-h2: var(--fs-h2);
+  --text-h2--line-height: var(--lh-h2);
+  --text-h3: var(--fs-h3);
+  --text-h3--line-height: var(--lh-h3);
+  --text-body-lg: var(--fs-body-lg);
+  --text-body-lg--line-height: var(--lh-body-lg);
+  --text-body: var(--fs-body);
+  --text-body--line-height: var(--lh-body);
+  --text-caption: var(--fs-caption);
+  --text-caption--line-height: var(--lh-caption);
+
+  /* Layout spacing (responsive) */
+  --spacing-section: var(--section-y);
+  --spacing-section-sm: var(--section-y-sm);
+  --spacing-gutter: var(--gutter);
+  --spacing-card: var(--card-pad);
+  --spacing-grid: var(--grid-gap);
+
+  /* Semantic radii, built from the existing --radius base */
+  --radius-control: var(--radius);
+  --radius-card: calc(var(--radius) * 1.4);
+  --radius-panel: calc(var(--radius) * 2.2);
+
+  /* Semantic shadows (forest-tinted) */
+  --shadow-rest: 0 1px 2px 0 rgb(10 46 26 / 0.05), 0 1px 3px 0 rgb(10 46 26 / 0.08);
+  --shadow-raised: 0 4px 6px -1px rgb(10 46 26 / 0.08), 0 10px 20px -4px rgb(10 46 26 / 0.12);
+  --shadow-overlay: 0 20px 40px -12px rgb(10 46 26 / 0.25);
 }
 
 :root {
@@ -101,6 +175,14 @@
   --sidebar-accent-foreground: #FFFFFF;
   --sidebar-border: #E5E7EB;
   --sidebar-ring: #0A7A3B;
+
+  /* ---- Phase 2 brand tokens (light) ---- */
+  --forest: #0A2E1A;
+  --forest-foreground: #FFFFFF;
+  --cream: #FAF7F2;
+  --cream-foreground: #0A2E1A;
+  --featured-foreground: #451A03;
+  --gradient-forest: linear-gradient(135deg, var(--forest) 0%, var(--primary) 100%);
 }
 
 .dark {
@@ -148,6 +230,61 @@
   --sidebar-accent-foreground: #0F1512;
   --sidebar-border: #1F2A24;
   --sidebar-ring: #22C55E;
+
+  /* ---- Phase 2 brand tokens (dark) ---- */
+  --forest: #0A2E1A;
+  --forest-foreground: #FFFFFF;
+  /* Cream would glare on a dark page, so it maps to the dark card colour */
+  --cream: #17201B;
+  --cream-foreground: #F5F5F4;
+  --featured-foreground: #451A03;
+  /* The bright dark-mode primary would wash the gradient out, so end on the deeper green */
+  --gradient-forest: linear-gradient(135deg, var(--forest) 0%, #065F2E 100%);
+}
+
+/* ---- Phase 2 responsive tokens ----
+   Mobile-first values on :root, raised at the Tailwind breakpoints.
+   Type scale: Display 36/40 -> 56/60, H1 32/38 -> 44/50, H2 26/32 -> 32/40,
+   H3 18/26 -> 20/28, Body large 16/26 -> 18/28, Body 16/24 -> 16/26, Caption 12/16.
+   Spacing is on a 4px base (Tailwind's default); these are the named layout steps. */
+:root {
+  --fs-display: 2.25rem;  --lh-display: 2.5rem;
+  --fs-h1: 2rem;          --lh-h1: 2.375rem;
+  --fs-h2: 1.625rem;      --lh-h2: 2rem;
+  --fs-h3: 1.125rem;      --lh-h3: 1.625rem;
+  --fs-body-lg: 1rem;     --lh-body-lg: 1.625rem;
+  --fs-body: 1rem;        --lh-body: 1.5rem;
+  --fs-caption: 0.75rem;  --lh-caption: 1rem;
+
+  --section-y: 3rem;
+  --section-y-sm: 2rem;
+  --card-pad: 1rem;
+  --grid-gap: 1rem;
+  --gutter: 1rem;
+}
+
+@media (min-width: 640px) {
+  :root { --gutter: 1.5rem; }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --fs-display: 3.5rem;   --lh-display: 3.75rem;
+    --fs-h1: 2.75rem;       --lh-h1: 3.125rem;
+    --fs-h2: 2rem;          --lh-h2: 2.5rem;
+    --fs-h3: 1.25rem;       --lh-h3: 1.75rem;
+    --fs-body-lg: 1.125rem; --lh-body-lg: 1.75rem;
+    --fs-body: 1rem;        --lh-body: 1.625rem;
+
+    --section-y: 5rem;
+    --section-y-sm: 3.5rem;
+    --card-pad: 1.5rem;
+    --grid-gap: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root { --gutter: 2rem; }
 }
 
 @layer base {
@@ -208,6 +345,39 @@
 
 .animate-ebohomes-loading {
   animation: ebhomes-loading 1.5s ease-in-out infinite;
+}
+
+/* ---- Phase 2 layout utilities (new, additive) ---- */
+@utility container-wide {
+  width: 100%;
+  max-width: 80rem;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+@utility container-content {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+@utility container-reading {
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+@utility container-narrow {
+  width: 100%;
+  max-width: 28rem;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+@utility bg-forest-gradient {
+  background-image: var(--gradient-forest);
 }
 
 /* ---------------------------------------------------------------------
