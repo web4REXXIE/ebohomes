@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -92,10 +93,10 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
           </div>
 
           <p className="ebo-text -mt-3 text-[clamp(16px,4.8vw,24px)] font-extrabold tracking-[0.3em] text-white">
-            EBÔHOMES
+            EBOHOMES
           </p>
           <p className="ebo-text2 mt-2 text-center text-[clamp(9px,2.7vw,12px)] uppercase tracking-[0.2em] text-white/60">
-            Find homes. Skip the stress.
+            Find Homes. Skip the Stress.
           </p>
 
           <div className="mt-9 h-[3px] w-28 overflow-hidden rounded-full bg-white/15">
