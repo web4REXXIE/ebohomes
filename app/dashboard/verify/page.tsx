@@ -56,6 +56,21 @@ function ChecklistRow({ done, label, value }: { done: boolean; label: string; va
   )
 }
 
+// Module-level so it is defined before the effect that calls it.
+// Fire-and-forget: asks the server to delete this user's own unused identity uploads.
+async function cleanupOldFiles() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    await fetch('/api/verification-files/cleanup', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+  } catch {
+    /* best effort */
+  }
+}
+
 export default function GetVerifiedPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -71,6 +86,8 @@ export default function GetVerifiedPage() {
   const [selfieName, setSelfieName] = useState('')
   const [docPreviewUrl, setDocPreviewUrl] = useState('')
   const [payout, setPayout] = useState<PayoutState>('loading')
+  const [consent, setConsent] = useState(false)
+  const [verifiedAt, setVerifiedAt] = useState<string | null>(null)
 
   const [formData, setFormData] = useState<FormData>({
     business_name: '',
@@ -96,7 +113,7 @@ export default function GetVerifiedPage() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('account_type, representative_name, representative_role, business_name, business_address, cac_number, ownership_doc_url, id_document_type, id_document_url, selfie_url, verification_status, verified, rejection_reason')
+        .select('account_type, representative_name, representative_role, business_name, business_address, cac_number, ownership_doc_url, id_document_type, id_document_url, selfie_url, verification_status, verified, rejection_reason, verification_reviewed_at')
         .eq('id', user.id)
         .single()
 
@@ -115,6 +132,10 @@ export default function GetVerifiedPage() {
         })
         setStatus(data.verified ? 'verified' : (data.verification_status || null))
         setRejectionReason(data.rejection_reason || null)
+        setVerifiedAt(data.verification_reviewed_at || null)
+
+        // Remove this user's old, unused ID/selfie/document uploads (server checks ownership).
+        if (!data.verified) cleanupOldFiles()
 
         // if a doc path already exists, validate it and generate a signed preview link
         if (data.ownership_doc_url) {
@@ -247,7 +268,7 @@ export default function GetVerifiedPage() {
     input.value = ''
   }
 
-  const canSubmit = hasAllDetails(formData)
+  const canSubmit = hasAllDetails(formData) && consent
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -297,6 +318,7 @@ export default function GetVerifiedPage() {
 
     setRejectionReason(null)
     setStatus('pending')
+    cleanupOldFiles()
     window.scrollTo({ top: 0 })
   }
 
@@ -305,16 +327,42 @@ export default function GetVerifiedPage() {
   }
 
   if (status === 'verified') {
+    const company = formData.account_type === 'company'
     return (
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        <div className="bg-card border border-emerald-200 rounded-2xl p-8 text-center">
-          <ShieldCheck size={40} className="mx-auto text-emerald-600 mb-4" />
+      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
+        <div className="bg-card border border-emerald-200 rounded-2xl p-6 text-center">
+          <ShieldCheck size={40} className="mx-auto text-emerald-600 mb-3" />
           <h1 className="text-xl font-bold text-foreground mb-1">You&apos;re Verified</h1>
-          <p className="text-sm text-muted-foreground">Your landlord account has been verified on EboHomes.</p>
-          <Link href="/dashboard/payout-account" className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
-            <Landmark size={16} /> Set up your payout account
-          </Link>
+          <p className="text-sm text-muted-foreground">
+            Your landlord account has been verified on EboHomes
+            {verifiedAt ? ` on ${new Date(verifiedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}.
+          </p>
         </div>
+
+        <section className="bg-card border border-border rounded-2xl p-4" aria-label="What EboHomes checked">
+          <h2 className="font-bold text-foreground mb-1">What EboHomes reviewed</h2>
+          <ul className="divide-y divide-border">
+            <ChecklistRow done label="Business" value={`${formData.business_name || '—'}${company ? ' (company)' : ''}`} />
+            <ChecklistRow done label="Government ID and selfie" value="Reviewed" />
+            <ChecklistRow done label="Property ownership / authority document" value="Reviewed" />
+          </ul>
+          <p className="text-xs text-muted-foreground pt-2 border-t border-border">
+            Verification confirms who you are and the documents you sent. It does not by itself prove you own a particular property.
+          </p>
+        </section>
+
+        <section className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900" aria-label="If your details change">
+          <p className="font-semibold mb-1">If your details change</p>
+          <p>
+            Changing your name, business name, business address, CAC number, ID, selfie, documents or payout account sends your
+            account back to review until EboHomes checks it again. Update them on your{' '}
+            <Link href="/dashboard/profile" className="font-semibold underline">profile</Link>.
+          </p>
+        </section>
+
+        <Link href="/dashboard/payout-account" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+          <Landmark size={16} /> Manage your payout account
+        </Link>
       </div>
     )
   }
@@ -602,6 +650,20 @@ export default function GetVerifiedPage() {
             </p>
           </div>
         </div>
+
+        <label className="flex items-start gap-3 rounded-lg border border-border bg-secondary p-4 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+            className="mt-1 h-4 w-4 shrink-0"
+          />
+          <span className="text-muted-foreground">
+            I confirm these details and documents are mine and true. I agree that EboHomes may review my ID, selfie and
+            ownership document to verify my identity, as described in the{' '}
+            <Link href="/privacy" target="_blank" className="font-semibold text-primary underline">Privacy Policy</Link>.
+          </span>
+        </label>
 
         {message && <p className="text-sm text-destructive">{message}</p>}
 
