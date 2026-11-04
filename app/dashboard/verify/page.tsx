@@ -13,6 +13,7 @@ import {
   isValidOwnershipPath,
   getOwnershipSignedUrl,
 } from '@/lib/ownership-docs'
+import { isSubmissionComplete } from '@/lib/landlord-verification'
 
 type FormData = {
   business_name: string
@@ -36,21 +37,8 @@ const ID_LABELS: Record<string, string> = {
   intl_passport: 'International passport',
 }
 
-// A landlord has really submitted only when every required item is on file.
-// (verification_status defaults to 'pending' in the database, so the status alone is not proof.)
-function hasAllDetails(d: FormData): boolean {
-  const base = Boolean(
-    d.business_name.trim() &&
-      d.business_address.trim() &&
-      d.id_document_type &&
-      d.id_document_url &&
-      d.selfie_url &&
-      d.ownership_doc_url
-  )
-  if (!base) return false
-  if (d.account_type !== 'company') return true
-  return Boolean(d.cac_number.trim() && d.representative_name.trim() && d.representative_role.trim())
-}
+// One shared definition of "submitted" (verification_status defaults to 'pending' in the database).
+const hasAllDetails = (d: FormData) => isSubmissionComplete(d)
 
 function ChecklistRow({ done, label, value }: { done: boolean; label: string; value: string }) {
   return (
