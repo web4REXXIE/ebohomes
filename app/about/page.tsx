@@ -1,5 +1,13 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Home, ShieldCheck, Users, Star, ArrowRight, Phone, Mail, ShieldQuestion, Lightbulb, User, Award, Heart } from 'lucide-react'
+
+export const metadata: Metadata = {
+  title: 'About us',
+  description:
+    'Learn about EboHomes, our story and values, and how we help tenants and landlords in Ebonyi State with reviewed listings and a clearer, safer rental process.',
+  alternates: { canonical: '/about' },
+}
 
 export default function AboutPage() {
   return (
