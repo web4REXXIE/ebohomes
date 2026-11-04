@@ -42,6 +42,7 @@ import { Footer } from '@/components/footer'
 import { InstallButton, InstallPromoSection } from '@/components/install-button'
 import { ListingCard } from '@/components/listing-card'
 import { SignedInHome } from '@/components/signed-in-home'
+import { TapFeedback } from '@/components/tap-feedback'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import useEmblaCarousel from 'embla-carousel-react'
@@ -54,7 +55,7 @@ import { motion, animate, useInView, useReducedMotion } from 'motion/react'
    2  Trust bar ....... live numbers, said once
    3  Your dashboard .. signed-in only
    4  Featured ........ rolling slider
-   5  Browse by type ..
+   5  Browse by type .. only types that have listings
    6  Recently added .. rolling slider in a dark panel
    7  Explore by area .
    8  Video tours ..... only when real videos exist
@@ -499,9 +500,9 @@ function InstitutionsTicker() {
         @media (prefers-reduced-motion: reduce) { .eh-ticker-track { animation: none } }
       `}</style>
       <div className="px-6 text-center">
-        <h3 className="mb-2 text-xl font-bold text-foreground md:text-2xl">Used by students and professionals</h3>
+        <h3 className="mb-2 text-xl font-bold text-foreground md:text-2xl">Made for students and professionals</h3>
         <p className="mx-auto mb-7 max-w-md text-sm text-muted-foreground">
-          Students and staff from leading institutions in Ebonyi State find their homes here.
+          Built for students and staff of the leading institutions in Ebonyi State.
         </p>
       </div>
       <div className="eh-ticker overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
@@ -805,6 +806,8 @@ export default function HomePage() {
 
   const locationSuggestions = Array.from(new Set(areas.map((a) => a.name)))
   const sortedCats = [...CATEGORIES].sort((a, b) => (categoryCounts[b.value] ?? 0) - (categoryCounts[a.value] ?? 0))
+  // Only show types that really have listings
+  const activeCats = sortedCats.filter((c) => (categoryCounts[c.value] ?? 0) > 0)
 
   const chips = [
     { label: 'Under ₦100k', href: '/search?maxPrice=100000' },
@@ -834,6 +837,9 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      {/* Shows a ring + small press effect whenever a button or link is touched */}
+      <TapFeedback />
+
       <Header />
 
       <main className="flex-1">
@@ -1061,41 +1067,47 @@ export default function HomePage() {
           )}
         </Section>
 
-        {/* ============ 5. BROWSE BY TYPE ============ */}
-        <Section className="pt-0 md:pt-0">
-          <SectionHead title="Browse by property type" sub="Most popular first." href="/search" cta="View all" />
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {sortedCats.slice(0, 4).map((cat) => (
-              <button
-                key={cat.value}
-                onClick={() => router.push('/search?type=' + encodeURIComponent(cat.value))}
-                className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 transition-colors group-hover:bg-primary/15">
-                  <cat.icon size={22} className="text-primary" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-foreground">{cat.label}</span>
-                  <span className="block text-xs text-muted-foreground">{categoryCounts[cat.value] ?? 0} listings</span>
-                </span>
-              </button>
-            ))}
-          </div>
+        {/* ============ 5. BROWSE BY TYPE (only types with listings) ============ */}
+        {activeCats.length > 0 && (
+          <Section className="pt-0 md:pt-0">
+            <SectionHead title="Browse by property type" sub="Most popular first." href="/search" cta="View all" />
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {activeCats.slice(0, 4).map((cat) => (
+                <button
+                  key={cat.value}
+                  onClick={() => router.push('/search?type=' + encodeURIComponent(cat.value))}
+                  className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
+                >
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 transition-colors group-hover:bg-primary/15">
+                    <cat.icon size={22} className="text-primary" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-foreground">{cat.label}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {categoryCounts[cat.value] ?? 0} {(categoryCounts[cat.value] ?? 0) === 1 ? 'listing' : 'listings'}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            {sortedCats.slice(4).map((cat) => (
-              <button
-                key={cat.value}
-                onClick={() => router.push('/search?type=' + encodeURIComponent(cat.value))}
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
-              >
-                <cat.icon size={15} className="text-primary" />
-                {cat.label}
-                <span className="text-xs text-muted-foreground">{categoryCounts[cat.value] ?? 0}</span>
-              </button>
-            ))}
-          </div>
-        </Section>
+            {activeCats.length > 4 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {activeCats.slice(4).map((cat) => (
+                  <button
+                    key={cat.value}
+                    onClick={() => router.push('/search?type=' + encodeURIComponent(cat.value))}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary"
+                  >
+                    <cat.icon size={15} className="text-primary" />
+                    {cat.label}
+                    <span className="text-xs text-muted-foreground">{categoryCounts[cat.value] ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Section>
+        )}
 
         {/* ============ 6. RECENTLY ADDED ============ */}
         {(loading || recent.length > 0) && (
@@ -1284,8 +1296,9 @@ export default function HomePage() {
                   Featured listings are shown on the EboHomes home page, in front of every visitor. Upgrade a listing to put it there.
                 </p>
 
+                {/* Goes to the landlord's OWN listings, where they pick which one to feature */}
                 <Button
-                  onClick={() => router.push(current ? `/listing/${current.id}/feature` : '/dashboard/listings')}
+                  onClick={() => router.push('/dashboard/listings')}
                   className="rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-7 py-6 font-bold text-amber-950 shadow-lg shadow-amber-500/20 transition-all duration-300 hover:scale-[1.03] hover:from-amber-300 hover:to-amber-400"
                 >
                   Upgrade to Featured
@@ -1399,4 +1412,4 @@ export default function HomePage() {
       <Footer />
     </div>
   )
-}
+      }
