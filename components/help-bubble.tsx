@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { HelpCircle, X, ChevronDown, MessageCircle } from 'lucide-react'
 import { EBOHOMES_WHATSAPP } from '@/lib/contact'
@@ -44,17 +44,22 @@ export function HelpBubble() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [openIndex, setOpenIndex] = useState<number | null>(0)
+  const openerRef = useRef<HTMLButtonElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
 
   // Close the sheet when you move to another page
   useEffect(() => {
     setOpen(false)
   }, [pathname])
 
-  // Lock page scroll and allow Esc to close while the sheet is open
+  // Lock page scroll and allow Esc to close while the sheet is open.
+  // Focus moves into the sheet when it opens and returns to the help button when it closes.
   useEffect(() => {
     if (!open) return
     const prevOverflow = document.body.style.overflow
+    const opener = openerRef.current
     document.body.style.overflow = 'hidden'
+    closeRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
@@ -62,6 +67,7 @@ export function HelpBubble() {
     return () => {
       document.body.style.overflow = prevOverflow
       window.removeEventListener('keydown', onKey)
+      opener?.focus()
     }
   }, [open])
 
@@ -85,10 +91,11 @@ export function HelpBubble() {
   return (
     <>
       <button
+        ref={openerRef}
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Help and frequently asked questions"
-        className={`fixed right-3 z-40 flex h-10 w-10 opacity-90 items-center justify-center rounded-full border border-border bg-background text-primary shadow-lg transition hover:bg-secondary sm:right-5 sm:h-12 sm:w-12 ${position}`}
+        className={`fixed right-3 z-40 flex h-11 w-11 opacity-90 items-center justify-center rounded-full border border-border bg-background text-primary shadow-lg transition hover:bg-secondary sm:right-5 sm:h-12 sm:w-12 ${position}`}
       >
         <HelpCircle size={22} />
       </button>
@@ -102,7 +109,7 @@ export function HelpBubble() {
           aria-label="Help and FAQs"
         >
           <div
-            className="flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-2xl bg-background shadow-xl sm:max-h-[80vh] sm:rounded-2xl"
+            className="flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-2xl bg-background shadow-xl sm:max-h-[80dvh] sm:rounded-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -117,10 +124,11 @@ export function HelpBubble() {
               </div>
 
               <button
+                ref={closeRef}
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close help"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-secondary"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-secondary"
               >
                 <X size={20} />
               </button>
