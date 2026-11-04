@@ -25,13 +25,26 @@ export const metadata: Metadata = {
     siteName: 'EboHomes',
     type: 'website',
     locale: 'en_NG',
-    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: 'EboHomes: Find Homes. Skip the Stress.' }],
+    images: [{ url: '/hero-home.jpg', alt: 'EboHomes' }],
   },
-  twitter: { card: 'summary_large_image', images: ['/og-image.jpg'] },
+  twitter: { card: 'summary_large_image', images: ['/hero-home.jpg'] },
   appleWebApp: {
     capable: true,
     title: 'EboHomes',
     statusBarStyle: 'default',
+  },
+  icons: {
+    icon: [
+      {
+        url: '/icon.png',
+        media: '(prefers-color-scheme: light)',
+      },
+      {
+        url: '/icon-white.png',
+        media: '(prefers-color-scheme: dark)',
+      },
+    ],
+    apple: '/icons/apple-touch-icon.png',
   },
 }
 
@@ -39,8 +52,8 @@ export const viewport: Viewport = {
   colorScheme: 'light dark',
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#FAF7F2' },
-    { media: '(prefers-color-scheme: dark)', color: '#1C1A17' },
+    { media: '(prefers-color-scheme: light)', color: '#052C19' },
+    { media: '(prefers-color-scheme: dark)', color: '#052C19' },
   ],
 }
 
