@@ -47,13 +47,13 @@ const STEPS = [
   { icon: Search, title: 'Search', desc: 'Filter by area, type and budget until something fits.' },
   { icon: ClipboardCheck, title: 'Request a viewing', desc: 'EboHomes arranges the inspection. You never chase an owner or agent.' },
   { icon: BadgeCheck, title: 'Apply', desc: 'Apply online. EboHomes handles the paperwork with the owner.' },
-  { icon: Key, title: 'Move in', desc: 'Sign the agreement and collect your keys. Pay only through EboHomes.' },
+  { icon: Key, title: 'Move in', desc: 'Sign the rental terms, pay using the official EboHomes details and collect your keys.' },
 ]
 
 const WHY_CHOOSE = [
   { title: 'Landlord checks', desc: 'Landlords submit their details and documents for review before their listings go live.', icon: ShieldCheck },
   { title: 'Reviewed listings', desc: 'EboHomes reviews every listing before it appears on the site.', icon: BadgeCheck },
-  { title: 'One channel', desc: 'Viewings, applications and payments go through EboHomes. Do not pay anyone outside it.', icon: Lock },
+  { title: 'One channel', desc: 'Viewings, applications and payments are handled through EboHomes. Never pay anyone who contacts you outside it.', icon: Lock },
   { title: 'Easy search', desc: 'Filters for area, type, bedrooms and budget help you find the right home fast.', icon: SearchCheck },
   { title: 'Report anything wrong', desc: 'See a fake or misleading listing? Report it and our team will review it.', icon: Flag },
   { title: 'Support when you need it', desc: 'Message the EboHomes team if you are unsure about anything.', icon: Headphones },
@@ -63,7 +63,8 @@ const FAQS = [
   { q: 'How do I find a property?', a: 'Use the search at the top of this page. Pick an area, a property type, the number of bedrooms and your budget, then open any listing to see its photos, price and details.' },
   { q: 'How do I see a property in person?', a: 'Open the listing and tap "Request a viewing". EboHomes arranges the inspection with the owner for you. You never have to chase anyone.' },
   { q: 'How do I apply for a property?', a: 'Tap "Apply now" on the listing and fill in the form. EboHomes handles the paperwork between you and the owner.' },
-  { q: 'Who do I pay?', a: 'Only through EboHomes. Payment steps are given inside your rental journey on EboHomes. Payments made outside EboHomes cannot be tracked or confirmed by us.' },
+  { q: 'Who do I pay, and how?', a: 'Pay only to the official EboHomes payment details shown on your tenancy page after you sign in. EboHomes checks each payment before it counts. Never pay an individual who says they represent EboHomes. We cannot track or protect payments made anywhere else.' },
+  { q: 'What are the fees, and what if I cancel?', a: 'Searching is free. The rent, deposit and any fees are written in the rental terms you review before you accept, so check the amounts first. At the end of a tenancy, any deposit refund is paid by the landlord directly and EboHomes records the agreed figures. A full cancellation and refund policy has not been published yet, so please ask the EboHomes team on WhatsApp before you pay.' },
   { q: 'How are properties verified?', a: 'Landlords submit their details and documents, and EboHomes reviews each listing before it goes live. If you ever see something wrong, you can report it from the listing.' },
   { q: 'What if I see a fake or wrong listing?', a: 'Tap "Report" on the listing or use the report page. Our team reviews every report.' },
   { q: 'Is it free to search?', a: 'Yes. Searching and browsing are free for tenants.' },
