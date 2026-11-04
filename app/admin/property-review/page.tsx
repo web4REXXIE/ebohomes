@@ -203,8 +203,8 @@ export default function PropertyReviewPage() {
 
   const handleToggleVerified = async (id: string, current: boolean) => {
     const confirmMsg = current
-      ? 'Remove the EboHomes Verified badge from this property?'
-      : 'Mark this property as EboHomes Verified? This tells tenants EboHomes has confirmed real-world facts about it — only do this if you actually have grounds to back that claim.'
+      ? 'Remove the “Property verified” badge from this property? This does not change the landlord’s identity verification.'
+      : 'Mark this property as verified? This tells tenants EboHomes has confirmed real-world facts about the property (it is separate from landlord identity verification) — only do this if you actually have grounds to back that claim.'
     if (!window.confirm(confirmMsg)) return
 
     setUpdating(true)
@@ -328,7 +328,7 @@ export default function PropertyReviewPage() {
                       {selected.title ?? 'Untitled listing'}
                       {selected.verified && (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                          <ShieldCheck size={12} /> EboHomes Verified
+                          <ShieldCheck size={12} /> Property verified
                         </span>
                       )}
                     </h2>
@@ -550,7 +550,7 @@ export default function PropertyReviewPage() {
                   }`}
                 >
                   {selected.verified ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
-                  {selected.verified ? 'Remove Verified Badge' : 'Mark as EboHomes Verified'}
+                  {selected.verified ? 'Remove Property Verified Badge' : 'Mark Property as Verified'}
                 </Button>
               </div>
 
@@ -573,4 +573,4 @@ export default function PropertyReviewPage() {
       )}
     </div>
   )
-}
+  }
