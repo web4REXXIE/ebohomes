@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next'
 import HomeClient from '@/components/home-client'
 import { EBOHOMES_EMAIL } from '@/lib/contact'
@@ -16,13 +17,13 @@ export const metadata: Metadata = {
     siteName: 'EboHomes',
     type: 'website',
     locale: 'en_NG',
-    images: [{ url: '/hero-home.jpg', alt: 'EboHomes: find homes in Ebonyi State' }],
+    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: 'EboHomes: Find Homes. Skip the Stress.' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'EboHomes | Find Homes. Skip the Stress.',
     description: 'Reviewed rental listings in Ebonyi State.',
-    images: ['/hero-home.jpg'],
+    images: ['/og-image.jpg'],
   },
 }
 
