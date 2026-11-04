@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   Sun, Moon, LogOut, LayoutDashboard, Menu, X,
   Info, HelpCircle, Mail, PlusCircle, ChevronRight,
-  Bell, Search as SearchIcon, Home as HomeIcon, Heart, MessageCircle,
+  Bell, Search as SearchIcon, Home as HomeIcon, Heart,
   UserCircle, ChevronDown,
 } from 'lucide-react'
 import { Button } from './ui/button'
@@ -16,6 +16,18 @@ import { NotificationBell } from '@/components/notification-bell'
 import { supabase } from '@/lib/supabase'
 import { dashboardLinks } from '@/lib/dashboard-links'
 
+// Stage 5: refined header. All state, auth, role and routing logic is unchanged.
+// Visual changes: shorter bar, text-only desktop links with an underline for the current page,
+// About and Contact added to the desktop links on large screens, and a mobile menu with
+// focus handling (focus moves into the menu, Tab stays inside it, focus returns on close).
+
+const desktopLink = (active: boolean, display = 'inline-flex') =>
+  `${display} relative h-full items-center rounded-md px-0.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full ${
+    active
+      ? 'text-foreground after:bg-primary'
+      : 'text-foreground/70 hover:text-foreground after:bg-transparent hover:after:bg-border'
+  }`
+
 export function Header() {
   const router = useRouter()
   const pathname = usePathname()
@@ -24,6 +36,12 @@ export function Header() {
   const [role, setRole] = useState<string | null>(null)
   const [loggedIn, setLoggedIn] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+
+  const openerRef = useRef<HTMLElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const wasOpenRef = useRef(false)
+  const restoreFocusRef = useRef(false)
 
   useEffect(() => {
     setMounted(true)
@@ -69,11 +87,58 @@ export function Header() {
     return () => { document.body.style.overflow = '' }
   }, [drawerOpen])
 
-  // Escape closes the mobile menu
+  const openDrawer = () => {
+    openerRef.current = document.activeElement as HTMLElement | null
+    setDrawerOpen(true)
+  }
+
+  // Used by the close button, the dark overlay and Escape. Focus goes back to the button that opened the menu.
+  const closeDrawer = () => {
+    restoreFocusRef.current = true
+    setDrawerOpen(false)
+  }
+
+  // Focus moves into the menu when it opens and returns to the opener when it is dismissed
+  useEffect(() => {
+    if (drawerOpen) {
+      wasOpenRef.current = true
+      closeButtonRef.current?.focus()
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false
+      if (restoreFocusRef.current) openerRef.current?.focus()
+      restoreFocusRef.current = false
+    }
+  }, [drawerOpen])
+
+  // Escape closes the mobile menu, and Tab stays inside it while it is open
   useEffect(() => {
     if (!drawerOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDrawerOpen(false)
+      if (e.key === 'Escape') {
+        restoreFocusRef.current = true
+        setDrawerOpen(false)
+        return
+      }
+      if (e.key !== 'Tab') return
+      const panel = dialogRef.current
+      if (!panel) return
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')
+      )
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (!panel.contains(active)) {
+        e.preventDefault()
+        first.focus()
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -114,23 +179,19 @@ export function Header() {
     }
   }
 
-  const dashboardHref = role === 'landlord' ? '/dashboard' : '/home'
-
   // Highlights the link for the page you are on
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href))
-  const navLink = (href: string) =>
-    `flex flex-col items-center gap-0.5 text-sm font-medium transition-colors ${
-      isActive(href) ? 'text-primary' : 'text-foreground/70 hover:text-primary'
-    }`
 
   if (!mounted) {
     return (
-      <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-sm border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 md:h-20 flex items-center justify-between">
-          <div className="h-10 w-36 bg-muted rounded-lg animate-pulse" />
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-20 bg-muted rounded-xl" />
-            <div className="h-9 w-24 bg-muted rounded-xl" />
+      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm">
+        <div className="container-wide flex h-16 items-center justify-between lg:h-[72px]">
+          <Link href="/" className="flex shrink-0 items-center">
+            <img src="/logo-header.png" alt="EboHomes" className="h-9 w-auto sm:h-10 lg:h-11 dark:brightness-0 dark:invert" />
+          </Link>
+          <div className="flex items-center gap-2" aria-hidden="true">
+            <div className="h-9 w-20 rounded-xl bg-muted" />
+            <div className="h-9 w-24 rounded-xl bg-muted" />
           </div>
         </div>
       </header>
@@ -139,63 +200,66 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-sm border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 md:h-20">
+      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm">
+        <div className="container-wide">
+          <div className="flex h-16 items-center justify-between gap-4 lg:h-[72px]">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setDrawerOpen(true)}
-                className="md:hidden flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted text-foreground -ml-2"
+                type="button"
+                onClick={openDrawer}
+                className="-ml-2 flex h-11 w-11 items-center justify-center rounded-xl text-foreground hover:bg-muted md:hidden"
                 aria-label="Open menu"
+                aria-expanded={drawerOpen}
+                aria-controls="mobile-menu"
               >
                 <Menu size={22} />
               </button>
 
-              <Link href="/" className="flex items-center gap-2 shrink-0">
+              <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="EboHomes home">
                 <img
                   src="/logo-header.png"
                   alt="EboHomes"
-                  className="h-9 w-auto sm:h-11 lg:h-12 dark:brightness-0 dark:invert"
+                  className="h-9 w-auto sm:h-10 lg:h-11 dark:brightness-0 dark:invert"
                 />
               </Link>
             </div>
 
-            <nav className="hidden md:flex items-center gap-7">
-              <Link href="/" className={navLink('/')} aria-current={isActive('/') ? 'page' : undefined}>
-                <HomeIcon size={18} />
+            <nav aria-label="Main" className="hidden h-full items-stretch gap-6 md:flex lg:gap-8">
+              <Link href="/" className={desktopLink(isActive('/'))} aria-current={isActive('/') ? 'page' : undefined}>
                 Home
               </Link>
-              <Link href="/search" className={navLink('/search')} aria-current={isActive('/search') ? 'page' : undefined}>
-                <SearchIcon size={18} />
+              <Link href="/search" className={desktopLink(isActive('/search'))} aria-current={isActive('/search') ? 'page' : undefined}>
                 Properties
               </Link>
               {loggedIn && (
                 <>
-                  <Link href="/saved" className={navLink('/saved')} aria-current={isActive('/saved') ? 'page' : undefined}>
-                    <Heart size={18} />
+                  <Link href="/saved" className={desktopLink(isActive('/saved'))} aria-current={isActive('/saved') ? 'page' : undefined}>
                     Saved
                   </Link>
-                  <Link href="/messages" className={navLink('/messages')} aria-current={isActive('/messages') ? 'page' : undefined}>
-                    <MessageCircle size={18} />
+                  <Link href="/messages" className={desktopLink(isActive('/messages'))} aria-current={isActive('/messages') ? 'page' : undefined}>
                     Messages
                   </Link>
                 </>
               )}
-              <button
-                onClick={() => scrollToSection('how-it-works')}
-                className="flex flex-col items-center gap-0.5 text-sm font-medium text-foreground/70 hover:text-primary transition-colors"
-              >
-                <HelpCircle size={18} />
+              <button type="button" onClick={() => scrollToSection('how-it-works')} className={desktopLink(false)}>
                 How It Works
               </button>
+              <Link href="/about" className={desktopLink(isActive('/about'), 'hidden lg:inline-flex')} aria-current={isActive('/about') ? 'page' : undefined}>
+                About
+              </Link>
+              <Link href="/contact" className={desktopLink(isActive('/contact'), 'hidden lg:inline-flex')} aria-current={isActive('/contact') ? 'page' : undefined}>
+                Contact
+              </Link>
             </nav>
 
             <div className="flex items-center gap-1 sm:gap-2">
               <InstallButton variant="header" />
               <button
+                type="button"
                 onClick={toggleDarkMode}
-                className="p-2.5 rounded-xl hover:bg-muted transition-colors text-foreground/70 hidden sm:inline-flex"
+                className="hidden rounded-xl p-2.5 text-foreground/70 transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
                 aria-label="Toggle dark mode"
+                aria-pressed={isDark}
               >
                 {isDark ? <Sun size={18} /> : <Moon size={18} />}
               </button>
@@ -220,7 +284,7 @@ export function Header() {
                     </Button>
                   )}
 
-                <NotificationBell />
+                  <NotificationBell />
 
                   {/* Desktop: full dropdown */}
                   <div className="hidden sm:block">
@@ -230,9 +294,11 @@ export function Header() {
                   {/* Mobile: tappable avatar opens the menu */}
                   <button
                     type="button"
-                    onClick={() => setDrawerOpen(true)}
+                    onClick={openDrawer}
                     className="flex h-11 w-11 items-center justify-center sm:hidden"
                     aria-label="Open account menu"
+                    aria-expanded={drawerOpen}
+                    aria-controls="mobile-menu"
                   >
                     <Avatar size={36} />
                   </button>
@@ -245,29 +311,34 @@ export function Header() {
 
       {/* Mobile drawer */}
       <div
+        id="mobile-menu"
         inert={!drawerOpen}
         aria-hidden={!drawerOpen}
-        className={`md:hidden fixed inset-0 z-50 transition-opacity duration-300 ${
-          drawerOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        className={`fixed inset-0 z-50 transition-opacity duration-300 md:hidden ${
+          drawerOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
         <div
           className="absolute inset-0 bg-black/50"
-          onClick={() => setDrawerOpen(false)}
+          aria-hidden="true"
+          onClick={closeDrawer}
         />
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-label="Menu"
-          className={`absolute top-0 left-0 h-full w-[85%] max-w-[330px] bg-card shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
+          className={`absolute left-0 top-0 flex h-full w-[85%] max-w-[330px] flex-col bg-card shadow-2xl transition-transform duration-300 ease-out ${
             drawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="flex items-center justify-between h-16 px-5 border-b border-border shrink-0">
+          <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-5">
             <img src="/logo-header.png" alt="EboHomes" className="h-10 w-auto dark:brightness-0 dark:invert" />
             <button
-              onClick={() => setDrawerOpen(false)}
-              className="flex h-11 w-11 items-center justify-center -mr-2 rounded-xl hover:bg-muted text-foreground"
+              ref={closeButtonRef}
+              type="button"
+              onClick={closeDrawer}
+              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-xl text-foreground hover:bg-muted"
               aria-label="Close menu"
             >
               <X size={20} />
@@ -275,15 +346,16 @@ export function Header() {
           </div>
 
           <div
-            className="flex-1 overflow-y-auto py-4 px-3"
+            className="flex-1 overflow-y-auto overscroll-contain px-3 py-4"
             style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
           >
             {loggedIn && <DrawerAccountCard onNavigate={() => setDrawerOpen(false)} />}
 
             {loggedIn && role === 'landlord' && (
               <button
+                type="button"
                 onClick={() => { setDrawerOpen(false); handleListClick() }}
-                className="w-full flex items-center gap-2 justify-center bg-primary text-primary-foreground font-semibold rounded-xl py-3 mb-5 text-sm"
+                className="mb-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
               >
                 <PlusCircle size={16} />
                 Post a Listing
@@ -338,7 +410,7 @@ export function Header() {
                 />
               </DrawerGroup>
             )}
-             <InstallButton variant="drawer" />
+            <InstallButton variant="drawer" />
             <DrawerGroup label="Preferences">
               <DrawerItem
                 icon={isDark ? <Sun size={18} /> : <Moon size={18} />}
@@ -349,15 +421,17 @@ export function Header() {
             </DrawerGroup>
 
             {!loggedIn && (
-              <div className="flex flex-col gap-2 mt-2 px-2">
+              <div className="mt-2 flex flex-col gap-2 px-2">
                 <Link href="/login" onClick={() => setDrawerOpen(false)}>
-                  <Button variant="outline" className="w-full h-11">Log in</Button>
+                  <Button variant="outline" className="h-11 w-full">Log in</Button>
                 </Link>
                 <Link href="/login?mode=signup" onClick={() => setDrawerOpen(false)}>
-                  <Button className="w-full h-11">Sign Up</Button>
+                  <Button className="h-11 w-full">Sign Up</Button>
                 </Link>
               </div>
             )}
+
+            <p className="mt-6 px-3 text-xs text-muted-foreground">EboHomes. Real Estate You Can Trust.</p>
           </div>
         </div>
       </div>
@@ -418,7 +492,7 @@ function Avatar({ size = 36 }: { size?: number }) {
   ) : (
     <div
       style={style}
-      className="rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm"
+      className="flex items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
     >
       {initial}
     </div>
@@ -447,7 +521,7 @@ function DrawerAccountCard({ onNavigate }: { onNavigate: () => void }) {
 function DrawerGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <p className="text-[11px] font-medium text-muted-foreground px-3 mb-1.5">{label}</p>
+      <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
       <div className="flex flex-col">{children}</div>
     </div>
   )
@@ -463,6 +537,9 @@ function DrawerItem({
   as?: 'link' | 'button'
   danger?: boolean
 }) {
+  const pathname = usePathname()
+  const active = as === 'link' && !!href && (href === '/' ? pathname === '/' : pathname.startsWith(href))
+
   const content = (
     <>
       <span className={`flex items-center gap-3 ${danger ? 'text-destructive' : 'text-foreground'}`}>
@@ -473,14 +550,15 @@ function DrawerItem({
     </>
   )
 
-  const className =
-    'flex min-h-[46px] items-center justify-between px-3 py-3 rounded-xl hover:bg-muted transition-colors'
+  const className = `flex min-h-[46px] items-center justify-between rounded-xl px-3 py-3 transition-colors hover:bg-muted ${
+    active ? 'bg-accent' : ''
+  }`
 
   if (as === 'button') {
-    return <button onClick={onClick} className={`text-left ${className}`}>{content}</button>
+    return <button type="button" onClick={onClick} className={`text-left ${className}`}>{content}</button>
   }
   return (
-    <Link href={href!} onClick={onClick} className={className}>
+    <Link href={href!} onClick={onClick} className={className} aria-current={active ? 'page' : undefined}>
       {content}
     </Link>
   )
@@ -526,4 +604,4 @@ function DrawerDropdown({
       )}
     </div>
   )
-}
+                 }
