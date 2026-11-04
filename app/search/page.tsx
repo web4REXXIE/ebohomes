@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RefObject } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Search,
   SlidersHorizontal,
@@ -15,32 +17,30 @@ import {
   Bath,
   Star,
   ShieldCheck,
+  BadgeCheck,
   Calendar,
   Copy,
   Send,
   MessageCircle,
-   Building2,
-  Map as MapIcon,
+  Building2,
   Camera,
   ChevronLeft,
   ChevronRight,
+  Info,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { RecentSearches, saveRecentSearch } from '@/components/recent-searches'
 import { SearchAlertBar } from '@/components/search-alert-bar'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
-import dynamic from 'next/dynamic'
 
-const SearchMap = dynamic(
-  () => import('@/components/search-map').then((mod) => ({ default: mod.SearchMap })),
-  {
-    ssr: false,
-    loading: () => <div className="h-[70vh] animate-pulse rounded-xl border border-border bg-card" />,
-  }
-)
+/* Stage 7: search page redesign.
+   Data loading, filtering, sorting, paging, saving and sharing logic is the same as before.
+   New in this file: design tokens, accessible dialogs, and filters kept in sync with the URL.
+   The map (components/search-map.tsx) is not wired in here. It is handled in a later step. */
 
 // Values must match what is stored in listings.property_type (same list as /list-property)
 const PROPERTY_TYPES = [
@@ -62,6 +62,14 @@ const AMENITIES = ['Parking Space', '24/7 Security', 'Water Supply', 'Generator'
 // Monthly rent slider. When it sits at the cap, there is no upper limit.
 const PRICE_CAP = 2000000
 const PAGE_SIZE = 12
+
+const COUNT_OPTIONS = ['1', '2', '3', '4+']
+const SORT_OPTIONS = [
+  { value: 'recommended', label: 'Recommended' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'price-low', label: 'Price: Low to High' },
+  { value: 'price-high', label: 'Price: High to Low' },
+]
 
 // '4+' means 4 or more; any other value is an exact match
 const matchCount = (actual: number | null | undefined, wanted: string) =>
@@ -121,23 +129,140 @@ function seededShuffle<T>(items: T[], seed: number) {
   return arr
 }
 
+/* ---------- URL <-> filters ----------
+   Parameters (same names the Home page already uses, plus the ones this page was missing):
+   location, type, q, minPrice, maxPrice, bedrooms, bathrooms, amenity (repeatable), featured=1, sort */
+
+type UrlFilters = {
+  location: string
+  type: string
+  q: string
+  minPrice: number
+  maxPrice: number
+  bedrooms: string
+  bathrooms: string
+  amenities: string[]
+  featured: boolean
+  sort: string
+}
+
+function readNumber(value: string | null): number | null {
+  if (value === null || value.trim() === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+// A raw "4+" typed into an address bar arrives as "4 " (a plus sign decodes to a space)
+function readCount(value: string | null): string {
+  if (!value) return ''
+  const v = value.trim().replace(/\s/g, '+')
+  const normal = value.endsWith(' ') && value.trim() === '4' ? '4+' : v
+  return COUNT_OPTIONS.includes(normal) ? normal : ''
+}
+
+function parseFilters(sp: URLSearchParams): UrlFilters {
+  const min = readNumber(sp.get('minPrice'))
+  const max = readNumber(sp.get('maxPrice'))
+  const sort = sp.get('sort') || ''
+  return {
+    location: sp.get('location') || '',
+    type: sp.get('type') || '',
+    q: sp.get('q') || '',
+    minPrice: min === null ? 0 : Math.min(Math.max(0, min), PRICE_CAP),
+    maxPrice: max === null ? PRICE_CAP : Math.min(Math.max(0, max), PRICE_CAP),
+    bedrooms: readCount(sp.get('bedrooms')),
+    bathrooms: readCount(sp.get('bathrooms')),
+    amenities: AMENITIES.filter((a) => sp.getAll('amenity').includes(a)),
+    featured: sp.get('featured') === '1',
+    sort: SORT_OPTIONS.some((o) => o.value === sort) ? sort : 'recommended',
+  }
+}
+
+function buildQuery(f: UrlFilters): string {
+  const p = new URLSearchParams()
+  if (f.location) p.set('location', f.location)
+  if (f.type) p.set('type', f.type)
+  if (f.q) p.set('q', f.q)
+  if (f.minPrice > 0) p.set('minPrice', String(f.minPrice))
+  if (f.maxPrice < PRICE_CAP) p.set('maxPrice', String(f.maxPrice))
+  if (f.bedrooms) p.set('bedrooms', f.bedrooms)
+  if (f.bathrooms) p.set('bathrooms', f.bathrooms)
+  for (const a of f.amenities) p.append('amenity', a)
+  if (f.featured) p.set('featured', '1')
+  if (f.sort !== 'recommended') p.set('sort', f.sort)
+  return p.toString()
+}
+
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
+
+/* ---------- Dialog behaviour: focus in, Tab kept inside, Escape closes, page scroll locked ---------- */
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+function useDialog(open: boolean, onClose: () => void, panelRef: RefObject<HTMLDivElement | null>) {
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = onClose
+  })
+
+  useEffect(() => {
+    if (!open) return
+    const panel = panelRef.current
+    const previous = document.activeElement as HTMLElement | null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const items = () => Array.from(panel?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])
+    ;(items()[0] ?? panel)?.focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        closeRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const list = items()
+      if (list.length === 0) {
+        event.preventDefault()
+        panel?.focus()
+        return
+      }
+      const first = list[0]
+      const last = list[list.length - 1]
+      const active = document.activeElement
+      const outside = !panel?.contains(active)
+      if (event.shiftKey && (active === first || outside)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (active === last || outside)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+      previous?.focus?.()
+    }
+  }, [open, panelRef])
+}
+
 /* ---------------- Share sheet ---------------- */
 
 function ShareSheet({ listing, onClose }: { listing: any; onClose: () => void }) {
+  const panelRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   const [canNativeShare, setCanNativeShare] = useState(false)
+
+  useDialog(true, onClose, panelRef)
 
   useEffect(() => {
     setCanNativeShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function')
   }, [])
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
 
   const url = `${window.location.origin}/listing/${listing.id}`
   const text = `Check out this property on EboHomes: ${listing.title || listing.location_text || ''}`
@@ -177,29 +302,35 @@ function ShareSheet({ listing, onClose }: { listing: any; onClose: () => void })
   }
 
   const buttonClass =
-    'flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary'
+    'flex min-h-11 items-center gap-2 rounded-control border border-border px-3 py-2.5 text-sm font-medium text-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+
+  const mark = 'flex h-[18px] w-[18px] items-center justify-center rounded-full bg-foreground text-[10px] font-bold leading-none text-background'
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Share this property"
     >
       <div
-        className="w-full max-w-md rounded-t-2xl bg-background p-5 shadow-xl sm:rounded-2xl"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-heading"
+        tabIndex={-1}
+        className="w-full max-w-md rounded-t-panel bg-card p-5 shadow-overlay outline-none sm:rounded-panel"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-base font-bold text-foreground">Share this property</h2>
+          <h2 id="share-heading" className="text-base font-bold text-foreground">
+            Share this property
+          </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close share menu"
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary"
+            className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -209,43 +340,39 @@ function ShareSheet({ listing, onClose }: { listing: any; onClose: () => void })
 
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={() => open('whatsapp')} className={buttonClass}>
-            <MessageCircle size={18} className="text-emerald-600" />
+            <MessageCircle size={18} className="text-primary" aria-hidden="true" />
             WhatsApp
           </button>
 
           <button type="button" onClick={() => open('facebook')} className={buttonClass}>
-            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold leading-none text-white">
-              f
-            </span>
+            <span className={mark} aria-hidden="true">f</span>
             Facebook
           </button>
 
           <button type="button" onClick={() => open('x')} className={buttonClass}>
-            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black text-[10px] font-bold leading-none text-white">
-              X
-            </span>
+            <span className={mark} aria-hidden="true">X</span>
             X (Twitter)
           </button>
 
           <button type="button" onClick={() => open('telegram')} className={buttonClass}>
-            <Send size={18} className="text-sky-500" />
+            <Send size={18} className="text-primary" aria-hidden="true" />
             Telegram
           </button>
 
           <button type="button" onClick={copyLink} className={buttonClass}>
-            <Copy size={18} />
+            <Copy size={18} aria-hidden="true" />
             {copied ? 'Link copied!' : 'Copy link'}
           </button>
 
           {canNativeShare && (
             <button type="button" onClick={nativeShare} className={buttonClass}>
-              <Share2 size={18} />
+              <Share2 size={18} aria-hidden="true" />
               More apps
             </button>
           )}
         </div>
 
-        <p className="mt-4 text-[11px] leading-snug text-muted-foreground">
+        <p className="mt-4 text-xs leading-snug text-muted-foreground">
           For TikTok or Instagram, tap &quot;More apps&quot; on your phone, or copy the link and
           paste it into your post or story.
         </p>
@@ -262,24 +389,25 @@ function PropertyCard({
   saved,
   onToggleSave,
   onShare,
-  onOpen,
 }: {
   listing: any
   layout: 'grid' | 'list'
   saved: boolean
   onToggleSave: () => void
   onShare: () => void
-  onOpen: () => void
 }) {
   const isList = layout === 'list'
   const photo: string | undefined = Array.isArray(listing.photos) ? listing.photos[0] : undefined
   const photoCount: number = Array.isArray(listing.photos) ? listing.photos.length : 0
   const featured = !!listing.featured
   const added = addedLabel(listing.created_at)
+  const name = String(listing.title || listing.property_type || 'property')
+  const href = `/listing/${listing.id}`
 
+  // Physical inspection comes from the public_listing_inspections view, never from listings.verified
   const inspected = useInspectedIds([String(listing.id)]).has(String(listing.id))
 
- function requestViewing() {
+  function requestViewing() {
     const params = new URLSearchParams({
       new: '1',
       category: 'viewing',
@@ -290,49 +418,63 @@ function PropertyCard({
     window.location.assign(`/messages?${params.toString()}`)
   }
 
+  const badge =
+    'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold shadow-rest'
+
   return (
     <article
-      className={`flex flex-col overflow-hidden rounded-xl bg-card transition-shadow hover:shadow-md ${
-        featured ? 'border border-amber-400 ring-1 ring-amber-300/70' : 'border border-border'
-      } ${isList ? 'md:flex-row' : ''}`}
+      className={cn(
+        'flex flex-col overflow-hidden rounded-card bg-card shadow-rest transition-shadow hover:shadow-raised',
+        featured ? 'border border-featured ring-1 ring-featured/40' : 'border border-border',
+        isList && 'md:flex-row'
+      )}
     >
       {/* Photo */}
-      <div className={`relative ${isList ? 'md:w-72 md:shrink-0' : ''}`}>
-        <button type="button" onClick={onOpen} className="block w-full" aria-label="View property">
+      <div className={cn('relative', isList && 'md:w-72 md:shrink-0')}>
+        <Link
+          href={href}
+          aria-label={`View ${name}`}
+          className={cn(
+            'block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
+            isList && 'md:h-full'
+          )}
+        >
           {photo ? (
             <img
               src={cardImage(photo, 600)}
-              alt={listing.title || listing.property_type || 'Property photo'}
+              alt=""
               loading="lazy"
               decoding="async"
-              className={`w-full bg-secondary/40 object-cover ${
-                isList ? 'aspect-[4/3] md:h-full md:aspect-auto' : 'aspect-[4/3]'
-              }`}
+              className={cn(
+                'w-full bg-secondary/40 object-cover',
+                isList ? 'aspect-[4/3] md:aspect-auto md:h-full' : 'aspect-[4/3]'
+              )}
             />
           ) : (
-            <div className="flex aspect-[4/3] w-full items-center justify-center bg-secondary text-muted-foreground">
-              <Building2 size={28} />
+            <div className="flex aspect-[4/3] w-full items-center justify-center bg-secondary text-muted-foreground md:aspect-auto md:h-full md:min-h-40">
+              <Building2 size={28} aria-hidden="true" />
             </div>
           )}
-        </button>
+        </Link>
 
-        <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
+        <div className="pointer-events-none absolute left-2 top-2 flex flex-col items-start gap-1">
           {featured && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-bold text-amber-950 shadow sm:text-xs">
-              <Star size={11} className="fill-current" />
+            <span className={cn(badge, 'bg-featured text-featured-foreground')}>
+              <Star size={12} className="fill-current" aria-hidden="true" />
               Featured
             </span>
           )}
 
           {inspected && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-700 px-2 py-0.5 text-[10px] font-semibold text-white shadow sm:text-xs">
-              <ShieldCheck size={11} />
+            <span className={cn(badge, 'bg-forest text-forest-foreground ring-1 ring-white/25')}>
+              <ShieldCheck size={12} aria-hidden="true" />
               Physically inspected
             </span>
           )}
+
           {listing.verified && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow sm:text-xs">
-              <ShieldCheck size={11} />
+            <span className={cn(badge, 'bg-primary text-primary-foreground')}>
+              <BadgeCheck size={12} aria-hidden="true" />
               Verified
             </span>
           )}
@@ -343,17 +485,19 @@ function PropertyCard({
           onClick={onToggleSave}
           aria-label={saved ? 'Remove from saved properties' : 'Save property'}
           aria-pressed={saved}
-          className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow transition hover:bg-white sm:h-9 sm:w-9"
+          className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-full bg-card/95 text-foreground shadow-rest transition hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <Heart
-            size={16}
+            size={18}
+            aria-hidden="true"
             className={saved ? 'fill-destructive text-destructive' : 'text-foreground'}
           />
         </button>
 
         {photoCount > 0 && (
-          <div className="pointer-events-none absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
-            <Camera size={11} />
+          <div className="pointer-events-none absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm">
+            <Camera size={12} aria-hidden="true" />
+            <span className="sr-only">Photos: </span>
             {photoCount}
           </div>
         )}
@@ -363,38 +507,36 @@ function PropertyCard({
       <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="whitespace-nowrap text-base font-extrabold leading-tight text-primary sm:text-lg">
+            <p className="whitespace-nowrap text-lg font-bold leading-tight text-primary">
               {naira(listing.price_monthly)}
-              <span className="text-[11px] font-medium text-muted-foreground sm:text-xs">
-                {' '}
-                /month
-              </span>
+              <span className="text-xs font-medium text-muted-foreground"> /month</span>
             </p>
             {Number(listing.price_yearly) > 0 && (
-              <p className="text-[11px] text-muted-foreground sm:text-xs">
-                {naira(listing.price_yearly)}/year
-              </p>
+              <p className="text-xs text-muted-foreground">{naira(listing.price_yearly)}/year</p>
             )}
           </div>
 
           <button
             type="button"
             onClick={onShare}
-            aria-label="Share property"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            aria-label={`Share ${name}`}
+            className="-mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
-            <Share2 size={16} />
+            <Share2 size={18} aria-hidden="true" />
           </button>
         </div>
 
-        <button type="button" onClick={onOpen} className="mt-2 text-left">
-          <h3 className="line-clamp-1 text-sm font-semibold text-foreground sm:text-base">
+        <h3 className="mt-1 text-base font-semibold text-foreground">
+          <Link
+            href={href}
+            className="line-clamp-1 rounded-sm hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
             {listing.title || listing.property_type}
-          </h3>
-        </button>
+          </Link>
+        </h3>
 
         <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-          <MapPin size={12} className="shrink-0" />
+          <MapPin size={12} className="shrink-0" aria-hidden="true" />
           <span className="line-clamp-1">{listing.location_text}</span>
         </p>
 
@@ -406,35 +548,54 @@ function PropertyCard({
           )}
           {listing.bedrooms != null && (
             <span className="flex items-center gap-1">
-              <BedDouble size={13} className="text-primary" />
+              <BedDouble size={14} className="text-primary" aria-hidden="true" />
               {listing.bedrooms}
+              <span className="sr-only"> bedrooms</span>
             </span>
           )}
           {listing.bathrooms != null && (
             <span className="flex items-center gap-1">
-              <Bath size={13} className="text-primary" />
+              <Bath size={14} className="text-primary" aria-hidden="true" />
               {listing.bathrooms}
+              <span className="sr-only"> bathrooms</span>
             </span>
           )}
         </div>
 
-        {added && <p className="mt-2 text-[11px] font-medium text-emerald-700">{added}</p>}
+        {added && <p className="mt-2 text-xs font-medium text-primary">{added}</p>}
 
         <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
-          <Button type="button" variant="outline" onClick={onOpen} className="h-9 px-2 text-xs font-semibold sm:text-sm">
-            Details
-          </Button>
-          <Button
-            type="button"
-            onClick={requestViewing}
-            className="h-9 gap-1 bg-primary px-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 sm:text-sm"
+          <Link
+            href={href}
+            aria-label={`Details: ${name}`}
+            className={cn(buttonVariants({ variant: 'outline' }), 'px-2')}
           >
-            <Calendar size={14} />
+            Details
+          </Link>
+          <Button type="button" onClick={requestViewing} className="gap-1 px-2">
+            <Calendar size={14} aria-hidden="true" />
             Viewing
           </Button>
         </div>
       </div>
     </article>
+  )
+}
+
+function CardSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-card border border-border bg-card" aria-hidden="true">
+      <div className="aspect-[4/3] animate-pulse bg-secondary" />
+      <div className="space-y-3 p-4">
+        <div className="h-5 w-1/2 animate-pulse rounded bg-secondary" />
+        <div className="h-4 w-3/4 animate-pulse rounded bg-secondary" />
+        <div className="h-4 w-1/3 animate-pulse rounded bg-secondary" />
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <div className="h-11 animate-pulse rounded-xl bg-secondary" />
+          <div className="h-11 animate-pulse rounded-xl bg-secondary" />
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -452,11 +613,11 @@ function Pagination({
   if (totalPages <= 1) return null
 
   const base =
-    'flex h-10 min-w-[2.5rem] items-center justify-center rounded-lg border px-3 text-sm font-semibold transition-colors'
+    'flex h-11 min-w-11 items-center justify-center rounded-control border px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
 
   return (
     <nav className="mt-8 flex flex-col items-center gap-3" aria-label="Pagination">
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-center gap-1.5">
         <button
           type="button"
           onClick={() => onChange(page - 1)}
@@ -464,12 +625,12 @@ function Pagination({
           aria-label="Previous page"
           className={`${base} border-border bg-card text-foreground hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40`}
         >
-          <ChevronLeft size={18} />
+          <ChevronLeft size={18} aria-hidden="true" />
         </button>
 
         {getPageNumbers(page, totalPages).map((p, i) =>
           p === '…' ? (
-            <span key={`gap-${i}`} className="px-1 text-muted-foreground">
+            <span key={`gap-${i}`} className="px-1 text-muted-foreground" aria-hidden="true">
               …
             </span>
           ) : (
@@ -477,6 +638,7 @@ function Pagination({
               key={p}
               type="button"
               onClick={() => onChange(p)}
+              aria-label={`Page ${p}`}
               aria-current={p === page ? 'page' : undefined}
               className={`${base} ${
                 p === page
@@ -496,7 +658,7 @@ function Pagination({
           aria-label="Next page"
           className={`${base} border-border bg-card text-foreground hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40`}
         >
-          <ChevronRight size={18} />
+          <ChevronRight size={18} aria-hidden="true" />
         </button>
       </div>
 
@@ -509,13 +671,50 @@ function Pagination({
 
 /* ---------------- Page ---------------- */
 
+// useSearchParams needs a Suspense boundary. Header and Footer stay outside it.
 export default function SearchPage() {
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <Header />
+      <Suspense fallback={<SearchFallback />}>
+        <SearchContent />
+      </Suspense>
+      <Footer />
+    </div>
+  )
+}
+
+function SearchFallback() {
+  return (
+    <main className="flex-1" aria-busy="true">
+      <div className="border-b border-border bg-cream">
+        <div className="container-wide py-6 md:py-8">
+          <h1 className="text-h2 font-bold text-foreground md:text-h1">Find rentals in Ebonyi State</h1>
+        </div>
+      </div>
+      <div className="container-wide pt-5">
+        <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 md:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+    </main>
+  )
+}
+
+function SearchContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlString = searchParams.toString()
+
   const resultsTopRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
 
   const [listings, setListings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
   const [sortBy, setSortBy] = useState('recommended')
@@ -538,27 +737,34 @@ export default function SearchPage() {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [shareTarget, setShareTarget] = useState<any>(null)
 
+  // URL sync: `hydrated` turns true once the first URL has been read into the controls.
+  // `lastUrl` is the query string this page last read or wrote, so its own writes are not re-read.
+  const [hydrated, setHydrated] = useState(false)
+  const lastUrl = useRef<string | null>(null)
+
   useEffect(() => {
     setSeed(Math.floor(Math.random() * 2147483647))
   }, [])
 
-  // Pre-fill from Home page links (?location, ?type, ?minPrice, ?maxPrice, ?bedrooms, ?featured=1, ?sort=newest)
+  // URL -> controls. Runs on first load, and again when something else changes the address
+  // (a recent-search link, the browser's back button, a shared link opened in this tab).
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
+    if (lastUrl.current === urlString) return
+    lastUrl.current = urlString
 
-    setLocationText(params.get('location') || '')
-    setPropertyType(params.get('type') || '')
-    setSearch(params.get('q') || '')
-
-    if (params.get('minPrice')) setMinPrice(Number(params.get('minPrice')))
-    if (params.get('maxPrice')) setMaxPrice(Number(params.get('maxPrice')))
-
-    const beds = params.get('bedrooms')
-    if (beds && ['1', '2', '3', '4+'].includes(beds)) setBedrooms(beds)
-
-    if (params.get('featured') === '1') setFeaturedOnly(true)
-    if (params.get('sort') === 'newest') setSortBy('newest')
-  }, [])
+    const f = parseFilters(new URLSearchParams(urlString))
+    setLocationText(f.location)
+    setPropertyType(f.type)
+    setSearch(f.q)
+    setMinPrice(f.minPrice)
+    setMaxPrice(f.maxPrice)
+    setBedrooms(f.bedrooms)
+    setBathrooms(f.bathrooms)
+    setAmenities((prev) => (sameList(prev, f.amenities) ? prev : f.amenities))
+    setFeaturedOnly(f.featured)
+    setSortBy(f.sort)
+    setHydrated(true)
+  }, [urlString])
 
   useEffect(() => {
     const fetchListings = async () => {
@@ -582,7 +788,7 @@ export default function SearchPage() {
       setLoading(false)
     }
     fetchListings()
-  }, [])
+  }, [reloadKey])
 
   // Saved properties for the logged-in user
   useEffect(() => {
@@ -757,7 +963,8 @@ export default function SearchPage() {
 
   const changePage = (p: number) => {
     setPage(Math.min(Math.max(1, p), totalPages))
-    resultsTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    resultsTopRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
   }
 
   const priceActive = minPrice > 0 || maxPrice < PRICE_CAP
@@ -771,7 +978,7 @@ export default function SearchPage() {
     (bathrooms ? 1 : 0) +
     amenities.length
 
-  // Label and link for recent searches and alerts
+  // Label for recent searches and alerts
   const searchLabel = [
     bedrooms ? `${bedrooms} bed` : '',
     propertyType || (activeFilterCount > 0 || search ? 'Properties' : ''),
@@ -782,14 +989,41 @@ export default function SearchPage() {
     .filter(Boolean)
     .join(' ')
 
-  const urlParams = new URLSearchParams()
-  if (locationText) urlParams.set('location', locationText)
-  if (propertyType) urlParams.set('type', propertyType)
-  if (search) urlParams.set('q', search)
-  if (minPrice > 0) urlParams.set('minPrice', String(minPrice))
-  if (maxPrice < PRICE_CAP) urlParams.set('maxPrice', String(maxPrice))
-  if (bedrooms) urlParams.set('bedrooms', bedrooms)
-  const searchHref = `/search?${urlParams.toString()}`
+  // The address for the current search. This is what goes in the URL and in recent searches.
+  const query = buildQuery({
+    location: locationText,
+    type: propertyType,
+    q: search,
+    minPrice,
+    maxPrice,
+    bedrooms,
+    bathrooms,
+    amenities,
+    featured: featuredOnly,
+    sort: sortBy,
+  })
+  const searchHref = query ? `/search?${query}` : '/search'
+
+  // Controls -> URL. Waits briefly while someone types or drags the slider, and never adds
+  // history entries, so the Back button still leaves the page.
+  useEffect(() => {
+    if (!hydrated) return
+    const timer = setTimeout(() => {
+      const current = window.location.search.replace(/^\?/, '')
+      if (current === query) return
+      lastUrl.current = query
+      try {
+        window.history.replaceState(
+          window.history.state,
+          '',
+          `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+        )
+      } catch {
+        // Some browsers limit how often the address can change. The filters still work.
+      }
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [hydrated, query])
 
   // Save to recent searches once the person stops changing filters
   useEffect(() => {
@@ -836,140 +1070,148 @@ export default function SearchPage() {
     activeChips.push({ key: `am-${a}`, label: a, onRemove: () => toggleAmenity(a) })
   }
 
-  // Rendered as a function (not a component) so inputs keep focus while typing
-  const renderFilters = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-foreground">Filter Results</h3>
-        <button
-          type="button"
-          onClick={clearFilters}
-          className="text-xs font-medium text-primary hover:underline"
-        >
-          Reset
-        </button>
-      </div>
+  const closeFilters = useCallback(() => setShowMobileFilters(false), [])
+  useDialog(showMobileFilters, closeFilters, sheetRef)
 
+  // If the window grows to desktop width while the sheet is open, close it so scrolling is not locked
+  useEffect(() => {
+    if (!showMobileFilters) return
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const onChange = () => {
+      if (mq.matches) setShowMobileFilters(false)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [showMobileFilters])
+
+  const segBase =
+    'min-h-11 flex-1 rounded-control border px-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+  const segOn = 'border-primary bg-accent text-accent-foreground'
+  const segOff = 'border-border bg-card text-muted-foreground hover:bg-secondary'
+  const inputBase =
+    'min-h-11 w-full rounded-control border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25'
+
+  // Rendered as a function (not a component) so inputs keep focus while typing.
+  // `id` keeps element ids unique when the sidebar and the mobile sheet are both in the page.
+  const renderFilters = (id: string) => (
+    <div className="space-y-6">
       {/* Location */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-foreground">Location</label>
+        <label htmlFor={`${id}-location`} className="mb-2 block text-sm font-medium text-foreground">
+          Location
+        </label>
         <input
+          id={`${id}-location`}
           type="text"
           value={locationText}
           onChange={(e) => setLocationText(e.target.value)}
-          placeholder="e.g. Abakaliki, Ebonyi State"
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          placeholder="e.g. Abakaliki"
+          autoComplete="off"
+          className={inputBase}
         />
       </div>
 
       {/* Property Type */}
-      <div>
-        <label className="mb-2 block text-sm font-medium text-foreground">Property Type</label>
+      <fieldset>
+        <legend className="mb-2 block text-sm font-medium text-foreground">Property type</legend>
         <div className="grid grid-cols-2 gap-2">
           {[{ value: '', label: 'All Types' }, ...PROPERTY_TYPES].map((t) => (
             <button
               type="button"
               key={t.value || 'all'}
               onClick={() => setPropertyType(t.value)}
-              className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                propertyType === t.value
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border text-muted-foreground hover:bg-secondary'
-              }`}
+              aria-pressed={propertyType === t.value}
+              className={cn(segBase, 'flex-none px-3 text-left text-xs', propertyType === t.value ? segOn : segOff)}
             >
               {t.label}
             </button>
           ))}
         </div>
-      </div>
+      </fieldset>
 
       {/* Price */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-foreground">
+        <label htmlFor={`${id}-price`} className="mb-2 block text-sm font-medium text-foreground">
           Max rent (₦ / month)
         </label>
         <input
+          id={`${id}-price`}
           type="range"
           min={0}
           max={PRICE_CAP}
           step={10000}
           value={Math.min(maxPrice, PRICE_CAP)}
           onChange={(e) => setMaxPrice(Number(e.target.value))}
-          className="w-full accent-primary"
+          aria-valuetext={maxPrice >= PRICE_CAP ? 'No limit' : naira(maxPrice)}
+          className="h-11 w-full accent-primary"
         />
-        <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>{naira(minPrice)}</span>
-          <span>{maxPrice >= PRICE_CAP ? 'No limit' : naira(maxPrice)}</span>
+          <span className="font-semibold text-foreground">
+            {maxPrice >= PRICE_CAP ? 'No limit' : naira(maxPrice)}
+          </span>
         </div>
       </div>
 
       {/* Bedrooms */}
-      <div>
-        <label className="mb-2 block text-sm font-medium text-foreground">Bedrooms</label>
+      <fieldset>
+        <legend className="mb-2 block text-sm font-medium text-foreground">Bedrooms</legend>
         <div className="flex gap-2">
-          {['', '1', '2', '3', '4+'].map((b) => (
+          {['', ...COUNT_OPTIONS].map((b) => (
             <button
               type="button"
               key={b || 'any'}
               onClick={() => setBedrooms(b)}
-              className={`flex-1 rounded-lg border py-2 text-xs font-medium transition-colors ${
-                bedrooms === b
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border text-muted-foreground hover:bg-secondary'
-              }`}
+              aria-pressed={bedrooms === b}
+              className={cn(segBase, bedrooms === b ? segOn : segOff)}
             >
               {b === '' ? 'Any' : b}
             </button>
           ))}
         </div>
-      </div>
+      </fieldset>
 
       {/* Bathrooms */}
-      <div>
-        <label className="mb-2 block text-sm font-medium text-foreground">Bathrooms</label>
+      <fieldset>
+        <legend className="mb-2 block text-sm font-medium text-foreground">Bathrooms</legend>
         <div className="flex gap-2">
-          {['', '1', '2', '3', '4+'].map((b) => (
+          {['', ...COUNT_OPTIONS].map((b) => (
             <button
               type="button"
               key={b || 'any'}
               onClick={() => setBathrooms(b)}
-              className={`flex-1 rounded-lg border py-2 text-xs font-medium transition-colors ${
-                bathrooms === b
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border text-muted-foreground hover:bg-secondary'
-              }`}
+              aria-pressed={bathrooms === b}
+              className={cn(segBase, bathrooms === b ? segOn : segOff)}
             >
               {b === '' ? 'Any' : b}
             </button>
           ))}
         </div>
-      </div>
+      </fieldset>
 
       {/* Amenities */}
-      <div>
-        <label className="mb-2 block text-sm font-medium text-foreground">Amenities</label>
-        <div className="space-y-2">
+      <fieldset>
+        <legend className="mb-1 block text-sm font-medium text-foreground">Amenities</legend>
+        <p className="mb-2 text-xs text-muted-foreground">Shows properties with any of the ones you tick.</p>
+        <div>
           {AMENITIES.map((a) => (
-            <label key={a} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <label
+              key={a}
+              htmlFor={`${id}-am-${a}`}
+              className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-foreground"
+            >
               <input
+                id={`${id}-am-${a}`}
                 type="checkbox"
                 checked={amenities.includes(a)}
                 onChange={() => toggleAmenity(a)}
-                className="accent-primary"
+                className="h-5 w-5 accent-primary"
               />
               {a}
             </label>
           ))}
         </div>
-      </div>
-
-      <Button
-        type="button"
-        onClick={() => setShowMobileFilters(false)}
-        className="w-full bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
-      >
-        Show {results.length} {results.length === 1 ? 'property' : 'properties'}
-      </Button>
+      </fieldset>
     </div>
   )
 
@@ -979,85 +1221,24 @@ export default function SearchPage() {
       : 'grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 md:grid-cols-1'
 
   const chipBase =
-    'shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors sm:text-sm'
+    'inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
   const chipOn = 'border-primary bg-primary text-primary-foreground'
   const chipOff = 'border-border bg-card text-foreground hover:bg-secondary'
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <Header />
+    <>
+      {/* Page heading */}
+      <div className="border-b border-border bg-cream">
+        <div className="container-wide py-6 md:py-8">
+          <h1 className="text-h2 font-bold text-foreground md:text-h1">Find rentals in Ebonyi State</h1>
+          <p className="mt-2 max-w-2xl text-body text-muted-foreground">
+            Browse approved listings. Filter by area, type, bedrooms and budget, then request a viewing.
+          </p>
 
-      {/* Search bar */}
-      <div className="z-30 border-b border-border bg-card md:sticky md:top-20">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6 lg:px-8">
-          <div className="relative w-full min-w-0 sm:w-auto sm:min-w-[160px] sm:flex-1">
-            <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-              size={18}
-            />
-            <input
-              type="text"
-              placeholder="Search location or property"
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowMobileFilters(true)}
-            className="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary lg:hidden"
-          >
-            <SlidersHorizontal size={16} />
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            aria-label="Sort properties"
-            className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary sm:flex-none"
-          >
-            <option value="recommended">Recommended</option>
-            <option value="newest">Newest first</option>
-            <option value="price-low">Price: Low to High</option>
-            <option value="price-high">Price: High to Low</option>
-          </select>
-
-          <div className="hidden items-center overflow-hidden rounded-lg border border-border md:flex">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              aria-label="Grid view"
-              className={`p-2.5 ${viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
-            >
-              <Grid size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              aria-label="List view"
-              className={`p-2.5 ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
-            >
-              <ListIcon size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-24 pt-5 sm:px-6 md:pb-8 lg:px-8">
-        <RecentSearches />
-
-        {/* Site numbers + quick filter chips */}
-        {!loading && listings.length > 0 && (
-          <section className="mb-5">
-            <p className="mb-3 text-xs text-muted-foreground sm:text-sm">
-              <span className="font-bold text-foreground">{listings.length}</span> properties available
+          {!loading && listings.length > 0 && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              <span className="font-bold text-foreground">{listings.length}</span>{' '}
+              {listings.length === 1 ? 'property' : 'properties'} available
               {featuredTotal > 0 && (
                 <>
                   {' · '}
@@ -1067,16 +1248,147 @@ export default function SearchPage() {
               {verifiedTotal > 0 && (
                 <>
                   {' · '}
-                  <span className="font-bold text-foreground">{verifiedTotal}</span> verified
+                  <span className="font-bold text-foreground">{verifiedTotal}</span> marked verified
                 </>
               )}
             </p>
+          )}
 
-            {/* Property type chips */}
-            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden">
+          <details className="group mt-1">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+              <Info size={16} aria-hidden="true" />
+              What the badges mean
+            </summary>
+            <ul className="mt-1 max-w-2xl space-y-1.5 text-sm text-muted-foreground">
+              <li>
+                <span className="font-semibold text-foreground">Featured:</span> the landlord chose to promote this listing.
+              </li>
+              <li>
+                <span className="font-semibold text-foreground">Verified:</span> EboHomes has marked this listing as verified.
+              </li>
+              <li>
+                <span className="font-semibold text-foreground">Physically inspected:</span> shown only when EboHomes holds a current inspection record for the property. It is separate from Verified.
+              </li>
+              <li>A listing with no badge has been approved to appear here but has not been marked verified or inspected.</li>
+            </ul>
+          </details>
+        </div>
+      </div>
+
+      {/* Search bar */}
+      <div className="z-30 border-b border-border bg-card md:sticky md:top-16 lg:top-[72px]">
+        <div className="container-wide flex flex-wrap items-center gap-2 py-3 sm:gap-3">
+          <form
+            role="search"
+            aria-label="Search properties"
+            onSubmit={(e) => {
+              e.preventDefault()
+              ;(document.activeElement as HTMLElement | null)?.blur?.()
+            }}
+            className="relative w-full min-w-0 sm:w-auto sm:min-w-[160px] sm:flex-1"
+          >
+            <label htmlFor="search-box" className="sr-only">
+              Search location or property
+            </label>
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              size={18}
+              aria-hidden="true"
+            />
+            <input
+              id="search-box"
+              type="text"
+              enterKeyHint="search"
+              autoComplete="off"
+              placeholder="Search location or property"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={cn(inputBase, 'pl-10', search && 'pr-11')}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            )}
+          </form>
+
+          <button
+            type="button"
+            onClick={() => setShowMobileFilters(true)}
+            aria-haspopup="dialog"
+            className="flex min-h-11 shrink-0 items-center gap-2 rounded-control border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 lg:hidden"
+          >
+            <SlidersHorizontal size={16} aria-hidden="true" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs text-primary-foreground">
+                {activeFilterCount}
+                <span className="sr-only"> active</span>
+              </span>
+            )}
+          </button>
+
+          <div className="min-w-0 flex-1 sm:flex-none">
+            <label htmlFor="sort-select" className="sr-only">
+              Sort properties
+            </label>
+            <select
+              id="sort-select"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="min-h-11 w-full rounded-control border border-border bg-card px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div
+            role="group"
+            aria-label="Layout"
+            className="hidden items-center overflow-hidden rounded-control border border-border md:flex"
+          >
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              aria-label="Grid view"
+              aria-pressed={viewMode === 'grid'}
+              className={`flex h-11 w-11 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 ${viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
+            >
+              <Grid size={16} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              aria-label="List view"
+              aria-pressed={viewMode === 'list'}
+              className={`flex h-11 w-11 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
+            >
+              <ListIcon size={16} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <main className="container-wide w-full flex-1 pb-24 pt-5 md:pb-10">
+        <RecentSearches />
+
+        {/* Quick filter chips */}
+        {!loading && listings.length > 0 && (
+          <section className="mb-5" aria-label="Quick filters">
+            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:flex-wrap lg:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button
                 type="button"
                 onClick={() => setPropertyType('')}
+                aria-pressed={propertyType === ''}
                 className={`${chipBase} ${propertyType === '' ? chipOn : chipOff}`}
               >
                 All ({listings.length})
@@ -1087,13 +1399,13 @@ export default function SearchPage() {
                   type="button"
                   onClick={() => setFeaturedOnly(!featuredOnly)}
                   aria-pressed={featuredOnly}
-                  className={`${chipBase} inline-flex items-center gap-1 ${
+                  className={`${chipBase} gap-1 ${
                     featuredOnly
-                      ? 'border-amber-400 bg-amber-400 text-amber-950'
-                      : 'border-amber-300 bg-card text-amber-700 hover:bg-amber-50'
+                      ? 'border-featured bg-featured text-featured-foreground'
+                      : 'border-featured/60 bg-card text-foreground hover:bg-featured/10'
                   }`}
                 >
-                  <Star size={12} className="fill-current" />
+                  <Star size={12} className="fill-current" aria-hidden="true" />
                   Featured ({featuredTotal})
                 </button>
               )}
@@ -1103,6 +1415,7 @@ export default function SearchPage() {
                   type="button"
                   key={t.value}
                   onClick={() => setPropertyType(propertyType === t.value ? '' : t.value)}
+                  aria-pressed={propertyType === t.value}
                   className={`${chipBase} ${propertyType === t.value ? chipOn : chipOff}`}
                 >
                   {t.label} ({typeCounts[t.value]})
@@ -1110,14 +1423,14 @@ export default function SearchPage() {
               ))}
             </div>
 
-            {/* Bedroom chips */}
-            <div className="-mx-4 mt-2 flex items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
-              <span className="shrink-0 text-xs font-medium text-muted-foreground">Bedrooms:</span>
-              {['', '1', '2', '3', '4+'].map((b) => (
+            <div className="-mx-4 mt-2 flex items-center gap-2 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <span className="shrink-0 text-sm font-medium text-muted-foreground">Bedrooms:</span>
+              {['', ...COUNT_OPTIONS].map((b) => (
                 <button
                   type="button"
                   key={b || 'any'}
                   onClick={() => setBedrooms(bedrooms === b ? '' : b)}
+                  aria-pressed={bedrooms === b}
                   className={`${chipBase} ${bedrooms === b ? chipOn : chipOff}`}
                 >
                   {b === '' ? 'Any' : b}
@@ -1129,18 +1442,32 @@ export default function SearchPage() {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
           {/* Desktop sidebar */}
-          <aside className="hidden lg:block">
-            <div className="sticky top-36 max-h-[calc(100vh-10rem)] overflow-y-auto rounded-lg border border-border bg-card p-5">
-              {renderFilters()}
+          <aside className="hidden lg:block" aria-label="Filters">
+            <div className="sticky top-40 max-h-[calc(100vh-11rem)] overflow-y-auto rounded-card border border-border bg-card p-5 shadow-rest">
+              <div className="mb-5 flex items-center justify-between">
+                <h2 className="font-semibold text-foreground">Filter results</h2>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="flex min-h-11 items-center rounded-sm px-1 text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  Reset
+                </button>
+              </div>
+              {renderFilters('d')}
             </div>
           </aside>
 
           {/* Results */}
-          <div ref={resultsTopRef} className="scroll-mt-32">
+          <div ref={resultsTopRef} className="min-w-0 scroll-mt-40">
+            <h2 className="sr-only">Search results</h2>
+
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
                 {loading ? (
-                  'Loading...'
+                  'Loading properties…'
+                ) : loadError ? (
+                  'Properties could not be loaded'
                 ) : results.length === 0 ? (
                   '0 properties found'
                 ) : (
@@ -1159,7 +1486,7 @@ export default function SearchPage() {
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="text-xs font-semibold text-primary hover:underline"
+                  className="flex min-h-11 items-center rounded-sm px-1 text-sm font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   Clear all ({activeFilterCount})
                 </button>
@@ -1175,10 +1502,10 @@ export default function SearchPage() {
                     key={chip.key}
                     onClick={chip.onRemove}
                     aria-label={`Remove filter ${chip.label}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition hover:bg-primary/20"
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-primary/30 bg-accent px-3.5 text-sm font-medium text-accent-foreground transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                   >
                     {chip.label}
-                    <X size={12} />
+                    <X size={14} aria-hidden="true" />
                   </button>
                 ))}
               </div>
@@ -1199,49 +1526,55 @@ export default function SearchPage() {
             )}
 
             {loading ? (
-              <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 md:grid-cols-3">
+              <div className={gridClass} aria-busy="true">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div
-                    key={i}
-                    className="h-64 animate-pulse rounded-xl border border-border bg-card"
-                  />
+                  <CardSkeleton key={i} />
                 ))}
               </div>
             ) : loadError ? (
-              <div className="rounded-lg border border-border bg-card p-10 text-center">
-                <h3 className="mb-2 text-lg font-semibold text-foreground">
-                  Could not load properties
-                </h3>
-                <p className="mb-5 text-sm text-muted-foreground">
-                  Please check your connection and try again.
+              <div role="alert" className="rounded-card border border-border bg-card px-6 py-12 text-center shadow-rest">
+                <h3 className="mb-2 text-lg font-semibold text-foreground">Could not load properties</h3>
+                <p className="mx-auto mb-5 max-w-sm text-sm text-muted-foreground">
+                  The list did not load. Please check your connection and try again.
                 </p>
-                <Button
-                  type="button"
-                  onClick={() => window.location.reload()}
-                  className="bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
-                >
+                <Button type="button" onClick={() => setReloadKey((k) => k + 1)}>
                   Try again
                 </Button>
               </div>
             ) : results.length === 0 ? (
-              <div className="rounded-lg border border-border bg-card p-10 text-center sm:p-12">
+              <div className="rounded-card border border-border bg-card px-6 py-12 text-center shadow-rest sm:px-10">
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                  <Search size={26} />
+                  <Search size={26} aria-hidden="true" />
                 </div>
-                <h3 className="mb-2 text-lg font-semibold text-foreground">No properties match</h3>
-                <p className="mx-auto mb-6 max-w-sm text-sm text-muted-foreground">
-                  {activeFilterCount > 0 || search
-                    ? 'Try removing a filter or widening your budget to see more.'
-                    : 'There are no approved properties yet. Please check back soon.'}
-                </p>
-                {(activeFilterCount > 0 || search) && (
-                  <Button
-                    type="button"
-                    onClick={clearFilters}
-                    className="bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
-                  >
-                    Clear filters
-                  </Button>
+                <h3 className="mb-2 text-lg font-semibold text-foreground">No properties match your search</h3>
+
+                {activeChips.length > 0 ? (
+                  <>
+                    <p className="mx-auto mb-4 max-w-sm text-sm text-muted-foreground">
+                      Remove a filter to widen your search, or start again.
+                    </p>
+                    <div className="mb-5 flex flex-wrap justify-center gap-2">
+                      {activeChips.map((chip) => (
+                        <button
+                          type="button"
+                          key={chip.key}
+                          onClick={chip.onRemove}
+                          aria-label={`Remove filter ${chip.label}`}
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        >
+                          {chip.label}
+                          <X size={14} aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                    <Button type="button" onClick={clearFilters}>
+                      Clear all filters
+                    </Button>
+                  </>
+                ) : (
+                  <p className="mx-auto max-w-sm text-sm text-muted-foreground">
+                    There are no approved properties yet. Please check back soon.
+                  </p>
                 )}
               </div>
             ) : (
@@ -1255,7 +1588,6 @@ export default function SearchPage() {
                       saved={savedIds.has(listing.id)}
                       onToggleSave={() => toggleSave(listing.id)}
                       onShare={() => setShareTarget(listing)}
-                      onOpen={() => router.push(`/listing/${listing.id}`)}
                     />
                   ))}
                 </div>
@@ -1267,32 +1599,53 @@ export default function SearchPage() {
         </div>
       </main>
 
-      {/* Mobile filter drawer */}
+      {/* Mobile filter sheet */}
       {showMobileFilters && (
         <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/50" onClick={closeFilters} aria-hidden="true" />
           <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setShowMobileFilters(false)}
-          />
-          <div className="absolute bottom-0 right-0 top-0 w-full max-w-sm overflow-y-auto bg-card p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-semibold text-foreground">Filters</h2>
-              <button
-                type="button"
-                onClick={() => setShowMobileFilters(false)}
-                aria-label="Close filters"
-              >
-                <X size={20} className="text-foreground" />
-              </button>
+            ref={sheetRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="filters-heading"
+            tabIndex={-1}
+            className="absolute inset-x-0 bottom-0 flex max-h-[90vh] flex-col rounded-t-panel bg-card shadow-overlay outline-none"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-2">
+              <h2 id="filters-heading" className="font-semibold text-foreground">
+                Filters
+              </h2>
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="flex min-h-11 items-center rounded-sm px-3 text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={closeFilters}
+                  aria-label="Close filters"
+                  className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <X size={20} className="text-foreground" aria-hidden="true" />
+                </button>
+              </div>
             </div>
-            {renderFilters()}
+
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5">{renderFilters('m')}</div>
+
+            <div className="border-t border-border bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+              <Button type="button" size="lg" onClick={closeFilters} className="w-full">
+                Show {results.length} {results.length === 1 ? 'property' : 'properties'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
       {shareTarget && <ShareSheet listing={shareTarget} onClose={() => setShareTarget(null)} />}
-
-      <Footer />
-    </div>
+    </>
   )
 }
