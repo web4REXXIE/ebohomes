@@ -10,13 +10,23 @@ import { InstallSheet } from '@/components/install-sheet'
 import { NotificationProvider } from '@/components/notification-provider'
 import { PushSync } from '@/components/push-sync'
 import { PushPrompt } from '@/components/push-prompt'
-import { TapFeedback } from '@/components/tap-feedback'
 
 export const metadata: Metadata = {
-  title: 'EboHomes - Find Your Perfect Home in Ebonyi',
-  description: 'Direct landlord-to-tenant rental listings for Ebonyi State, Nigeria',
+  metadataBase: new URL((process.env.NEXT_PUBLIC_SITE_URL || 'https://ebohomes.vercel.app').replace(/\/+$/, '')),
+  title: {
+    default: 'EboHomes | Find Homes. Skip the Stress.',
+    template: '%s | EboHomes',
+  },
+  description: 'Reviewed rental listings in Ebonyi State, Nigeria. Search, request a viewing and apply online.',
   applicationName: 'EboHomes',
-  generator: 'v0.app',
+  robots: { index: true, follow: true },
+  openGraph: {
+    siteName: 'EboHomes',
+    type: 'website',
+    locale: 'en_NG',
+    images: [{ url: '/hero-home.jpg', alt: 'EboHomes' }],
+  },
+  twitter: { card: 'summary_large_image', images: ['/hero-home.jpg'] },
   appleWebApp: {
     capable: true,
     title: 'EboHomes',
@@ -62,8 +72,6 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased bg-background text-foreground">
-        {/* Ring + press effect when any button or link is touched, on every page */}
-        <TapFeedback />
         <InstallProvider>
           <NotificationProvider>
             <PushSync />
