@@ -1,0 +1,29 @@
+// Pure helpers for property photos and video. No imports.
+// They only clean what is already stored on the listing. They never create or guess a URL.
+
+// A usable media address: a real http(s) link. Blanks, non-text values and anything else give null.
+export function safeMediaUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const t = value.trim()
+  if (!t) return null
+  try {
+    const u = new URL(t)
+    return u.protocol === 'https:' || u.protocol === 'http:' ? t : null
+  } catch {
+    return null
+  }
+}
+
+// The photo list for display: valid links only, no duplicates, original order kept.
+export function cleanMediaUrls(list: unknown): string[] {
+  if (!Array.isArray(list)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of list) {
+    const url = safeMediaUrl(item)
+    if (!url || seen.has(url)) continue
+    seen.add(url)
+    out.push(url)
+  }
+  return out
+}
