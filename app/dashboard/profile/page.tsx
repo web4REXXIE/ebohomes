@@ -102,6 +102,24 @@ export default function ProfilePage() {
 
     const payload = section === 'personal' ? personalForm : businessForm
 
+    // A verified landlord who changes checked identity details goes back to review.
+    const isVerifiedNow = profile.role === 'landlord' && (profile.verified === true || profile.verification_status === 'verified')
+    const norm = (v: string | null | undefined) => (v ?? '').trim()
+    const identityChanged =
+      isVerifiedNow &&
+      (section === 'personal'
+        ? norm(personalForm.full_name) !== norm(profile.full_name)
+        : norm(businessForm.business_name) !== norm(profile.business_name) ||
+          norm(businessForm.business_address) !== norm(profile.business_address) ||
+          norm(businessForm.cac_number) !== norm(profile.cac_number))
+    if (
+      identityChanged &&
+      !window.confirm('Changing these details sends your account back to EboHomes for verification until it is checked again. Continue?')
+    ) {
+      setSaving(false)
+      return
+    }
+
     const { error } = await supabase
       .from('profiles')
       .update(payload)
@@ -113,7 +131,11 @@ export default function ProfilePage() {
       return
     }
 
-    setProfile({ ...profile, ...payload })
+    setProfile({
+      ...profile,
+      ...payload,
+      ...(identityChanged ? { verified: false, verification_status: 'pending' } : {}),
+    })
     setOpenSection(null)
   }
 
