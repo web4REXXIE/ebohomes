@@ -1,3 +1,4 @@
+
 // Pure helpers for the rental application form. No React, no Supabase, so they can be unit tested.
 // Database facts this relies on (all already used by the existing code):
 //   applications.status      : pending | info_requested | approved | rejected | withdrawn
@@ -123,6 +124,7 @@ export function buildApplicationRow(
 
 export type SubmitErrorKind =
   | 'duplicate'
+  | 'on_hold'
   | 'inactive_account'
   | 'not_permitted'
   | 'not_open'
@@ -141,6 +143,9 @@ export function classifySubmitError(err: DbErrorLike): { kind: SubmitErrorKind; 
 
   if (code === '23505')
     return { kind: 'duplicate', supportCode, message: 'You already have an open application for this property.' }
+  // The database blocks new applications on a property that is on hold (errcode 55000).
+  if (code === '55000' || /on hold/i.test(msg))
+    return { kind: 'on_hold', supportCode, message: "This property is on hold and can't take new applications right now. You can still chat with EboHomes." }
   if (/not active/i.test(msg))
     return { kind: 'inactive_account', supportCode, message: 'Your account is not active, so you cannot apply right now. Please contact EboHomes support.' }
   if (code === '42501' || /row-level security/i.test(msg))
