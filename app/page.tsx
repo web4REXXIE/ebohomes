@@ -5,7 +5,7 @@ import { EBOHOMES_EMAIL } from '@/lib/contact'
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL || 'https://ebohomes.vercel.app').replace(/\/+$/, '')
 
 export const metadata: Metadata = {
-  title: 'EboHomes | Find Homes. Skip the Stress. Verified rentals in Ebonyi State',
+  title: 'EboHomes | Find Homes. Skip the Stress.',
   description:
     'Find reviewed homes to rent in Abakaliki and across Ebonyi State. Search by area, type and budget, request a viewing and apply online, all in one place.',
   alternates: { canonical: '/' },
