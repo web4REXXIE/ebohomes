@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ShieldCheck, Clock, XCircle, FileText, Check, Landmark } from 'lucide-react'
+import { ShieldCheck, Clock, XCircle, FileText, Check, Landmark, Circle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   OWNERSHIP_BUCKET,
@@ -13,6 +13,60 @@ import {
   isValidOwnershipPath,
   getOwnershipSignedUrl,
 } from '@/lib/ownership-docs'
+
+type FormData = {
+  business_name: string
+  business_address: string
+  cac_number: string
+  account_type: string
+  representative_name: string
+  representative_role: string
+  ownership_doc_url: string
+  id_document_type: string
+  id_document_url: string
+  selfie_url: string
+}
+
+type PayoutState = 'loading' | 'none' | 'pending' | 'active' | 'unknown'
+
+const ID_LABELS: Record<string, string> = {
+  nin: 'NIN slip / card',
+  drivers_licence: "Driver's licence",
+  voters_card: "Voter's card",
+  intl_passport: 'International passport',
+}
+
+// A landlord has really submitted only when every required item is on file.
+// (verification_status defaults to 'pending' in the database, so the status alone is not proof.)
+function hasAllDetails(d: FormData): boolean {
+  const base = Boolean(
+    d.business_name.trim() &&
+      d.business_address.trim() &&
+      d.id_document_type &&
+      d.id_document_url &&
+      d.selfie_url &&
+      d.ownership_doc_url
+  )
+  if (!base) return false
+  if (d.account_type !== 'company') return true
+  return Boolean(d.cac_number.trim() && d.representative_name.trim() && d.representative_role.trim())
+}
+
+function ChecklistRow({ done, label, value }: { done: boolean; label: string; value: string }) {
+  return (
+    <li className="flex items-start gap-3 py-3">
+      {done ? (
+        <Check size={18} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden />
+      ) : (
+        <Circle size={18} className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="break-words text-sm font-medium text-foreground">{value}</p>
+      </div>
+    </li>
+  )
+}
 
 export default function GetVerifiedPage() {
   const router = useRouter()
@@ -28,8 +82,9 @@ export default function GetVerifiedPage() {
   const [idDocName, setIdDocName] = useState('')
   const [selfieName, setSelfieName] = useState('')
   const [docPreviewUrl, setDocPreviewUrl] = useState('')
+  const [payout, setPayout] = useState<PayoutState>('loading')
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     business_name: '',
     business_address: '',
     cac_number: '',
@@ -88,6 +143,31 @@ export default function GetVerifiedPage() {
     }
     loadProfile()
   }, [])
+
+  // Payout account status comes from the existing /api/payout-account route.
+  const loadPayout = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setPayout('unknown'); return }
+      const res = await fetch('/api/payout-account', {
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) { setPayout('unknown'); return }
+      const j = await res.json()
+      const items: { status: string }[] = Array.isArray(j?.items) ? j.items : []
+      if (j?.current_id) setPayout('active')
+      else if (items.some((i) => i.status === 'pending_review' || i.status === 'approved')) setPayout('pending')
+      else setPayout('none')
+    } catch {
+      setPayout('unknown')
+    }
+  }, [])
+
+  const underReview = status === 'pending' && hasAllDetails(formData)
+
+  useEffect(() => {
+    if (underReview) loadPayout()
+  }, [underReview, loadPayout])
 
   const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target
@@ -179,20 +259,7 @@ export default function GetVerifiedPage() {
     input.value = ''
   }
 
-  const companyOk =
-    formData.account_type !== 'company' ||
-    (formData.cac_number.trim() !== '' &&
-      formData.representative_name.trim() !== '' &&
-      formData.representative_role.trim() !== '')
-
-  const canSubmit =
-    companyOk &&
-    formData.business_name &&
-    formData.business_address &&
-    formData.id_document_type &&
-    formData.id_document_url &&
-    formData.selfie_url &&
-    formData.ownership_doc_url
+  const canSubmit = hasAllDetails(formData)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -206,8 +273,12 @@ export default function GetVerifiedPage() {
       return
     }
 
-    if (!isValidOwnershipPath(formData.ownership_doc_url, user.id)) {
-      setMessage('Invalid verification document. Please remove it and upload again.')
+    if (
+      !isValidOwnershipPath(formData.ownership_doc_url, user.id) ||
+      !isValidOwnershipPath(formData.id_document_url, user.id) ||
+      !isValidOwnershipPath(formData.selfie_url, user.id)
+    ) {
+      setMessage('One of your uploaded files is invalid. Please remove it and upload it again.')
       setSubmitting(false)
       return
     }
@@ -215,9 +286,9 @@ export default function GetVerifiedPage() {
     const { error } = await supabase
       .from('profiles')
       .update({
-        business_name: formData.business_name,
-        business_address: formData.business_address,
-        cac_number: formData.cac_number || null,
+        business_name: formData.business_name.trim(),
+        business_address: formData.business_address.trim(),
+        cac_number: formData.cac_number.trim() || null,
         account_type: formData.account_type,
         representative_name: formData.account_type === 'company' ? formData.representative_name.trim() : null,
         representative_role: formData.account_type === 'company' ? formData.representative_role.trim() : null,
@@ -236,7 +307,9 @@ export default function GetVerifiedPage() {
       return
     }
 
+    setRejectionReason(null)
     setStatus('pending')
+    window.scrollTo({ top: 0 })
   }
 
   if (loading) {
@@ -258,18 +331,81 @@ export default function GetVerifiedPage() {
     )
   }
 
-  if (status === 'pending') {
+  // Submitted: show everything EboHomes is reviewing, plus the payout account step.
+  if (underReview) {
+    const company = formData.account_type === 'company'
+    const payoutValue =
+      payout === 'active'
+        ? 'Approved and active'
+        : payout === 'pending'
+          ? 'Sent. Waiting for EboHomes review'
+          : payout === 'loading'
+            ? 'Checking...'
+            : payout === 'unknown'
+              ? 'Could not check. Open the payout page'
+              : 'Not added yet'
+    const payoutDone = payout === 'active' || payout === 'pending'
+
     return (
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        <div className="bg-card border border-amber-200 rounded-2xl p-8 text-center">
-          <Clock size={40} className="mx-auto text-amber-600 mb-4" />
-          <h1 className="text-xl font-bold text-foreground mb-1">Verification Pending</h1>
-          <p className="text-sm text-muted-foreground">We&apos;ve received your details. Our team will review them shortly.</p>
+      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
+        <div className="bg-card border border-amber-200 rounded-2xl p-6 text-center">
+          <Clock size={36} className="mx-auto text-amber-600 mb-3" />
+          <h1 className="text-xl font-bold text-foreground mb-1">Verification under review</h1>
+          <p className="text-sm text-muted-foreground">
+            We&apos;ve received your details. EboHomes will review them and notify you of the result.
+          </p>
         </div>
+
+        <section className="bg-card border border-border rounded-2xl p-4" aria-label="Details submitted for verification">
+          <h2 className="font-bold text-foreground mb-1">What you submitted</h2>
+          <ul className="divide-y divide-border">
+            <ChecklistRow done label="Registered as" value={company ? 'A company' : 'An individual'} />
+            <ChecklistRow done label="Business name" value={formData.business_name} />
+            <ChecklistRow done label="Business address" value={formData.business_address} />
+            <ChecklistRow
+              done={Boolean(formData.cac_number.trim())}
+              label="CAC number"
+              value={formData.cac_number.trim() || (company ? 'Missing' : 'Not provided (optional)')}
+            />
+            {company && (
+              <ChecklistRow
+                done
+                label="Authorised representative"
+                value={`${formData.representative_name} (${formData.representative_role})`}
+              />
+            )}
+            <ChecklistRow
+              done
+              label="Government ID"
+              value={`${ID_LABELS[formData.id_document_type] || 'ID'} uploaded`}
+            />
+            <ChecklistRow done label="Selfie holding your ID" value="Uploaded" />
+            <ChecklistRow done label="Property ownership / authority document" value="Uploaded" />
+          </ul>
+        </section>
+
+        <section className="bg-card border border-border rounded-2xl p-4" aria-label="Payout account">
+          <h2 className="font-bold text-foreground mb-1">Payout account</h2>
+          <ul>
+            <ChecklistRow done={payoutDone} label="Bank account for your rent" value={payoutValue} />
+          </ul>
+          <p className="text-xs text-muted-foreground mb-3">
+            EboHomes checks that the account name matches your verified identity, so add it now to avoid delays when your first rent is ready.
+          </p>
+          {payout !== 'active' && (
+            <Link
+              href="/dashboard/payout-account"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground"
+            >
+              <Landmark size={16} /> {payout === 'pending' ? 'View payout request' : 'Add payout account'}
+            </Link>
+          )}
+        </section>
       </div>
     )
   }
 
+  // Never submitted (or rejected): show the full form.
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <div className="mb-6">
@@ -363,18 +499,6 @@ export default function GetVerifiedPage() {
             placeholder="e.g. RC1234567"
             className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           />
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <div className="flex items-start gap-3 rounded-lg border border-border bg-secondary p-4 text-sm">
-            <Landmark size={18} className="mt-0.5 shrink-0 text-primary" />
-            <p className="text-muted-foreground">
-              <span className="font-semibold text-foreground">Bank details are no longer entered here.</span>{' '}
-              After you are verified, add your payout account on the{' '}
-              <Link href="/dashboard/payout-account" className="font-semibold text-primary underline">Payout account page</Link>.
-              EboHomes reviews it to protect your rent from fraud.
-            </p>
-          </div>
         </div>
 
         <div className="border-t border-border pt-4">
@@ -478,6 +602,17 @@ export default function GetVerifiedPage() {
               <input type="file" accept={OWNERSHIP_ACCEPT} onChange={handleDocUpload} className="hidden" />
             </label>
           )}
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-secondary p-4 text-sm">
+            <Landmark size={18} className="mt-0.5 shrink-0 text-primary" />
+            <p className="text-muted-foreground">
+              <span className="font-semibold text-foreground">Payout account comes next.</span>{' '}
+              Submit the details above first. Your next screen shows everything you sent and a button to add your payout
+              account, which EboHomes reviews with your identity. The account must be in your own name.
+            </p>
+          </div>
         </div>
 
         {message && <p className="text-sm text-destructive">{message}</p>}
