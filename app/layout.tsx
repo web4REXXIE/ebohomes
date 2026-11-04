@@ -25,26 +25,13 @@ export const metadata: Metadata = {
     siteName: 'EboHomes',
     type: 'website',
     locale: 'en_NG',
-    images: [{ url: '/hero-home.jpg', alt: 'EboHomes' }],
+    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: 'EboHomes: Find Homes. Skip the Stress.' }],
   },
-  twitter: { card: 'summary_large_image', images: ['/hero-home.jpg'] },
+  twitter: { card: 'summary_large_image', images: ['/og-image.jpg'] },
   appleWebApp: {
     capable: true,
     title: 'EboHomes',
     statusBarStyle: 'default',
-  },
-  icons: {
-    icon: [
-      {
-        url: '/icon.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-white.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-    ],
-    apple: '/icons/apple-touch-icon.png',
   },
 }
 
