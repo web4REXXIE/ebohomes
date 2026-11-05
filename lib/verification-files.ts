@@ -22,3 +22,18 @@ export function orphanedIdentityFiles(
     return Number.isFinite(ts) && nowMs - ts >= minAgeMs
   })
 }
+
+
+// PHASE 9.3: deletion of identity / ownership evidence is paused until the retention policy is approved.
+// Deletion runs ONLY when EB_ALLOW_IDENTITY_FILE_DELETION is exactly the string 'true'. Anything else (unset, '', 'TRUE', '1', 'false') = off.
+export function identityDeletionEnabled(raw: string | null | undefined): boolean {
+  return raw === 'true'
+}
+
+export type IdentityCleanupPlan = { remove: string[]; paused: boolean; candidates: number }
+
+export function planIdentityCleanup(candidates: string[], enabled: boolean): IdentityCleanupPlan {
+  const n = candidates.length
+  if (n > 0 && !enabled) return { remove: [], paused: true, candidates: n }
+  return { remove: enabled ? [...candidates] : [], paused: false, candidates: n }
+}
