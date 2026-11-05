@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'node:crypto'
-import { AUTHORITY_BUCKET, UUID_RE, authorityPathFor, validateAuthorityFileMeta } from '@/lib/authority-evidence'
+import { AUTHORITY_BUCKET, MAX_AUTHORITY_FILES_PER_LISTING, UUID_RE, authorityPathFor, validateAuthorityFileMeta } from '@/lib/authority-evidence'
 import { authUser, fail } from '@/lib/payment-submission-server'
 
 export const runtime = 'nodejs'
@@ -20,6 +20,10 @@ export async function POST(req: Request) {
 
   const { data: l } = await a.db.from('listings').select('id, landlord_id').eq('id', listingId).maybeSingle()
   if (!l || l.landlord_id !== a.user.id) return fail('Listing not found.', 404)
+
+  // Cap stored files per listing (registered or not) so abandoned uploads cannot pile up.
+  const { data: stored } = await a.db.storage.from(AUTHORITY_BUCKET).list(`${a.user.id}/${listingId}`, { limit: MAX_AUTHORITY_FILES_PER_LISTING + 1 })
+  if ((stored?.length ?? 0) >= MAX_AUTHORITY_FILES_PER_LISTING) return fail('Too many files for this listing. Please contact EboHomes.', 429)
 
   const path = authorityPathFor(a.user.id, listingId, body.mime, randomUUID())
   const { data, error } = await a.db.storage.from(AUTHORITY_BUCKET).createSignedUploadUrl(path)
