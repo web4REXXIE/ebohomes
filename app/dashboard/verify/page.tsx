@@ -677,4 +677,4 @@ export default function GetVerifiedPage() {
       </form>
     </div>
   )
-}
+        }
