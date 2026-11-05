@@ -34,6 +34,7 @@ import { cleanMediaUrls } from '@/lib/property-media'
 import { PropertyVideo } from '@/components/property-video'
 import { PropertyTrust } from '@/components/property-trust'
 import { identityState } from '@/lib/property-trust'
+import { listedByLabel as toListedByLabel } from '@/lib/listing-authority'
 import {
   PropertyActionsBar,
   PropertyActionsSidebar,
@@ -49,13 +50,6 @@ const ListingLocation = dynamic(
     })),
   { ssr: false }
 )
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  agent: 'Agent',
-  manager: 'Property manager',
-  other: 'Other',
-}
 
 // Fixes garbled characters (encoding bugs) and tidies spacing in descriptions
 function cleanDescription(text: string) {
@@ -119,6 +113,7 @@ export default function ListingDetailPage() {
   const [inspection, setInspection] = useState<any>(null)
   const [trust, setTrust] = useState<any>(null)
   const [trustFailed, setTrustFailed] = useState(false)
+  const [authorityReviewed, setAuthorityReviewed] = useState<boolean | null>(null)
   const [inspectionFailed, setInspectionFailed] = useState(false)
   const [dates, setDates] = useState<{
     created_at: string | null
@@ -382,6 +377,19 @@ export default function ListingDetailPage() {
             setTrust(
               Array.isArray(trustRows) ? trustRows[0] ?? null : null
             )
+          }
+        }
+
+        // Has EboHomes accepted the authority evidence for this property? A yes/no only.
+        const { data: authorityData, error: authorityError } = await supabase.rpc(
+          'listing_authority_reviewed',
+          { p_listing: data.id }
+        )
+        if (!cancelled) {
+          if (authorityError) {
+            console.error('Failed to load authority review:', authorityError.message)
+          } else {
+            setAuthorityReviewed(authorityData === true)
           }
         }
 
@@ -673,9 +681,7 @@ export default function ListingDetailPage() {
     router.push(target)
   }
 
-  const listedByLabel: string | null = listing.listed_by_role
-    ? ROLE_LABELS[listing.listed_by_role] ?? 'Other'
-    : null
+  const listedByLabel: string | null = toListedByLabel(listing.listed_by_role)
 
   const addedText = formatDate(dates.created_at)
   const updatedText = formatDate(dates.updated_at)
@@ -850,6 +856,7 @@ export default function ListingDetailPage() {
             <PropertyTrust
               trust={trust}
               trustFailed={trustFailed}
+              authorityReviewed={authorityReviewed}
               inspection={inspection}
               inspectionFailed={inspectionFailed}
               className="mb-6"
@@ -1090,4 +1097,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-          }
+            }
