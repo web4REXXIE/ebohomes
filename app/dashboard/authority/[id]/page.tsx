@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Loader2, ArrowLeft, Upload, FileText, Trash2, ShieldCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
@@ -31,6 +31,7 @@ type Doc = { id: string; doc_type: string; name: string | null; uploaded_at: str
 
 export default function ListingAuthorityPage() {
   const { id } = useParams<{ id: string }>()
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [title, setTitle] = useState('')
   const [info, setInfo] = useState<any>(null)
@@ -70,7 +71,11 @@ export default function ListingAuthorityPage() {
   const activeDocs = docs.filter((d) => !d.withdrawn_at)
   const status = info?.status as string | undefined
   const statusInfo = authorityStatusInfo(status)
-  const locked = status === 'on_hold'
+  // While EboHomes has the evidence (submitted or on hold) the lister cannot change or resend it.
+  // After 'needs evidence', 'rejected' or 'accepted' they can edit and send again, as many times as needed.
+  const underReview = status === 'submitted' || status === 'on_hold'
+  const canEdit = !underReview
+  const locked = !canEdit
   const missing = useMemo(
     () => (role ? missingForClaim({ role, ownerName, ownerPhone, companyName, companyCac, note }, docs) : ['Your relationship to the property']),
     [role, ownerName, ownerPhone, companyName, companyCac, note, docs],
@@ -111,16 +116,20 @@ export default function ListingAuthorityPage() {
 
   async function submit() {
     setBusy(true); setErr(null); setMsg(null)
-    const { data, error } = await supabase.rpc('submit_listing_authority', {
+    const { error } = await supabase.rpc('submit_listing_authority', {
       p_listing: id, p_role: role, p_situation: situation || null,
       p_owner_name: showOwner ? ownerName : null, p_owner_phone: showOwner ? ownerPhone : null,
       p_company_name: showCompany ? companyName : null, p_company_cac: showCompany ? companyCac : null,
       p_note: note || null,
     })
-    setBusy(false)
-    if (error) { setErr(friendlyAuthorityError(error.message)); return }
-    setMsg(typeof data === 'string' && data !== 'ok' ? data : 'Sent to EboHomes for review.')
-    await load()
+    if (error) {
+      setBusy(false)
+      setErr(friendlyAuthorityError(error.message))
+      await load() // the status may have changed (for example it was already sent from another tab)
+      return
+    }
+    // Sent. Move on to the listings page so the lister is not left on this form.
+    router.replace('/dashboard/listings?sent=authority')
   }
 
   if (loading) return <p className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" aria-hidden /> Loading...</p>
@@ -143,6 +152,8 @@ export default function ListingAuthorityPage() {
         <p className="font-semibold">{statusInfo.label}</p>
         <p>{statusInfo.detail}</p>
         {info.last_message?.message && <p className="mt-2 border-t border-current/20 pt-2">{info.last_message.message}</p>}
+        {status === 'submitted' && <p className="mt-2 border-t border-current/20 pt-2">You cannot send again while EboHomes is reviewing. We will notify you when there is a decision.</p>}
+        {(status === 'needs_evidence' || status === 'rejected') && <p className="mt-2 border-t border-current/20 pt-2">You can fix this and send it again as many times as you need.</p>}
       </div>
 
       <p className="rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
@@ -215,19 +226,27 @@ export default function ListingAuthorityPage() {
           </div>)}
       </section>
 
-      {missing.length > 0 && !locked && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <p className="font-semibold">Still needed before you can send:</p>
-          <ul className="list-disc pl-5">{missing.map((m) => <li key={m}>{m}</li>)}</ul>
-        </div>)}
-      {!situation && !locked && role && <p className="text-xs text-muted-foreground">Choose the property situation too.</p>}
-
-      <button type="button" onClick={submit} disabled={busy || locked || missing.length > 0 || !situation}
-        className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-        {busy && <Loader2 size={16} className="animate-spin" aria-hidden />}
-        {status === 'accepted' ? 'Send changes for review' : status === 'not_submitted' || !status ? 'Send to EboHomes' : 'Send again'}
-      </button>
-      <p className="text-center text-xs text-muted-foreground">{activeDocs.length} active document{activeDocs.length === 1 ? '' : 's'}</p>
+      {canEdit ? (
+        <>
+          {missing.length > 0 && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-semibold">Still needed before you can send:</p>
+              <ul className="list-disc pl-5">{missing.map((m) => <li key={m}>{m}</li>)}</ul>
+            </div>)}
+          {!situation && role && <p className="text-xs text-muted-foreground">Choose the property situation too.</p>}
+          <button type="button" onClick={submit} disabled={busy || missing.length > 0 || !situation}
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+            {busy && <Loader2 size={16} className="animate-spin" aria-hidden />}
+            {status === 'accepted' ? 'Send changes for review' : status === 'needs_evidence' || status === 'rejected' ? 'Send again' : 'Send to EboHomes'}
+          </button>
+          <p className="text-center text-xs text-muted-foreground">{activeDocs.length} active document{activeDocs.length === 1 ? '' : 's'}</p>
+        </>
+      ) : (
+        <Link href="/dashboard/listings"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
+          Back to my listings
+        </Link>
+      )}
     </div>
   )
-                    }
+      }
