@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Home, Star, Pause, Play, Pencil, Trash2, Plus, Eye, CheckCircle2, X, MessageCircle } from 'lucide-react'
+import { Home, Star, Pause, Play, Pencil, Trash2, Plus, Eye, CheckCircle2, X, MessageCircle, ShieldCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
 import { PropertySummary, type PropertyLite } from '@/components/property-summary'
@@ -13,6 +13,14 @@ import {
   type ListingGroup,
 } from '@/lib/listing-status'
 import { TONE_CLASS } from '@/lib/viewing-status'
+import { authorityStatusInfo } from '@/lib/listing-authority'
+
+const AUTHORITY_TONE: Record<string, string> = {
+  neutral: 'border-slate-300 bg-slate-50 text-slate-800',
+  good: 'border-emerald-300 bg-emerald-50 text-emerald-900',
+  warn: 'border-amber-300 bg-amber-50 text-amber-900',
+  bad: 'border-red-300 bg-red-50 text-red-900',
+}
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
 
@@ -116,6 +124,8 @@ export default function MyListingsPage() {
     if (!error) {
       setListings((prev) => prev.filter((l) => l.id !== listingId))
       setMsg({ ok: true, text: 'The property was deleted.' })
+    } else if (error.code === '23503') {
+      setMsg({ ok: false, text: 'This property has authority evidence on record, so it cannot be deleted. You can pause it instead, or contact EboHomes.' })
     } else {
       setMsg({ ok: false, text: 'Could not delete the property: ' + error.message })
     }
@@ -270,6 +280,8 @@ export default function MyListingsPage() {
                   const isNew = newIds.has(listing.id)
                   const live = listingIsLive(listing.status)
                   const busy = actioningId === listing.id
+                  const auth = authorityStatusInfo(listing.authority_status)
+                  const authAction = listing.authority_status === 'accepted' ? 'Authority details' : listing.authority_status === 'needs_evidence' || listing.authority_status === 'rejected' ? 'Fix authority' : listing.authority_status === 'submitted' || listing.authority_status === 'on_hold' ? 'View authority' : 'Add authority evidence'
                   return (
                     <div
                       key={listing.id}
@@ -294,6 +306,11 @@ export default function MyListingsPage() {
                         inspected={inspected.has(listing.id)}
                         href={live ? `/listing/${listing.id}` : undefined}
                       />
+
+                      <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${AUTHORITY_TONE[auth.tone]}`}>
+                        <p className="flex items-center gap-1.5 font-bold"><ShieldCheck size={13} aria-hidden /> {auth.label}</p>
+                        <p className="mt-0.5">{auth.detail}</p>
+                      </div>
 
                       <div className="mt-3 space-y-1 text-sm">
                         <p className="text-foreground">{info.meaning}</p>
@@ -324,6 +341,13 @@ export default function MyListingsPage() {
                         >
                           <Pencil size={12} aria-hidden /> Edit
                         </button>
+
+                        <Link
+                          href={`/dashboard/authority/${listing.id}`}
+                          className={`${actionBtn} ${listing.authority_status === 'accepted' ? 'border-border text-foreground hover:bg-secondary' : 'border-primary bg-primary/5 text-primary hover:bg-primary/10'}`}
+                        >
+                          <ShieldCheck size={12} aria-hidden /> {authAction}
+                        </Link>
 
                         {(listing.status === 'rejected' || listing.status === 'suspended') && (
                           <Link href="/contact" className={`${actionBtn} border-border text-foreground hover:bg-secondary`}>
