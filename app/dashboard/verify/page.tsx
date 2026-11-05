@@ -283,7 +283,7 @@ export default function GetVerifiedPage() {
     }
 
     if (
-      !isValidOwnershipPath(formData.ownership_doc_url, user.id) ||
+      (formData.ownership_doc_url !== '' && !isValidOwnershipPath(formData.ownership_doc_url, user.id)) ||
       !isValidOwnershipPath(formData.id_document_url, user.id) ||
       !isValidOwnershipPath(formData.selfie_url, user.id)
     ) {
@@ -301,7 +301,7 @@ export default function GetVerifiedPage() {
         account_type: formData.account_type,
         representative_name: formData.account_type === 'company' ? formData.representative_name.trim() : null,
         representative_role: formData.account_type === 'company' ? formData.representative_role.trim() : null,
-        ownership_doc_url: formData.ownership_doc_url, // storage path
+        ownership_doc_url: formData.ownership_doc_url || null, // storage path, optional
         id_document_type: formData.id_document_type,
         id_document_url: formData.id_document_url,
         selfie_url: formData.selfie_url,
@@ -344,7 +344,7 @@ export default function GetVerifiedPage() {
           <ul className="divide-y divide-border">
             <ChecklistRow done label="Business" value={`${formData.business_name || '—'}${company ? ' (company)' : ''}`} />
             <ChecklistRow done label="Government ID and selfie" value="Reviewed" />
-            <ChecklistRow done label="Property ownership / authority document" value="Reviewed" />
+            <ChecklistRow done={!!formData.ownership_doc_url} label="Ownership document (optional)" value={formData.ownership_doc_url ? 'Reviewed' : 'Not provided'} />
           </ul>
           <p className="text-xs text-muted-foreground pt-2 border-t border-border">
             Verification confirms who you are and the documents you sent. It does not by itself prove you own a particular property.
@@ -416,7 +416,7 @@ export default function GetVerifiedPage() {
               value={`${ID_LABELS[formData.id_document_type] || 'ID'} uploaded`}
             />
             <ChecklistRow done label="Selfie holding your ID" value="Uploaded" />
-            <ChecklistRow done label="Property ownership / authority document" value="Uploaded" />
+            <ChecklistRow done={!!formData.ownership_doc_url} label="Ownership document (optional)" value={formData.ownership_doc_url ? 'Uploaded' : 'Not provided'} />
           </ul>
         </section>
 
@@ -613,9 +613,9 @@ export default function GetVerifiedPage() {
         </div>
 
         <div className="border-t border-border pt-4">
-          <label className="block text-sm font-semibold text-foreground mb-2">Property Ownership / Authority Document *</label>
+          <label className="block text-sm font-semibold text-foreground mb-2">Ownership Document (optional)</label>
           <p className="text-xs text-muted-foreground mb-3">
-            Upload a title document, deed, C of O, survey, tenancy paper, or proof that you are authorised to rent this property.
+            Only if you own property yourself. Agents and property managers can skip this. EboHomes checks each property separately when you list it.
           </p>
           {formData.ownership_doc_url ? (
             <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
@@ -660,7 +660,7 @@ export default function GetVerifiedPage() {
           />
           <span className="text-muted-foreground">
             I confirm these details and documents are mine and true. I agree that EboHomes may review my ID, selfie and
-            ownership document to verify my identity, as described in the{' '}
+            any document I upload to verify my identity, as described in the{' '}
             <Link href="/privacy" target="_blank" className="font-semibold text-primary underline">Privacy Policy</Link>.
           </span>
         </label>
