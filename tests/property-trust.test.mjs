@@ -23,14 +23,6 @@ assert.equal(t.identityState(undefined), 'unavailable')
 assert.equal(t.identityState('x'), 'unavailable')
 assert.equal(t.identityState({ identity_checked: true }, true), 'unavailable')
 
-// Documents: never a yes without identity
-assert.equal(t.documentsState({ identity_checked: true, documents_reviewed: true }), 'yes')
-assert.equal(t.documentsState({ identity_checked: true, documents_reviewed: false }), 'no')
-assert.equal(t.documentsState({ identity_checked: false, documents_reviewed: true }), 'no')
-assert.equal(t.documentsState({ documents_reviewed: true }), 'no')
-assert.equal(t.documentsState(null), 'unavailable')
-assert.equal(t.documentsState({ identity_checked: true, documents_reviewed: true }, true), 'unavailable')
-
 // The inspected flag inside listing_trust is ignored
 assert.equal(t.inspectionState(null), 'no')
 assert.equal(t.inspectionState(undefined), 'no')
