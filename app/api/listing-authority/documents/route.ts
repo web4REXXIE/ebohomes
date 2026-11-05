@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
-import { AUTHORITY_BUCKET, UUID_RE, isAuthorityDocType, isValidAuthorityPath, sniffAuthorityMime, validateAuthorityFileMeta } from '@/lib/authority-evidence'
+import { AUTHORITY_BUCKET, UUID_RE, friendlyAuthorityError, isAuthorityDocType, isValidAuthorityPath, sniffAuthorityMime, validateAuthorityFileMeta } from '@/lib/authority-evidence'
 import { authUser, fail } from '@/lib/payment-submission-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// POST { listing_id, doc_type, path, name } -> registers an uploaded file as evidence.
+// POST { listing_id, doc_type, path, name, supersedes_id?, description? } -> registers an uploaded file as evidence.
 // The server re-checks the file really exists, reads its true type and size, and records a SHA-256 fingerprint.
 // Registering a document never makes a listing "authority reviewed": only an admin decision does.
 export async function POST(req: Request) {
@@ -20,6 +20,11 @@ export async function POST(req: Request) {
   if (!UUID_RE.test(listingId)) return fail('Invalid request.', 400)
   if (!isAuthorityDocType(body?.doc_type)) return fail('Choose what kind of document this is.', 400)
   if (!isValidAuthorityPath(body?.path, user.id, listingId)) return fail('Invalid evidence file.', 400)
+  // Replacing a document: the old one must be named. Anything else is rejected, never guessed.
+  const supersedes = body?.supersedes_id == null || body.supersedes_id === '' ? null : body.supersedes_id
+  if (supersedes !== null && (typeof supersedes !== 'string' || !UUID_RE.test(supersedes))) return fail('Invalid request.', 400)
+  const description = typeof body?.description === 'string' ? body.description.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 500) : null
+  if (body.doc_type === 'other_supporting_document' && (description ?? '').length < 5) return fail('Write a short description of this document.', 400)
 
   const { data: l } = await db.from('listings').select('id, landlord_id').eq('id', listingId).maybeSingle()
   if (!l || l.landlord_id !== user.id) return fail('Listing not found.', 404)
@@ -49,9 +54,12 @@ export async function POST(req: Request) {
   const { data, error } = await db.rpc('eb_authority_add_document', {
     p_listing: listingId, p_uploader: user.id, p_doc_type: body.doc_type, p_path: path,
     p_name: original, p_mime: mime, p_size: bytes, p_sha256: sha256,
+    p_supersedes: supersedes, p_description: description,
   })
   if (error) {
     console.error('authority document register failed:', error.code)
+    // 22023 / P0002 are the database's own plain messages (same file, wrong kind, under review...). Safe to show.
+    if (error.code === '22023' || error.code === 'P0002') return fail(friendlyAuthorityError(error.message, 'Could not save your document. Try again.'), 400)
     return fail('Could not save your document. Try again.', 500)
   }
   return NextResponse.json({ ok: true, id: data })
