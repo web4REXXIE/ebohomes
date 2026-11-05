@@ -525,10 +525,10 @@ export default function PropertyReviewPage() {
                   <p className="text-xs text-amber-800 mb-3">An existing listing from before authority review. It may stay live during the transition.</p>
                 )}
                 <Link
-                  href="/admin/listing-authority"
+                  href={`/admin/listing-authority?listing=${selected.id}`}
                   className="mt-2 w-full inline-flex items-center justify-center gap-2 font-semibold border border-border rounded-lg px-4 py-2.5 text-sm hover:bg-secondary transition-colors"
                 >
-                  <ShieldCheck size={16} /> Open Listing Authority
+                  <ShieldCheck size={16} /> Open this listing in Listing Authority
                 </Link>
               </div>
 
@@ -551,4 +551,4 @@ export default function PropertyReviewPage() {
       )}
     </div>
   )
-                }
+        }
