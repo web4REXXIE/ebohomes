@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, X, FileEdit, Home as HomeIcon, ShieldCheck, ShieldOff, ClipboardCheck } from 'lucide-react'
+import { Check, X, FileEdit, Home as HomeIcon, ShieldCheck, ClipboardCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getOwnershipSignedUrl } from '@/lib/ownership-docs'
 import { Button } from '@/components/ui/button'
+import { authorityStatusInfo, isAuthorityReviewed } from '@/lib/listing-authority'
 
 const CHECKLIST = [
   'Property photos are clear and real',
@@ -26,6 +27,8 @@ export default function PropertyReviewPage() {
   const [flags, setFlags] = useState<any[]>([])
   const [risk, setRisk] = useState<any>(null)
   const [suspendReason, setSuspendReason] = useState('')
+  // Listings recorded at the authority cutover that are still unresolved. The database gate lets these return to approved.
+  const [legacyOpen, setLegacyOpen] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     fetchListings()
@@ -38,6 +41,8 @@ export default function PropertyReviewPage() {
       .select('*')
       .order('created_at', { ascending: false })
     setListings(data ?? [])
+    const { data: legacy } = await supabase.from('listing_authority_legacy').select('listing_id').is('resolved_at', null)
+    setLegacyOpen(new Set((legacy ?? []).map((r: any) => r.listing_id as string)))
     setLoading(false)
   }
 
@@ -201,35 +206,6 @@ export default function PropertyReviewPage() {
     setUpdating(false)
   }
 
-  const handleToggleVerified = async (id: string, current: boolean) => {
-    const confirmMsg = current
-      ? 'Remove the “Property verified” badge from this property? This does not change the landlord’s identity verification.'
-      : 'Mark this property as verified? This tells tenants EboHomes has confirmed real-world facts about the property (it is separate from landlord identity verification) — only do this if you actually have grounds to back that claim.'
-    if (!window.confirm(confirmMsg)) return
-
-    setUpdating(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const nowIso = new Date().toISOString()
-
-    const { error } = await supabase
-      .from('listings')
-      .update({
-        verified: !current,
-        verified_by: !current ? (user?.id ?? null) : null,
-        verified_at: !current ? nowIso : null,
-      })
-      .eq('id', id)
-
-    if (!error) {
-      setListings((prev) => prev.map((l) =>
-        l.id === id ? { ...l, verified: !current, verified_at: !current ? nowIso : null } : l
-      ))
-    } else {
-      alert('Failed to update verification: ' + error.message)
-    }
-    setUpdating(false)
-  }
-
   const counts = {
     pending: listings.filter((l) => (l.status ?? 'pending') === 'pending').length,
     approved: listings.filter((l) => l.status === 'approved').length,
@@ -237,6 +213,9 @@ export default function PropertyReviewPage() {
     inspection_required: listings.filter((l) => l.status === 'inspection_required').length,
     suspended: listings.filter((l) => l.status === 'suspended').length,
   }
+
+  const canApprove = !!selected && (isAuthorityReviewed(selected.authority_status) || legacyOpen.has(selected.id))
+  const authInfo = authorityStatusInfo(selected?.authority_status)
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -285,7 +264,7 @@ export default function PropertyReviewPage() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate flex items-center gap-1">
                     {l.title ?? 'Untitled listing'}
-                    {l.verified && <ShieldCheck size={13} className="text-emerald-600 shrink-0" />}
+                    {isAuthorityReviewed(l.authority_status) && <ShieldCheck size={13} className="text-emerald-600 shrink-0" aria-label="Authority reviewed" />}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">{l.location_text}</p>
                   <p className="text-[11px] text-muted-foreground">
@@ -326,9 +305,9 @@ export default function PropertyReviewPage() {
                   <div>
                     <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                       {selected.title ?? 'Untitled listing'}
-                      {selected.verified && (
+                      {isAuthorityReviewed(selected.authority_status) && (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                          <ShieldCheck size={12} /> Property verified
+                          <ShieldCheck size={12} /> Authority reviewed
                         </span>
                       )}
                     </h2>
@@ -377,13 +356,6 @@ export default function PropertyReviewPage() {
                     <span className="font-semibold">Reason:</span> {selected.rejection_reason}
                   </p>
                 )}
-                {selected.verified && selected.verified_at && (
-                  <p className="text-xs text-emerald-700 mb-3">
-                    <ShieldCheck size={12} className="inline mr-1" />
-                    Verified on {new Date(selected.verified_at).toLocaleString()}
-                  </p>
-                )}
-
                 {selected.ownership_doc_url && (
                   ownershipDocUrl ? (
                     <a
@@ -471,10 +443,16 @@ export default function PropertyReviewPage() {
                   </label>
                 )}
 
+                {!canApprove && selected.status !== 'approved' && (
+                  <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                    Approval is blocked until the property authority is accepted. Review it on the Listing Authority page.
+                  </p>
+                )}
+
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button
                     onClick={() => handleApprove(selected.id)}
-                    disabled={updating || selected.status === 'approved'}
+                    disabled={updating || selected.status === 'approved' || !canApprove}
                     className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold flex items-center justify-center gap-2"
                   >
                     <Check size={16} /> Approve Property
@@ -535,23 +513,23 @@ export default function PropertyReviewPage() {
                 )}
               </div>
 
-              {/* Verification — separate from approval */}
+              {/* Property authority: reviewed separately. This replaces the old "Property verified" toggle. */}
               <div className="bg-card border border-border rounded-lg p-5">
-                <h3 className="font-semibold text-foreground mb-1">EboHomes Verification</h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  A distinct trust claim from approval — only mark this once you have real grounds (inspection, confirmed ownership, etc.) to back it.
+                <h3 className="font-semibold text-foreground mb-1">Property authority</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Whether the lister may list this property. It is reviewed on its own page, and it is separate from identity checks and inspection.
                 </p>
-                <Button
-                  onClick={() => handleToggleVerified(selected.id, !!selected.verified)}
-                  disabled={updating}
-                  variant="outline"
-                  className={`w-full font-semibold flex items-center justify-center gap-2 ${
-                    selected.verified ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-border text-muted-foreground'
-                  }`}
+                <p className="text-sm font-semibold text-foreground">{authInfo.label}</p>
+                <p className="text-xs text-muted-foreground mb-1">{authInfo.detail}</p>
+                {legacyOpen.has(selected.id) && !isAuthorityReviewed(selected.authority_status) && (
+                  <p className="text-xs text-amber-800 mb-3">An existing listing from before authority review. It may stay live during the transition.</p>
+                )}
+                <Link
+                  href="/admin/listing-authority"
+                  className="mt-2 w-full inline-flex items-center justify-center gap-2 font-semibold border border-border rounded-lg px-4 py-2.5 text-sm hover:bg-secondary transition-colors"
                 >
-                  {selected.verified ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
-                  {selected.verified ? 'Remove Property Verified Badge' : 'Mark Property as Verified'}
-                </Button>
+                  <ShieldCheck size={16} /> Open Listing Authority
+                </Link>
               </div>
 
               {/* Inspection — separate action, feeds Phase 6 property intelligence */}
@@ -573,4 +551,4 @@ export default function PropertyReviewPage() {
       )}
     </div>
   )
-  }
+                }
