@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { Loader2, ArrowLeft, Upload, FileText, Trash2, ShieldCheck } from 'lucide-react'
+import { Loader2, ArrowLeft, Upload, FileText, Trash2, ShieldCheck, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
-  AUTHORITY_DOC_TYPES, AUTHORITY_ROLES, AUTHORITY_SITUATIONS, authorityStatusInfo, missingForClaim,
+  AUTHORITY_DOC_TYPES, AUTHORITY_ROLES, AUTHORITY_SITUATIONS, authorityStatusInfo, documentStatusInfo, missingForClaim, needsDescription,
 } from '@/lib/listing-authority'
 import { AUTHORITY_ACCEPT, AUTHORITY_BUCKET, friendlyAuthorityError, validateAuthorityFileMeta } from '@/lib/authority-evidence'
 
@@ -27,7 +27,10 @@ async function authedFetch(path: string, body: unknown) {
   return { ok: res.ok, j }
 }
 
-type Doc = { id: string; doc_type: string; name: string | null; uploaded_at: string; withdrawn_at: string | null }
+type Doc = {
+  id: string; doc_type: string; name: string | null; uploaded_at: string; withdrawn_at: string | null
+  version?: number; supersedes_id?: string | null; description?: string | null; status?: string; reason?: string | null
+}
 
 export default function ListingAuthorityPage() {
   const { id } = useParams<{ id: string }>()
@@ -47,7 +50,10 @@ export default function ListingAuthorityPage() {
   const [companyCac, setCompanyCac] = useState('')
   const [note, setNote] = useState('')
   const [docType, setDocType] = useState('')
+  const [desc, setDesc] = useState('')
+  const [replacing, setReplacing] = useState<Doc | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const replaceRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setErr(null)
@@ -64,11 +70,13 @@ export default function ListingAuthorityPage() {
       setCompanyName(c.company_name ?? ''); setCompanyCac(c.company_cac ?? ''); setNote(c.declaration_note ?? '')
     }
     setLoading(false)
+    return data
   }, [id])
   useEffect(() => { load() }, [load])
 
   const docs: Doc[] = info?.documents ?? []
   const activeDocs = docs.filter((d) => !d.withdrawn_at)
+  const oldDocs = docs.filter((d) => d.withdrawn_at)
   const status = info?.status as string | undefined
   const statusInfo = authorityStatusInfo(status)
   // While EboHomes has the evidence (submitted or on hold) the lister cannot change or resend it.
@@ -83,35 +91,74 @@ export default function ListingAuthorityPage() {
   const showOwner = role === 'agent' || role === 'manager'
   const showCompany = role === 'company_representative'
 
-  async function upload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
+  // One path for "add" and "replace". For a replacement the old document is named, and the kind stays the same.
+  async function sendFile(file: File, type: string, supersedesId: string | null, description: string | null) {
     setErr(null); setMsg(null)
-    if (!docType) { setErr('Choose what kind of document this is first.'); return }
     const bad = validateAuthorityFileMeta(file.type, file.size)
     if (bad) { setErr(bad); return }
+    const before = status
     setBusy(true)
     try {
       const p = await authedFetch('/api/listing-authority/prepare', { listing_id: id, mime: file.type, bytes: file.size })
       if (!p.ok) { setErr(p.j?.error ?? 'Could not prepare the upload.'); return }
       const up = await supabase.storage.from(AUTHORITY_BUCKET).uploadToSignedUrl(p.j.path, p.j.token, file, { contentType: file.type })
       if (up.error) { setErr('The upload failed. Check your connection and try again.'); return }
-      const r = await authedFetch('/api/listing-authority/documents', { listing_id: id, doc_type: docType, path: p.j.path, name: file.name })
+      const r = await authedFetch('/api/listing-authority/documents', {
+        listing_id: id, doc_type: type, path: p.j.path, name: file.name,
+        supersedes_id: supersedesId, description: description || null,
+      })
       if (!r.ok) { setErr(r.j?.error ?? 'Could not save your document.'); return }
-      setMsg('Document added.'); setDocType('')
-      await load()
+      const fresh = await load()
+      if (before === 'accepted' && fresh?.status === 'submitted') setMsg('Saved. Because this changed your evidence, EboHomes will check your listing again. It stays as it is meanwhile.')
+      else if (supersedesId) setMsg('Document replaced. The earlier version is kept on record.')
+      else if (before === 'accepted') setMsg('Document added. EboHomes will look at it at the next check.')
+      else setMsg('Document added.')
+      setDocType(''); setDesc('')
     } finally { setBusy(false) }
   }
 
+  async function upload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!docType) { setErr('Choose what kind of document this is first.'); return }
+    if (needsDescription(docType) && desc.trim().length < 5) { setErr('Write a short description of this document first.'); return }
+    await sendFile(file, docType, null, desc.trim() || null)
+  }
+
+  function startReplace(d: Doc) {
+    if (status === 'accepted' && d.status === 'accepted'
+      && !window.confirm('EboHomes already accepted this document. If you replace it, EboHomes will check your listing again. Your listing stays as it is meanwhile. Continue?')) return
+    setReplacing(d)
+    replaceRef.current?.click()
+  }
+
+  async function replaceFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    const old = replacing
+    setReplacing(null)
+    if (!file || !old) return
+    let description: string | null = old.description ?? null
+    if (needsDescription(old.doc_type)) {
+      const d = window.prompt('Short description of this document', old.description ?? '')
+      if (d === null) return
+      description = d.trim()
+      if (description.length < 5) { setErr('Write a short description of this document.'); return }
+    }
+    await sendFile(file, old.doc_type, old.id, description)
+  }
+
   async function withdraw(docId: string) {
-    if (!window.confirm('Withdraw this document? EboHomes keeps a record that it was submitted.')) return
+    const d = docs.find((x) => x.id === docId)
+    const warn = status === 'accepted' && d?.status === 'accepted' ? ' EboHomes already accepted it, so withdrawing it means EboHomes will check your listing again.' : ''
+    if (!window.confirm(`Withdraw this document? EboHomes keeps a record that it was submitted.${warn}`)) return
     setBusy(true); setErr(null); setMsg(null)
     const { error } = await supabase.rpc('withdraw_authority_document', { p_document: docId })
     setBusy(false)
     if (error) { setErr(friendlyAuthorityError(error.message)); return }
-    setMsg('Document withdrawn.')
-    await load()
+    const fresh = await load()
+    setMsg(status === 'accepted' && fresh?.status === 'submitted' ? 'Document withdrawn. EboHomes will check your listing again.' : 'Document withdrawn.')
   }
 
   async function submit() {
@@ -200,17 +247,39 @@ export default function ListingAuthorityPage() {
 
       <section className="space-y-3">
         <h2 className="text-base font-bold">Documents</h2>
-        {docs.length === 0 && <p className="text-sm text-muted-foreground">No documents yet.</p>}
+        {activeDocs.length === 0 && <p className="text-sm text-muted-foreground">No documents yet.</p>}
         <ul className="space-y-2">
-          {docs.map((d) => (
-            <li key={d.id} className={`flex items-center justify-between gap-2 rounded-lg border border-border p-3 text-sm ${d.withdrawn_at ? 'opacity-50' : ''}`}>
-              <span className="flex min-w-0 items-center gap-2"><FileText size={16} aria-hidden className="shrink-0" />
-                <span className="min-w-0"><span className="block font-semibold">{docLabel(d.doc_type)}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{d.name ?? 'File'}{d.withdrawn_at ? ' (withdrawn)' : ''}</span></span></span>
-              {!d.withdrawn_at && !locked && (
-                <button onClick={() => withdraw(d.id)} disabled={busy} aria-label="Withdraw document" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-border"><Trash2 size={16} aria-hidden /></button>)}
-            </li>))}
+          {activeDocs.map((d) => {
+            const si = documentStatusInfo(d.status)
+            return (
+              <li key={d.id} className="space-y-2 rounded-lg border border-border p-3 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2"><FileText size={16} aria-hidden className="shrink-0" />
+                    <span className="min-w-0"><span className="block font-semibold">{docLabel(d.doc_type)}{(d.version ?? 1) > 1 ? ` (version ${d.version})` : ''}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{d.name ?? 'File'}</span>
+                      {d.description && <span className="block text-xs text-muted-foreground">{d.description}</span>}</span></span>
+                  {!locked && (
+                    <span className="flex shrink-0 gap-1">
+                      <button onClick={() => startReplace(d)} disabled={busy} aria-label="Replace document" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-border"><RefreshCw size={16} aria-hidden /></button>
+                      <button onClick={() => withdraw(d.id)} disabled={busy} aria-label="Withdraw document" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-border"><Trash2 size={16} aria-hidden /></button>
+                    </span>)}
+                </div>
+                <p className={`rounded-md border px-2 py-1 text-xs font-semibold ${TONE[si.tone]}`}>{si.label}</p>
+                {d.reason && <p className="text-xs text-foreground">EboHomes says: {d.reason}</p>}
+              </li>)
+          })}
         </ul>
+        {oldDocs.length > 0 && (
+          <details className="rounded-lg border border-border p-3 text-sm">
+            <summary className="min-h-11 cursor-pointer py-2 font-semibold">Earlier versions ({oldDocs.length})</summary>
+            <ul className="space-y-1 pt-1">
+              {oldDocs.map((d) => (
+                <li key={d.id} className="text-xs text-muted-foreground">
+                  {docLabel(d.doc_type)}{(d.version ?? 1) > 1 ? ` v${d.version}` : ''}: {d.name ?? 'File'} ({documentStatusInfo(d.status).label.toLowerCase()})
+                </li>))}
+            </ul>
+          </details>)}
+        <input ref={replaceRef} type="file" accept={AUTHORITY_ACCEPT} className="hidden" onChange={replaceFile} />
         {!locked && (
           <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
             <label className={label} htmlFor="dt">Add a document</label>
@@ -218,8 +287,10 @@ export default function ListingAuthorityPage() {
               <option value="">What kind of document is it?</option>
               {AUTHORITY_DOC_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
             </select>
+            {needsDescription(docType) && (
+              <input className={field} placeholder="Short description of this document (required)" maxLength={500} value={desc} disabled={busy} onChange={(e) => setDesc(e.target.value)} aria-label="Document description" />)}
             <input ref={fileRef} type="file" accept={AUTHORITY_ACCEPT} className="hidden" onChange={upload} />
-            <button type="button" disabled={busy || !docType} onClick={() => fileRef.current?.click()}
+            <button type="button" disabled={busy || !docType || (needsDescription(docType) && desc.trim().length < 5)} onClick={() => fileRef.current?.click()}
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-card text-sm font-semibold disabled:opacity-50">
               {busy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />} Choose file (JPG, PNG, WEBP or PDF, up to 10MB)
             </button>
@@ -249,4 +320,4 @@ export default function ListingAuthorityPage() {
       )}
     </div>
   )
-      }
+        }
