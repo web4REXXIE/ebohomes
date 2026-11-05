@@ -19,7 +19,7 @@ export default function AdminHome() {
         return error ? null : count ?? 0
       }
       const [listings, authority, landlords] = await Promise.all([
-        count(supabase.from('listings').select('id', { count: 'exact', head: true }).eq('status', 'pending')),
+        count(supabase.from('listings').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('authority_status', 'accepted')),
         count(supabase.from('listings').select('id', { count: 'exact', head: true }).eq('authority_status', 'submitted')),
         count(
           supabase.from('profiles').select('id', { count: 'exact', head: true })
@@ -29,7 +29,7 @@ export default function AdminHome() {
       ])
       if (!alive) return
       setItems([
-        { label: 'Listings to review', hint: 'New listings waiting for approval', href: '/admin/property-review', count: listings },
+        { label: 'Listings ready to approve', hint: 'Authority accepted, waiting for your approval', href: '/admin/property-review', count: listings },
         { label: 'Authority to review', hint: 'Evidence that a lister may list a property', href: '/admin/listing-authority', count: authority },
         { label: 'Landlords to verify', hint: 'Identity checks waiting for a decision', href: '/admin/verify-landlords', count: landlords },
       ])
