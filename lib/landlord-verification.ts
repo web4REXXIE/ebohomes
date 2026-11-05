@@ -33,7 +33,8 @@ export function missingItems(p: VerificationFields): string[] {
   if (!has(p.id_document_type)) m.push('ID type')
   if (!has(p.id_document_url)) m.push('Government ID photo')
   if (!has(p.selfie_url)) m.push('Selfie holding ID')
-  if (!has(p.ownership_doc_url)) m.push('Ownership document')
+  // The ownership document is optional. Agents and managers may not own what they list.
+  // Each property is checked separately (property authority review).
   return m
 }
 
