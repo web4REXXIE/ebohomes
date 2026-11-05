@@ -35,6 +35,7 @@ import { isValidListingId } from '@/lib/listing-id'
 import { PropertyVideo } from '@/components/property-video'
 import { PropertyTrust } from '@/components/property-trust'
 import { identityState } from '@/lib/property-trust'
+import { listedByLabel as toListedByLabel } from '@/lib/listing-authority'
 import {
   PropertyActionsBar,
   PropertyActionsSidebar,
@@ -50,13 +51,6 @@ const ListingLocation = dynamic(
     })),
   { ssr: false }
 )
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  agent: 'Agent',
-  manager: 'Property manager',
-  other: 'Other',
-}
 
 // Fixes garbled characters (encoding bugs) and tidies spacing in descriptions
 function cleanDescription(text: string) {
@@ -154,6 +148,7 @@ export default function ListingDetailPage() {
   const [inspection, setInspection] = useState<any>(null)
   const [trust, setTrust] = useState<any>(null)
   const [trustFailed, setTrustFailed] = useState(false)
+  const [authorityReviewed, setAuthorityReviewed] = useState<boolean | null>(null)
   const [inspectionFailed, setInspectionFailed] = useState(false)
   const [dates, setDates] = useState<{
     created_at: string | null
@@ -334,7 +329,7 @@ export default function ListingDetailPage() {
 
         // Everything below only needs the listing id, the landlord id or the signed-in user,
         // so these requests run at the same time instead of one after another.
-        const [datesResult, landlordResult, inspectionResult, trustResult, holdResult, authResult] =
+        const [datesResult, landlordResult, inspectionResult, trustResult, authorityResult, holdResult, authResult] =
           await Promise.all([
             loadListingDates(listingId),
             landlordId
@@ -354,6 +349,8 @@ export default function ListingDetailPage() {
               .limit(1)
               .maybeSingle(),
             supabase.rpc('listing_trust', { p_listing: listingId }),
+            // Has EboHomes accepted the authority evidence for this property? A yes/no only.
+            supabase.rpc('listing_authority_reviewed', { p_listing: listingId }),
             // Is the property on hold? New applications and viewings are blocked in the
             // database while it is. This only lets the page explain it before the tenant types.
             supabase.rpc('listing_on_hold', { p_listing: listingId }),
@@ -399,6 +396,13 @@ export default function ListingDetailPage() {
           setTrust(
             Array.isArray(trustResult.data) ? trustResult.data[0] ?? null : null
           )
+        }
+
+        // Authority review (null = could not be loaded)
+        if (authorityResult.error) {
+          console.error('Failed to load authority review:', authorityResult.error.message)
+        } else {
+          setAuthorityReviewed(authorityResult.data === true)
         }
 
         // Hold
@@ -675,9 +679,7 @@ export default function ListingDetailPage() {
     router.push(target)
   }
 
-  const listedByLabel: string | null = listing.listed_by_role
-    ? ROLE_LABELS[listing.listed_by_role] ?? 'Other'
-    : null
+  const listedByLabel: string | null = toListedByLabel(listing.listed_by_role)
 
   const addedText = formatDate(dates.created_at)
   const updatedText = formatDate(dates.updated_at)
@@ -852,6 +854,7 @@ export default function ListingDetailPage() {
             <PropertyTrust
               trust={trust}
               trustFailed={trustFailed}
+              authorityReviewed={authorityReviewed}
               inspection={inspection}
               inspectionFailed={inspectionFailed}
               className="mb-6"
@@ -1092,4 +1095,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-  }
+          }
