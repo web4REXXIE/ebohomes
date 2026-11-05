@@ -69,6 +69,12 @@ export default function MyListingsPage() {
 
   useEffect(() => {
     loadListings()
+    // Coming back from the authority page after sending evidence
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('sent') === 'authority') {
+      setMsg({ ok: true, text: 'Sent to EboHomes for review. We will notify you when there is a decision. Your listing goes live once it is accepted.' })
+      window.history.replaceState(null, '', '/dashboard/listings')
+    }
   }, [])
 
   const handleTogglePause = async (listing: any) => {
@@ -408,4 +414,4 @@ export default function MyListingsPage() {
       )}
     </div>
   )
-}
+                    }
