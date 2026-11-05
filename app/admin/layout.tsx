@@ -9,30 +9,43 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-const NAV_ITEMS = [
-  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/cases', label: 'Cases', icon: ClipboardList },
-  { href: '/admin/payments', label: 'Payments', icon: CreditCard },
-  { href: '/admin/payment-submissions', label: 'Payment Evidence', icon: ShieldCheck },
-  { href: '/admin/payout-accounts', label: 'Payout Accounts', icon: CreditCard },
-  { href: '/admin/applications', label: 'Applications', icon: ClipboardCheck },
-  { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
-  { href: '/admin/listing-authority', label: 'Listing Authority', icon: ShieldCheck },
-  { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
-  { href: '/admin/viewings', label: 'Viewings', icon: ClipboardList },
-  { href: '/admin/users', label: 'Manage Users', icon: Users },
-  { href: '/admin/holds', label: 'Property Holds', icon: ShieldCheck },
-  { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
-  { href: '/admin/disputes', label: 'Disputes', icon: ShieldCheck },
-  { href: '/admin/trust', label: 'Landlord Trust', icon: BarChart3 },
-  { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
-  { href: '/admin/support', label: 'Support Inbox', icon: MessageSquare },
-  { href: '/admin/messages', label: 'Message History', icon: MessageSquare },
-  { href: '/admin/contact-messages', label: 'Contact Messages', icon: MessageSquare },
-  { href: '/admin/audit-log', label: 'Audit Log', icon: ClipboardList },
-  { href: '/admin/payouts', label: 'Landlord Payouts', icon: CreditCard },
-  { href: '/admin/handovers', label: 'Handovers', icon: ShieldCheck },
-  { href: '/admin/staff-roles', label: 'Staff Roles', icon: ShieldCheck },
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard }
+const NAV_GROUPS: { title: string | null; items: NavItem[] }[] = [
+  { title: null, items: [{ href: '/admin', label: 'Dashboard', icon: LayoutDashboard }] },
+  { title: 'Reviews', items: [
+    { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
+    { href: '/admin/listing-authority', label: 'Listing Authority', icon: ShieldCheck },
+    { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
+    { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
+    { href: '/admin/payout-accounts', label: 'Payout Accounts', icon: CreditCard },
+  ] },
+  { title: 'Rentals', items: [
+    { href: '/admin/applications', label: 'Applications', icon: ClipboardCheck },
+    { href: '/admin/viewings', label: 'Viewings', icon: ClipboardList },
+    { href: '/admin/handovers', label: 'Handovers', icon: ShieldCheck },
+    { href: '/admin/cases', label: 'Cases', icon: ClipboardList },
+    { href: '/admin/disputes', label: 'Disputes', icon: ShieldCheck },
+    { href: '/admin/holds', label: 'Property Holds', icon: ShieldCheck },
+  ] },
+  { title: 'Money', items: [
+    { href: '/admin/payments', label: 'Payments', icon: CreditCard },
+    { href: '/admin/payment-submissions', label: 'Payment Evidence', icon: ShieldCheck },
+    { href: '/admin/payouts', label: 'Landlord Payouts', icon: CreditCard },
+  ] },
+  { title: 'People', items: [
+    { href: '/admin/users', label: 'Manage Users', icon: Users },
+    { href: '/admin/trust', label: 'Landlord Trust', icon: BarChart3 },
+    { href: '/admin/staff-roles', label: 'Staff Roles', icon: ShieldCheck },
+  ] },
+  { title: 'Messages', items: [
+    { href: '/admin/support', label: 'Support Inbox', icon: MessageSquare },
+    { href: '/admin/messages', label: 'Message History', icon: MessageSquare },
+    { href: '/admin/contact-messages', label: 'Contact Messages', icon: MessageSquare },
+  ] },
+  { title: 'Records', items: [
+    { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
+    { href: '/admin/audit-log', label: 'Audit Log', icon: ClipboardList },
+  ] },
 ]
 
 // Dashboard is active only on its own page. Every other link is also active on its nested pages.
@@ -108,7 +121,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const renderNav = () => (
     <nav aria-label="Admin menu" className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-      {NAV_ITEMS.map((item) => {
+      {NAV_GROUPS.map((group, gi) => (
+        <div key={group.title ?? gi} className={gi === 0 ? '' : 'pt-3'}>
+          {group.title && <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.title}</p>}
+          <div className="space-y-1">
+      {group.items.map((item) => {
         const active = isActive(pathname, item.href)
         return (
           <Link
@@ -126,6 +143,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </Link>
         )
       })}
+          </div>
+        </div>
+      ))}
     </nav>
   )
 
