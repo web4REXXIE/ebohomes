@@ -69,6 +69,14 @@ export function isAuthorityReviewed(status: string | null | undefined): boolean 
   return status === 'accepted'
 }
 
+// One row of the public "Trust and verification" block. Only an accepted review is a 'yes'.
+// Pending, needs-evidence, rejected, on-hold and not-submitted all read as "not yet reviewed",
+// so the public never sees an internal review state. 'unavailable' means the status could not be loaded.
+export function authorityState(status: string | null | undefined, failed = false): 'yes' | 'no' | 'unavailable' {
+  if (failed) return 'unavailable'
+  return isAuthorityReviewed(status) ? 'yes' : 'no'
+}
+
 // Plain wording for the landlord. Never says ownership is verified.
 export function authorityStatusInfo(status: string | null | undefined): { label: string; detail: string; tone: 'neutral' | 'good' | 'warn' | 'bad' } {
   switch (status) {
@@ -85,6 +93,20 @@ export function authorityStatusInfo(status: string | null | undefined): { label:
     default:
       return { label: 'Authority not submitted', detail: 'Send evidence of your authority to list this property before it can be published.', tone: 'neutral' }
   }
+}
+
+// "Listed by" on the public listing page. The value is copied from the accepted authority role,
+// so it keeps the difference between an owner, an agent, a manager and a company representative.
+export const LISTED_BY_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  agent: 'Agent',
+  manager: 'Property manager',
+  company_representative: 'Company representative',
+  other: 'Other',
+}
+export function listedByLabel(role: string | null | undefined): string | null {
+  if (!role) return null
+  return LISTED_BY_LABELS[role] ?? 'Other'
 }
 
 // What each public indicator means, and its limit. Shown to tenants.
