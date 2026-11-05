@@ -10,6 +10,8 @@ export const AUTHORITY_MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'application/pdf': 'pdf',
 }
+// Most files a lister may have stored for one listing (registered + unregistered). Stops orphan build-up.
+export const MAX_AUTHORITY_FILES_PER_LISTING = 30
 export const AUTHORITY_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf'
 export const AUTHORITY_DOC_TYPE_VALUES = [
   'certificate_of_occupancy',
@@ -20,6 +22,18 @@ export const AUTHORITY_DOC_TYPE_VALUES = [
   'company_authorization_or_appointment',
   'other_supporting_document',
 ] as const
+
+// Reads the file's real type from its first bytes. Returns one of the four allowed MIME types, or null.
+// This only shows the file is really a JPG, PNG, WEBP or PDF. It says nothing about whether the document is genuine.
+export function sniffAuthorityMime(bytes: Uint8Array): string | null {
+  const at = (i: number, sig: number[]) => sig.every((b, k) => bytes[i + k] === b)
+  if (bytes.length >= 3 && at(0, [0xff, 0xd8, 0xff])) return 'image/jpeg'
+  if (bytes.length >= 8 && at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png'
+  if (bytes.length >= 12 && at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50])) return 'image/webp'
+  const head = Math.min(bytes.length - 4, 1024)
+  for (let i = 0; i <= head; i++) if (at(i, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'application/pdf'
+  return null
+}
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
