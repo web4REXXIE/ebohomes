@@ -1,4 +1,3 @@
-
 // Pure helpers for the "Trust and verification" block on the property details page.
 // They only read records the system already has. They never create or guess a verification.
 
@@ -29,14 +28,6 @@ export function identityState(trust: unknown, failed = false): RowState {
   if (failed) return 'unavailable'
   if (!isObject(trust)) return 'unavailable'
   return flag(trust.identity_checked) ? 'yes' : 'no'
-}
-
-// Landlord documents. Never a yes unless identity is also a yes.
-export function documentsState(trust: unknown, failed = false): RowState {
-  if (failed) return 'unavailable'
-  if (!isObject(trust)) return 'unavailable'
-  if (!flag(trust.identity_checked)) return 'no'
-  return flag(trust.documents_reviewed) ? 'yes' : 'no'
 }
 
 // Inspection. Comes from public_listing_inspections only, which already hides
