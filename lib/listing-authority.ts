@@ -127,7 +127,22 @@ export const PUBLIC_INDICATOR_TEXT = {
     limit: 'An inspection says nothing about who owns the property.',
   },
 } as const
+// ---------- Evidence versions (Phase 9.3 E) ----------
+// Per-document status the lister sees. Mirrors the CASE in my_listing_authority (SQL). Internal notes are never shown.
+export const OTHER_DOC_DESCRIPTION_MIN = 5
+export const needsDescription = (docType: string) => docType === 'other_supporting_document'
 
+export function documentStatusInfo(status: string | null | undefined): { label: string; tone: 'neutral' | 'good' | 'warn' | 'bad' } {
+  switch (status) {
+    case 'accepted': return { label: 'Accepted', tone: 'good' }
+    case 'rejected': return { label: 'Not accepted', tone: 'bad' }
+    case 'more_evidence_requested': return { label: 'More evidence requested', tone: 'warn' }
+    case 'not_needed': return { label: 'Not needed', tone: 'neutral' }
+    case 'superseded': return { label: 'Replaced by a newer version', tone: 'neutral' }
+    case 'withdrawn': return { label: 'Withdrawn', tone: 'neutral' }
+    default: return { label: 'Waiting for review', tone: 'neutral' }
+  }
+}
 // ---------- Location ----------
 export function normaliseText(s?: string | null): string {
   return (s || '')
