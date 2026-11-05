@@ -49,6 +49,6 @@ export function isValidAuthorityPath(path: unknown, userId: string, listingId: s
 export function friendlyAuthorityError(message: string | null | undefined, fallback = 'Something went wrong. Please try again.'): string {
   const m = (message ?? '').trim()
   if (!m) return fallback
-  if (/^(still needed|this listing is being reviewed|there is nothing to decide|no change|choose |write |record |tick |at least one|\d+ document|only an administrator|only a listing|a reason|this listing is already|the preview is out of date|the transition|listing not found|document not found|sign in)/i.test(m)) return m
+  if (/^(still needed|already sent|this listing is being reviewed|there is nothing to decide|no change|choose |write |record |tick |at least one|\d+ document|only an administrator|only a listing|a reason|this listing is already|the preview is out of date|the transition|listing not found|document not found|sign in)/i.test(m)) return m
   return fallback
 }
