@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, Upload, Check, MapPin, X } from 'lucide-react'
+import { ChevronLeft, Upload, MapPin, X } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
@@ -11,13 +11,6 @@ import dynamic from 'next/dynamic'
 import { computeImageHash, computeVideoHashes } from '@/lib/image-hash'
 import { getDeviceId } from '@/lib/device-id'
 import { cleanDescription } from '@/lib/clean-description'
-import {
-  OWNERSHIP_BUCKET,
-  OWNERSHIP_ACCEPT,
-  validateOwnershipFile,
-  buildOwnershipPath,
-  isValidOwnershipPath,
-} from '@/lib/ownership-docs'
 
 const LocationPickerModal = dynamic(
   () => import('@/components/location-picker-modal').then((mod) => ({ default: mod.LocationPickerModal })),
@@ -54,7 +47,6 @@ const STEPS = ['Property Details', 'Photos', 'Location', 'Pricing', 'Review']
 export default function ListPropertyPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
-  const [submitted, setSubmitted] = useState(false)
   const [photos, setPhotos] = useState<string[]>([])
   const [photoHashes, setPhotoHashes] = useState<string[]>([])
 
@@ -77,20 +69,14 @@ export default function ListPropertyPage() {
     lng: null as number | null,
     phoneNumber: '',
     availabilityDate: '',
-    listedByRole: '',
-    ownerName: '',
-    ownerPhone: '',
   })
 
   const [showMapModal, setShowMapModal] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [ownershipDoc, setOwnershipDoc] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
   const [videoHashes, setVideoHashes] = useState<string[]>([])
   const [videoUploading, setVideoUploading] = useState(false)
   const [videoError, setVideoError] = useState('')
-  const [docUploading, setDocUploading] = useState(false)
-  const [docName, setDocName] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
 
@@ -103,51 +89,6 @@ export default function ListPropertyPage() {
       setAuthChecked(true)
     })
   }, [router])
-
-  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.target
-    const file = input.files?.[0]
-    if (!file) return
-
-    const err = validateOwnershipFile(file)
-    if (err) {
-      alert(err)
-      input.value = ''
-      return
-    }
-
-    setDocUploading(true)
-    const { data: userData } = await supabase.auth.getUser()
-    const user = userData?.user
-    if (!user) {
-      alert('You must be logged in.')
-      setDocUploading(false)
-      router.replace('/login')
-      return
-    }
-
-    const filePath = buildOwnershipPath(user.id, 'listing', file)
-    const { error: uploadError } = await supabase.storage
-      .from(OWNERSHIP_BUCKET)
-      .upload(filePath, file, { contentType: file.type, upsert: false })
-
-    if (uploadError) {
-      alert('Failed to upload document: ' + uploadError.message)
-      setDocUploading(false)
-      input.value = ''
-      return
-    }
-
-    setOwnershipDoc(filePath) // path only
-    setDocName(file.name)
-    setDocUploading(false)
-    input.value = ''
-  }
-
-  const removeDoc = () => {
-    setOwnershipDoc('')
-    setDocName('')
-  }
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -238,12 +179,7 @@ export default function ListPropertyPage() {
   const canContinueStep1 = formData.propertyType && formData.bedrooms
   const canContinueStep2 = photos.length > 0
   const canContinueStep3 = formData.location
-  const needsOwner = formData.listedByRole === 'agent' || formData.listedByRole === 'manager'
-  const canContinueStep4 =
-    formData.monthlyRent &&
-    formData.phoneNumber &&
-    formData.listedByRole &&
-    (!needsOwner || (formData.ownerName.trim() && formData.ownerPhone.trim()))
+  const canContinueStep4 = formData.monthlyRent && formData.phoneNumber
 
   const handleSubmit = async () => {
     setSubmitting(true)
@@ -251,12 +187,6 @@ export default function ListPropertyPage() {
 
     if (!userData?.user) {
       alert('You must be logged in to submit a listing. Please log in and try again.')
-      setSubmitting(false)
-      return
-    }
-
-    if (ownershipDoc && !isValidOwnershipPath(ownershipDoc, userData.user.id)) {
-      alert('Invalid ownership document. Please remove it and upload again.')
       setSubmitting(false)
       return
     }
@@ -280,10 +210,8 @@ export default function ListPropertyPage() {
         amenities: formData.amenities,
         photos: photos,
         photo_hashes: photoHashes.filter((h) => h.length === 16),
-        ownership_doc_url: ownershipDoc || null,
         contact_info: formData.phoneNumber,
         availability_date: formData.availabilityDate || null,
-        listed_by_role: formData.listedByRole || null,
         video_url: videoUrl ? videoUrl : null,
         video_hashes: videoHashes,
         device_id: getDeviceId() ? getDeviceId() : null,
@@ -302,46 +230,12 @@ export default function ListPropertyPage() {
       return
     }
 
-    if (needsOwner && newListing?.id) {
-      const { error: ownerError } = await supabase.from('listing_owner_details').insert({
-        listing_id: newListing.id,
-        owner_name: formData.ownerName.trim(),
-        owner_phone: formData.ownerPhone.trim(),
-      })
-      if (ownerError) console.error('Owner details error:', ownerError)
-    }
-
-    setSubmitted(true)
+    // Step 2 of 2: the lister shows they may list this property (reviewed per property by EboHomes).
+    router.push(`/dashboard/authority/${newListing.id}`)
   }
 
   if (!authChecked) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>
-  }
-
-  if (submitted) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-        <main className="flex-1 flex items-center justify-center px-4 py-8">
-          <div className="max-w-md w-full bg-card border border-border rounded-lg p-8 text-center card-shadow">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Check size={32} className="text-primary" />
-            </div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">Listing Submitted!</h1>
-            <p className="text-foreground mb-2">We've received your listing.</p>
-            <p className="text-muted-foreground mb-8">
-              Our team will review it and publish it within 24 hours. You'll receive a confirmation once it's live.
-            </p>
-            <Link href="/dashboard/listings" className="inline-block w-full">
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold w-full">
-                Go to My Listings
-              </Button>
-            </Link>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    )
   }
 
   return (
@@ -513,33 +407,6 @@ export default function ListPropertyPage() {
                 </div>
               </div>
 
-              {/* Ownership doc — always visible, required for trust */}
-              <div className="border-t border-border pt-4">
-                <label className="block text-sm font-semibold text-destructive mb-2">Proof of Ownership *</label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Upload a document showing you own or manage this property (land title, C of O, deed, or tenancy agreement).
-                </p>
-                {ownershipDoc ? (
-                  <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
-                    <span className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
-                      <Check size={14} className="text-primary" /> {docName || 'Document uploaded'}
-                    </span>
-                    <button type="button" onClick={removeDoc} className="text-destructive text-sm font-semibold px-2">
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <label className="block border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm">
-                    {docUploading ? (
-                      <span className="text-primary">Uploading document...</span>
-                    ) : (
-                      <span className="font-semibold text-foreground">Click to upload ownership document</span>
-                    )}
-                    <input type="file" accept={OWNERSHIP_ACCEPT} onChange={handleDocUpload} className="hidden" />
-                  </label>
-                )}
-              </div>
-
               <Button
                 type="button"
                 disabled={!canContinueStep1}
@@ -699,48 +566,6 @@ export default function ListPropertyPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-foreground mb-2">Your relationship to this property *</label>
-                <select
-                  required
-                  value={formData.listedByRole}
-                  onChange={(e) => setFormData((p) => ({ ...p, listedByRole: e.target.value }))}
-                  className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Select one</option>
-                  <option value="owner">I am the owner</option>
-                  <option value="agent">I am an authorised agent</option>
-                  <option value="manager">I manage the property for the owner</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              {(formData.listedByRole === 'agent' || formData.listedByRole === 'manager') && (
-                <div className="space-y-4 rounded-lg border border-border p-4">
-                  <p className="text-sm text-muted-foreground">
-                    Tell us who owns this property. Upload the owner&apos;s signed authorization letter as the ownership document. EboHomes may contact the owner to confirm.
-                  </p>
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">Owner&apos;s full name *</label>
-                    <input
-                      type="text"
-                      value={formData.ownerName}
-                      onChange={(e) => setFormData((p) => ({ ...p, ownerName: e.target.value }))}
-                      className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">Owner&apos;s phone number *</label>
-                    <input
-                      type="tel"
-                      value={formData.ownerPhone}
-                      onChange={(e) => setFormData((p) => ({ ...p, ownerPhone: e.target.value }))}
-                      placeholder="+234 801 234 5678"
-                      className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Phone Number (Nigerian) *</label>
                 <input
                   type="tel"
@@ -817,26 +642,11 @@ export default function ListPropertyPage() {
                 <div><p className="text-muted-foreground">Location</p><p className="font-semibold text-foreground">{formData.location}</p></div>
                 <div><p className="text-muted-foreground">Monthly Rent</p><p className="font-semibold text-primary">₦{Number(formData.monthlyRent).toLocaleString()}</p></div>
                 <div><p className="text-muted-foreground">Photos</p><p className="font-semibold text-foreground">{photos.length} uploaded</p></div>
-                <div><p className="text-muted-foreground">Ownership Doc</p><p className="font-semibold text-foreground">{ownershipDoc ? 'Uploaded' : 'Missing'}</p></div>
-                <div>
-                  <p className="text-muted-foreground">Listed by</p>
-                  <p className="font-semibold text-foreground">
-                    {formData.listedByRole === 'owner'
-                      ? 'Owner'
-                      : formData.listedByRole === 'agent'
-                      ? 'Authorised agent'
-                      : formData.listedByRole === 'manager'
-                      ? 'Property manager'
-                      : formData.listedByRole === 'other'
-                      ? 'Other'
-                      : '—'}
-                  </p>
-                </div>
               </div>
 
               <div className="bg-secondary border border-border rounded-lg p-4">
                 <p className="text-sm text-foreground text-center">
-                  Your listing is <span className="font-semibold">free</span> and will be reviewed before going live.
+                  Your listing is <span className="font-semibold">free</span>. Next, you will show that you may list this property. EboHomes reviews it before it goes live.
                 </p>
               </div>
 
@@ -876,4 +686,4 @@ export default function ListPropertyPage() {
       )}
     </div>
   )
-}
+      }
