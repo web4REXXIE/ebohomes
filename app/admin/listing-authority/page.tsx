@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Loader2, FileText, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { AUTHORITY_DOC_TYPES, AUTHORITY_ROLES, authorityStatusInfo } from '@/lib/listing-authority'
@@ -65,7 +66,13 @@ function Queue() {
   }, [])
   useEffect(() => { load() }, [load])
 
-  if (openId) return <Detail id={openId} onBack={() => { setOpenId(null); load() }} />
+  // Property Review links here with ?listing=<id> so the admin lands on the right listing.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('listing')
+    if (wanted && /^[0-9a-f-]{36}$/i.test(wanted)) setOpenId(wanted)
+  }, [])
+
+  if (openId) return <Detail id={openId} onBack={() => { window.history.replaceState(null, '', '/admin/listing-authority'); setOpenId(null); load() }} />
   return (
     <div className="space-y-2">
       {err && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">{err}</p>}
@@ -96,6 +103,7 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
   const [message, setMessage] = useState('')
   const [internal, setInternal] = useState('')
   const [keepReason, setKeepReason] = useState('')
+  const [justAccepted, setJustAccepted] = useState(false)
 
   const load = useCallback(async () => {
     const [l, c, docs, revs, dr] = await Promise.all([
@@ -146,6 +154,7 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
     setBusy(false)
     if (error) { setErr(friendlyAuthorityError(error.message)); return }
     setMsg('Decision recorded.'); setMessage(''); setInternal(''); setChecks({})
+    setJustAccepted(decision === 'accepted')
     await load()
   }
 
@@ -180,6 +189,10 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
 
       {err && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">{err}</p>}
       {msg && <p role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</p>}
+      {justAccepted && listing.status !== 'approved' && (
+        <Link href="/admin/property-review" className={`${btn} w-full border-primary bg-primary/5 text-primary`}>
+          Next: approve this listing in Property Review
+        </Link>)}
 
       <section className="space-y-1 rounded-lg border border-border p-3 text-sm">
         <h2 className="font-bold">Claim</h2>
@@ -358,4 +371,4 @@ function Settings() {
       <button className={`${btn} bg-primary text-primary-foreground`} disabled={busy || !reason.trim()} onClick={save}>Save tolerance</button>
     </div>
   )
-        }
+                    }
