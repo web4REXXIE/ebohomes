@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: '/admin/payout-accounts', label: 'Payout Accounts', icon: CreditCard },
   { href: '/admin/applications', label: 'Applications', icon: ClipboardCheck },
   { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
+  { href: '/admin/listing-authority', label: 'Listing Authority', icon: ShieldCheck },
   { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
   { href: '/admin/viewings', label: 'Viewings', icon: ClipboardList },
   { href: '/admin/users', label: 'Manage Users', icon: Users },
