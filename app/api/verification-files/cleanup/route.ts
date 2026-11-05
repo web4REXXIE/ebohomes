@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
 import { authUser } from '@/lib/user-auth-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { orphanedIdentityFiles } from '@/lib/verification-files'
+import { identityDeletionEnabled, orphanedIdentityFiles, planIdentityCleanup } from '@/lib/verification-files'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const BUCKET = 'ownership-docs'
 // PHASE 9.3: destructive cleanup of identity / ownership evidence is PAUSED until the retention policy is approved.
-// Deletion only runs when this server-side flag is exactly 'true'. Default: off.
-const DELETION_ENABLED = process.env.EB_ALLOW_IDENTITY_FILE_DELETION === 'true'
+// Deletion only runs when the server-side flag EB_ALLOW_IDENTITY_FILE_DELETION is exactly 'true'. Default: off.
+// The flag is read on every request (not at import time).
 const json = (b: unknown, status = 200) => NextResponse.json(b, { status, headers: { 'Cache-Control': 'no-store' } })
 
 // POST -> finds the signed-in user's OWN old identity uploads (ID photo, selfie, ownership
@@ -37,14 +37,15 @@ export async function POST(req: Request) {
       [p.id_document_url, p.selfie_url, p.ownership_doc_url],
       Date.now()
     )
-    if (doomed.length > 0 && !DELETION_ENABLED) {
-      return json({ ok: true, removed: 0, paused: true, candidates: doomed.length })
+    const plan = planIdentityCleanup(doomed, identityDeletionEnabled(process.env.EB_ALLOW_IDENTITY_FILE_DELETION))
+    if (plan.paused) {
+      return json({ ok: true, removed: 0, paused: true, candidates: plan.candidates })
     }
-    if (doomed.length > 0) {
-      const { error: rmErr } = await admin.storage.from(BUCKET).remove(doomed.map((n) => `${u.user.id}/${n}`))
+    if (plan.remove.length > 0) {
+      const { error: rmErr } = await admin.storage.from(BUCKET).remove(plan.remove.map((n) => `${u.user.id}/${n}`))
       if (rmErr) return json({ error: 'Could not remove old files.' }, 500)
     }
-    return json({ ok: true, removed: doomed.length })
+    return json({ ok: true, removed: plan.remove.length })
   } catch {
     console.error('verification cleanup failed')
     return json({ error: 'Could not remove old files.' }, 500)
