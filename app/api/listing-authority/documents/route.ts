@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
-import { AUTHORITY_BUCKET, UUID_RE, isAuthorityDocType, isValidAuthorityPath, validateAuthorityFileMeta } from '@/lib/authority-evidence'
+import { AUTHORITY_BUCKET, UUID_RE, isAuthorityDocType, isValidAuthorityPath, sniffAuthorityMime, validateAuthorityFileMeta } from '@/lib/authority-evidence'
 import { authUser, fail } from '@/lib/payment-submission-server'
 
 export const runtime = 'nodejs'
@@ -40,7 +40,10 @@ export async function POST(req: Request) {
 
   const { data: blob, error: dlErr } = await db.storage.from(AUTHORITY_BUCKET).download(path)
   if (dlErr || !blob) return fail('Could not read your file. Please try again.', 500)
-  const sha256 = createHash('sha256').update(Buffer.from(await blob.arrayBuffer())).digest('hex')
+  const buf = Buffer.from(await blob.arrayBuffer())
+  // The declared type is only a claim. The file's own first bytes must match it.
+  if (sniffAuthorityMime(buf) !== mime) return fail('This file is not a real JPG, PNG, WEBP or PDF. Please upload a clear photo or PDF.', 400)
+  const sha256 = createHash('sha256').update(buf).digest('hex')
 
   const original = typeof body.name === 'string' ? body.name.replace(/[\u0000-\u001f]/g, '').slice(0, 200) : null
   const { data, error } = await db.rpc('eb_authority_add_document', {
