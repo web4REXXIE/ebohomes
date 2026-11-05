@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import {
   identityState,
-  documentsState,
   inspectionState,
   inspectionDetails,
   formatInspectionDate,
@@ -32,6 +31,7 @@ import {
   type RowState,
   type IconKey,
 } from '@/lib/property-trust'
+import { authorityState, PUBLIC_INDICATOR_TEXT } from '@/lib/listing-authority'
 
 const DETAIL_ICONS: Record<IconKey, ComponentType<{ size?: number; className?: string }>> = {
   route: Route,
@@ -119,12 +119,16 @@ function DetailList({ items, bold }: { items: ReturnType<typeof inspectionDetail
 export function PropertyTrust({
   trust,
   trustFailed = false,
+  authorityReviewed,
+  authorityFailed = false,
   inspection,
   inspectionFailed = false,
   className = '',
 }: {
   trust: unknown
   trustFailed?: boolean
+  authorityReviewed: boolean | null
+  authorityFailed?: boolean
   inspection: unknown
   inspectionFailed?: boolean
   className?: string
@@ -133,7 +137,7 @@ export function PropertyTrust({
   const panelId = useId()
 
   const identity = identityState(trust, trustFailed)
-  const documents = documentsState(trust, trustFailed)
+  const authority = authorityState(authorityReviewed ? 'accepted' : null, authorityFailed || authorityReviewed === null)
   const inspected = inspectionState(inspection, inspectionFailed)
 
   const date = inspected === 'yes' ? formatInspectionDate((inspection as { inspected_at?: unknown }).inspected_at) : ''
@@ -167,13 +171,13 @@ export function PropertyTrust({
         />
 
         <Row
-          state={documents}
+          state={authority}
           YesIcon={FileCheck2}
           NoIcon={FileQuestion}
-          yesTitle="Landlord documents reviewed"
-          noTitle="Landlord documents not yet reviewed"
-          yesText="EboHomes reviewed an ownership document this landlord submitted with their account. This is not a check of this particular property."
-          noText="EboHomes has not reviewed documents from this landlord."
+          yesTitle={PUBLIC_INDICATOR_TEXT.authority.title}
+          noTitle="Authority not yet reviewed"
+          yesText={PUBLIC_INDICATOR_TEXT.authority.meaning}
+          noText="EboHomes has not reviewed evidence that the lister may rent out this property."
         />
 
         <Row
@@ -225,8 +229,8 @@ export function PropertyTrust({
         <Info size={16} className="mt-0.5 shrink-0 text-primary" aria-hidden />
         <div className="space-y-1.5 text-caption text-cream-foreground">
           <p>
-            Checking a landlord&apos;s identity or documents does not prove that they own, or are allowed to rent out,
-            this specific property.
+            Checking a landlord&apos;s identity does not prove that they own, or are allowed to rent out, this
+            specific property. {PUBLIC_INDICATOR_TEXT.authority.limit}
           </p>
           <p>
             An inspection looks at the physical property only. It does not confirm ownership, the right to rent it out,
