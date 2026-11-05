@@ -110,7 +110,7 @@ export default function TenantHomePage() {
         if (seenIds.length >= 3) break
       }
       if (seenIds.length > 0) {
-        const { data: browsed } = await supabase.from('listings').select('*').in('id', seenIds)
+        const { data: browsed } = await supabase.from('listings').select('id, title, price_monthly, location_text, property_type, bedrooms, bathrooms, photos, landlord_id, created_at').in('id', seenIds)
         // preserve most-recent-first order
         const ordered = seenIds.map((id) => browsed?.find((b) => b.id === id)).filter(Boolean) as Listing[]
         setContinueBrowsing(ordered)
