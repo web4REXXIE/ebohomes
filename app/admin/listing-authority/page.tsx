@@ -96,6 +96,7 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
   const [reviewDoc, setReviewDoc] = useState<string | null>(null)
   const [outcome, setOutcome] = useState('acceptable')
   const [docNote, setDocNote] = useState('')
+  const [docReason, setDocReason] = useState('')
   const [checks, setChecks] = useState<Record<string, boolean>>({})
   const [contacted, setContacted] = useState(false)
   const [source, setSource] = useState('')
@@ -136,10 +137,10 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
 
   async function saveDocReview(docId: string) {
     setBusy(true); setErr(null); setMsg(null)
-    const { error } = await supabase.rpc('admin_review_authority_document', { p_document: docId, p_outcome: outcome, p_note: docNote || null })
+    const { error } = await supabase.rpc('admin_review_authority_document', { p_document: docId, p_outcome: outcome, p_note: docNote || null, p_landlord_reason: docReason.trim() || null })
     setBusy(false)
     if (error) { setErr(friendlyAuthorityError(error.message)); return }
-    setReviewDoc(null); setDocNote(''); setOutcome('acceptable'); setMsg('Document review saved.')
+    setReviewDoc(null); setDocNote(''); setDocReason(''); setOutcome('acceptable'); setMsg('Document review saved.')
     await load()
   }
 
@@ -174,6 +175,10 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
   const reviewable = ['submitted', 'needs_evidence', 'on_hold', 'accepted'].includes(status)
   const lastReview = reviews[0]
   const canKeep = status === 'submitted' && lastReview?.decision === 'reopened' && lastReview?.reason_code === 'location_text'
+  // Evidence that arrived after the last accepted assessment. These are what needs a fresh look.
+  const lastAccepted = reviews.find((r: any) => r.decision === 'accepted' || r.decision === 'kept_unchanged')
+  const isNew = (x: any) => !!lastAccepted && !x.withdrawn_at && new Date(x.uploaded_at).getTime() > new Date(lastAccepted.decided_at).getTime()
+  const replacedBy = (docId: string) => docs.find((y: any) => y.supersedes_id === docId)
   const latestOutcome = (docId: string) => docReviews.find((r: any) => r.document_id === docId && r.outcome !== 'opened')?.outcome as string | undefined
   const opened = (docId: string) => docReviews.some((r: any) => r.document_id === docId && r.outcome === 'opened')
 
@@ -211,8 +216,11 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
         {docs.length === 0 && <p className="text-sm text-muted-foreground">No documents.</p>}
         {docs.map((x: any) => (
           <div key={x.id} className={`space-y-2 rounded-lg border border-border p-3 text-sm ${x.withdrawn_at ? 'opacity-50' : ''}`}>
-            <p className="flex items-center gap-2 font-semibold"><FileText size={16} aria-hidden /> {docLabel(x.doc_type)}</p>
-            <p className="break-all text-xs text-muted-foreground">{x.original_name} &middot; {when(x.uploaded_at)}{x.withdrawn_at ? ' &middot; WITHDRAWN' : ''}</p>
+            <p className="flex flex-wrap items-center gap-2 font-semibold"><FileText size={16} aria-hidden /> {docLabel(x.doc_type)}{(x.version ?? 1) > 1 ? ` (version ${x.version})` : ''}{isNew(x) && <span className="rounded-full border border-amber-400 bg-amber-50 px-2 py-0.5 text-xs text-amber-900">New since last accepted review</span>}</p>
+            {x.description && <p className="text-xs">{x.description}</p>}
+            {x.supersedes_id && <p className="text-xs text-muted-foreground">Replaces an earlier version.</p>}
+            {replacedBy(x.id) && <p className="text-xs text-muted-foreground">Replaced by version {replacedBy(x.id).version}.</p>}
+            <p className="break-all text-xs text-muted-foreground">{x.original_name} &middot; {when(x.uploaded_at)}{x.withdrawn_at ? ' · WITHDRAWN' : ''}</p>
             <p className="text-xs">{opened(x.id) ? 'Opened' : 'Not opened'} &middot; Review: {latestOutcome(x.id) ?? 'not reviewed'}</p>
             {!x.withdrawn_at && (
               <div className="flex flex-wrap gap-2">
@@ -222,7 +230,9 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
             {reviewDoc === x.id && (
               <div className="space-y-2 rounded-lg bg-secondary p-3">
                 <select className={field} value={outcome} onChange={(e) => setOutcome(e.target.value)}>{OUTCOMES.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}</select>
-                <textarea className={field} rows={2} placeholder="Note" value={docNote} onChange={(e) => setDocNote(e.target.value)} />
+                <textarea className={field} rows={2} placeholder="Internal note (never shown to the landlord)" value={docNote} onChange={(e) => setDocNote(e.target.value)} />
+                {(outcome === 'unclear' || outcome === 'concern') && (
+                  <textarea className={field} rows={2} maxLength={500} placeholder="What the landlord should do about this document (they will see this)" value={docReason} onChange={(e) => setDocReason(e.target.value)} />)}
                 <button className={`${btn} bg-primary text-primary-foreground`} disabled={busy} onClick={() => saveDocReview(x.id)}>Save review</button>
               </div>)}
           </div>))}
@@ -371,4 +381,4 @@ function Settings() {
       <button className={`${btn} bg-primary text-primary-foreground`} disabled={busy || !reason.trim()} onClick={save}>Save tolerance</button>
     </div>
   )
-                    }
+  }
