@@ -18,7 +18,7 @@ export default function AdminHome() {
         const { count, error } = await q
         return error ? null : count ?? 0
       }
-      const [listings, authority, landlords] = await Promise.all([
+      const [listings, authority, landlords, risk, cases] = await Promise.all([
         count(supabase.from('listings').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('authority_status', 'accepted')),
         count(supabase.from('listings').select('id', { count: 'exact', head: true }).eq('authority_status', 'submitted')),
         count(
@@ -26,12 +26,17 @@ export default function AdminHome() {
             .eq('role', 'landlord').eq('verification_status', 'pending')
             .not('id_document_url', 'is', null).not('selfie_url', 'is', null),
         ),
+        // Phase 9.4 / 9.5 tables. If they are not installed yet the count is null and shows a dash.
+        count(supabase.from('risk_alerts').select('id', { count: 'exact', head: true }).neq('status', 'resolved').in('severity', ['investigation', 'high'])),
+        count(supabase.from('trust_cases').select('id', { count: 'exact', head: true }).neq('status', 'closed')),
       ])
       if (!alive) return
       setItems([
         { label: 'Listings ready to approve', hint: 'Authority accepted, waiting for your approval', href: '/admin/property-review', count: listings },
         { label: 'Authority to review', hint: 'Evidence that a lister may list a property', href: '/admin/listing-authority', count: authority },
         { label: 'Landlords to verify', hint: 'Identity checks waiting for a decision', href: '/admin/verify-landlords', count: landlords },
+        { label: 'Risk alerts to investigate', hint: 'Signals that need a person to look. Nothing is blocked automatically.', href: '/admin/risk', count: risk },
+        { label: 'Open investigations', hint: 'Tracked cases in Trust Operations', href: '/admin/operations?tab=cases', count: cases },
       ])
     })()
     return () => { alive = false }
