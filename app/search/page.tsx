@@ -784,7 +784,16 @@ function SearchContent() {
         setLoadError(true)
       }
 
-      setListings(data || [])
+      // Listings on a property under an administrator hold are not shown in search.
+      // If the hold list cannot be loaded, search still works (the hold still blocks new applications in the database).
+      let rows = data || []
+      const { data: held, error: heldError } = await supabase.rpc('held_listing_ids')
+      if (!heldError && Array.isArray(held) && held.length > 0) {
+        const heldSet = new Set<string>(held as string[])
+        rows = rows.filter((l: any) => !heldSet.has(l.id))
+      }
+
+      setListings(rows)
       setLoading(false)
     }
     fetchListings()
