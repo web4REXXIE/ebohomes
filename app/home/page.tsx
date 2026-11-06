@@ -75,14 +75,21 @@ export default function TenantHomePage() {
 
     setUnreadMsgCount(await getUnreadMessageCount())
 
+    // Listings on a property under an administrator hold are not shown here.
+    // If the hold list cannot be loaded, the page still works.
+    const heldSet = new Set<string>()
+    const { data: heldRows, error: heldError } = await supabase.rpc('held_listing_ids')
+    if (!heldError && Array.isArray(heldRows)) (heldRows as string[]).forEach((id) => heldSet.add(id))
+
     // Recommended For You
-    const { data: recs } = await supabase
+    const { data: recsAll } = await supabase
       .from('listings')
       .select('id, title, price_monthly, location_text, property_type, bedrooms, bathrooms, photos, landlord_id, created_at')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
-      .limit(4)
-    setRecommended(recs ?? [])
+      .limit(12)
+    const recs = (recsAll ?? []).filter((r) => !heldSet.has(r.id)).slice(0, 4)
+    setRecommended(recs)
     if (recs && recs.length > 0) {
       const landlordIds = Array.from(new Set(recs.map((r) => r.landlord_id).filter(Boolean)))
       if (landlordIds.length > 0) {
@@ -112,7 +119,7 @@ export default function TenantHomePage() {
       if (seenIds.length > 0) {
         const { data: browsed } = await supabase.from('listings').select('id, title, price_monthly, location_text, property_type, bedrooms, bathrooms, photos, landlord_id, created_at').in('id', seenIds)
         // preserve most-recent-first order
-        const ordered = seenIds.map((id) => browsed?.find((b) => b.id === id)).filter(Boolean) as Listing[]
+        const ordered = seenIds.filter((id) => !heldSet.has(id)).map((id) => browsed?.find((b) => b.id === id)).filter(Boolean) as Listing[]
         setContinueBrowsing(ordered)
       }
     }
