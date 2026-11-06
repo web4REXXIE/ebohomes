@@ -30,6 +30,20 @@ export function identityDeletionEnabled(raw: string | null | undefined): boolean
   return raw === 'true'
 }
 
+// PHASE 9.6: every path an earlier review may have looked at is evidence, so it is never a cleanup candidate.
+// Takes rows from landlord_verification_file_history and returns every stored path.
+export function pathsFromHistory(
+  rows: { id_document_url?: string | null; selfie_url?: string | null; ownership_doc_url?: string | null }[] | null | undefined
+): string[] {
+  const out: string[] = []
+  for (const r of rows ?? []) {
+    for (const v of [r.id_document_url, r.selfie_url, r.ownership_doc_url]) {
+      if (typeof v === 'string' && v !== '') out.push(v)
+    }
+  }
+  return out
+}
+
 export type IdentityCleanupPlan = { remove: string[]; paused: boolean; candidates: number }
 
 export function planIdentityCleanup(candidates: string[], enabled: boolean): IdentityCleanupPlan {
