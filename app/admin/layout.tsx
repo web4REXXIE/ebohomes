@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  LayoutDashboard, ClipboardCheck, ClipboardList, Users, ShieldCheck,
+  LayoutDashboard, ClipboardCheck, ClipboardList, Users, ShieldCheck, BadgeCheck,
   BarChart3, CreditCard, MessageSquare, LogOut, Building2, Loader2, Menu, X, ShieldAlert,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -19,7 +19,8 @@ const NAV_GROUPS: { title: string | null; items: NavItem[] }[] = [
     { href: '/admin/risk', label: 'Risk Alerts', icon: ShieldAlert },
     { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
     { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
-        { href: '/admin/payout-accounts', label: 'Payout Accounts', icon: CreditCard },
+    { href: '/admin/professionals', label: 'Professionals', icon: BadgeCheck },
+    { href: '/admin/payout-accounts', label: 'Payout Accounts', icon: CreditCard },
     { href: '/admin/payee-requests', label: 'Rent Payees', icon: CreditCard },
   ] },
   { title: 'Rentals', items: [
