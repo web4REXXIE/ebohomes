@@ -1,34 +1,25 @@
--- EboHomes 20261121_01 (Phase 9.6): integrity fixes C1, C2, C3 + file-history guard.
--- FOR REVIEW. NOT EXECUTED. Changes no existing row. Deletes nothing.
--- Run the read-only checks (R1-R4) first. Back up first. One transaction.
---
--- Admin identification: auth.uid() null = server key / SQL editor (unrestricted, as in your other guards).
--- Columns are read through to_jsonb() so a column that does not exist on your table is simply ignored.
+-- EboHomes 20261121_01 (Phase 9.6): integrity fixes. REVISED after R2/R3/R4.
+-- Changes no existing row. Deletes nothing. One transaction. Back up first.
+-- auth.uid() null = server key / SQL editor (unrestricted, as in your other guards).
+-- Columns are read through to_jsonb() so a column that does not exist is simply ignored.
 begin;
 
 -- ===================================================================
 -- C1. profiles: a signed-in user cannot change their own trust fields
+--     (UPDATE only. Profile rows are created by the system, not by the browser.)
 -- ===================================================================
 create or replace function public.eb_profiles_trust_fields_guard()
 returns trigger language plpgsql set search_path to 'public','pg_temp'
 as $f$
 declare
-  o jsonb; n jsonb; k text;
-  locked text[] := array['role','verified','status','rejection_reason'];
+  o jsonb := to_jsonb(old);
+  n jsonb := to_jsonb(new);
+  k text;
+  locked text[] := array['role','verified','status','rejection_reason','badge',
+                         'payout_locked_until','verification_reviewed_by','verification_reviewed_at'];
 begin
   if auth.uid() is null or public.eb_is_admin() then return new; end if;
-  n := to_jsonb(new);
 
-  if tg_op = 'INSERT' then
-    if coalesce(n->>'role','') = 'admin'
-       or coalesce(n->>'verified','false') = 'true'
-       or coalesce(n->>'verification_status','') in ('verified','approved','rejected') then
-      raise exception 'Account verification and role are managed by EboHomes' using errcode = '42501';
-    end if;
-    return new;
-  end if;
-
-  o := to_jsonb(old);
   foreach k in array locked loop
     if (n->k) is distinct from (o->k) then
       raise exception 'Account verification and role are managed by EboHomes' using errcode = '42501';
@@ -45,11 +36,12 @@ end $f$;
 
 drop trigger if exists a00_profiles_trust_fields_guard on public.profiles;
 create trigger a00_profiles_trust_fields_guard
-  before insert or update on public.profiles
+  before update on public.profiles
   for each row execute function public.eb_profiles_trust_fields_guard();
 
--- Verified landlord changing identity/business details goes back to 'pending'
--- (what the profile page already promises). Listings are NOT touched: identity is not authority.
+-- A verified LANDLORD who changes identity/business details goes back to 'pending'
+-- (what the profile page already promises). Tenants are never affected.
+-- Listings are NOT touched: identity is not authority.
 create or replace function public.eb_profiles_reverify_on_identity_change()
 returns trigger language plpgsql set search_path to 'public','pg_temp'
 as $f$
@@ -57,7 +49,8 @@ declare o jsonb := to_jsonb(old); n jsonb := to_jsonb(new); k text;
   watched text[] := array['full_name','business_name','business_address','cac_number'];
 begin
   if auth.uid() is null or public.eb_is_admin() then return new; end if;
-  if not (old.verified is true or old.verification_status in ('verified','approved')) then return new; end if;
+  if old.role is distinct from 'landlord' then return new; end if;
+  if not (old.verified is true or old.verification_status = 'verified') then return new; end if;
   foreach k in array watched loop
     if (n->k) is distinct from (o->k) then
       new.verification_status := 'pending';
@@ -74,69 +67,35 @@ create trigger a10_profiles_reverify_on_identity_change
   for each row execute function public.eb_profiles_reverify_on_identity_change();
 
 -- ===================================================================
--- C2. listings: a lister cannot approve, un-suspend or feature their own listing
+-- C2. listings: only the two gaps left after R2
+--     (listings_guard already handles status, featured, reviewed_*, rejection_reason)
 -- ===================================================================
-create or replace function public.eb_listings_trust_fields_guard()
+create or replace function public.eb_listings_admin_fields_guard()
 returns trigger language plpgsql set search_path to 'public','pg_temp'
 as $f$
-declare
-  o jsonb; n jsonb; k text;
-  admin_owned text[] := array['featured','reviewed_by','reviewed_at','suspended_at','suspension_reason','rejection_reason'];
 begin
   if auth.uid() is null
      or coalesce(current_setting('eb.authority_write', true), '') = '1'
      or public.eb_is_admin() then
     return new;
   end if;
-  n := to_jsonb(new);
 
-  if tg_op = 'INSERT' then
-    -- new listings always start in review with no admin-owned values
-    new.status := 'pending';
-    if n ? 'featured'          then new.featured := false;          end if;
-    if n ? 'reviewed_by'       then new.reviewed_by := null;        end if;
-    if n ? 'reviewed_at'       then new.reviewed_at := null;        end if;
-    if n ? 'suspended_at'      then new.suspended_at := null;       end if;
-    if n ? 'suspension_reason' then new.suspension_reason := null;  end if;
-    if n ? 'rejection_reason'  then new.rejection_reason := null;   end if;
-    return new;
+  if new.suspended_at is distinct from old.suspended_at
+     or new.suspension_reason is distinct from old.suspension_reason then
+    raise exception 'This listing detail is managed by EboHomes' using errcode = '42501';
   end if;
 
-  o := to_jsonb(old);
-  foreach k in array admin_owned loop
-    if (n->k) is distinct from (o->k) then
-      raise exception 'This listing detail is managed by EboHomes' using errcode = '42501';
-    end if;
-  end loop;
-
-  -- property link cannot be swapped once authority is submitted or accepted
   if new.property_id is distinct from old.property_id
-     and old.authority_status in ('submitted','accepted') then
+     and old.authority_status in ('submitted','accepted','on_hold') then
     raise exception 'The property cannot be changed while its authority is under review or accepted' using errcode = '42501';
-  end if;
-
-  if new.status is distinct from old.status then
-    if old.status = 'approved' and new.status in ('paused','pending') then
-      null;                                            -- pause / send back to review
-    elsif old.status = 'paused' and new.status = 'pending' then
-      null;                                            -- resubmit
-    elsif old.status = 'rejected' and new.status = 'pending' then
-      null;                                            -- resubmit after rejection
-    elsif old.status = 'paused' and new.status = 'approved'
-          and old.reviewed_at is not null and old.suspended_at is null
-          and old.authority_status = 'accepted' then
-      null;                                            -- resume a listing an admin already approved
-    else
-      raise exception 'You cannot change this listing to that status' using errcode = '42501';
-    end if;
   end if;
   return new;
 end $f$;
 
-drop trigger if exists a00_listings_trust_fields_guard on public.listings;
-create trigger a00_listings_trust_fields_guard
-  before insert or update on public.listings
-  for each row execute function public.eb_listings_trust_fields_guard();
+drop trigger if exists a01_listings_admin_fields_guard on public.listings;
+create trigger a01_listings_admin_fields_guard
+  before update on public.listings
+  for each row execute function public.eb_listings_admin_fields_guard();
 
 -- ===================================================================
 -- C3. Property Review decisions: locked, stale-safe, attributable
@@ -232,7 +191,7 @@ create trigger zz_listings_status_audit
   for each row execute function public.eb_listings_status_audit();
 
 -- ===================================================================
--- File history is append-only for signed-in users
+-- Verification file history is append-only for signed-in users
 -- ===================================================================
 create or replace function public.eb_verification_file_history_guard()
 returns trigger language plpgsql set search_path to 'public','pg_temp'
@@ -249,17 +208,17 @@ create trigger aa_verification_file_history_guard
 
 commit;
 
--- CHECK (read only, after running):
+-- CHECK (read only, after running). Expect 5 rows:
 -- select tgname from pg_trigger where not tgisinternal and tgname in
---  ('a00_profiles_trust_fields_guard','a10_profiles_reverify_on_identity_change','a00_listings_trust_fields_guard',
---   'zz_listings_status_audit','aa_verification_file_history_guard');   -- expect 5 rows
+--  ('a00_profiles_trust_fields_guard','a10_profiles_reverify_on_identity_change','a01_listings_admin_fields_guard',
+--   'zz_listings_status_audit','aa_verification_file_history_guard');
 
 -- ROLLBACK:
 -- drop trigger if exists a00_profiles_trust_fields_guard on public.profiles;
 -- drop trigger if exists a10_profiles_reverify_on_identity_change on public.profiles;
--- drop trigger if exists a00_listings_trust_fields_guard on public.listings;
+-- drop trigger if exists a01_listings_admin_fields_guard on public.listings;
 -- drop trigger if exists zz_listings_status_audit on public.listings;
 -- drop trigger if exists aa_verification_file_history_guard on public.landlord_verification_file_history;
 -- drop function if exists public.eb_profiles_trust_fields_guard(), public.eb_profiles_reverify_on_identity_change(),
---   public.eb_listings_trust_fields_guard(), public.admin_review_listing(uuid,text,text,text),
+--   public.eb_listings_admin_fields_guard(), public.admin_review_listing(uuid,text,text,text),
 --   public.eb_listings_status_audit(), public.eb_verification_file_history_guard();
