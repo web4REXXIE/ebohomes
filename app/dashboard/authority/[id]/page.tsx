@@ -67,6 +67,8 @@ export default function ListingAuthorityPage() {
   const [draftAt, setDraftAt] = useState<string | null>(null)
   const [draftErr, setDraftErr] = useState<string | null>(null)
   const initialised = useRef(false)
+  // The lister's own company (one per account). Used only when they act for a company. It never approves this property.
+  const [org, setOrg] = useState<{ found: boolean; status?: string; name?: string; reg_number?: string | null } | null>(null)
 
   const [role, setRole] = useState('')
   const [situation, setSituation] = useState('')
@@ -110,6 +112,11 @@ export default function ListingAuthorityPage() {
     return data
   }, [id])
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    let alive = true
+    supabase.rpc('organization_my').then(({ data }) => { if (alive) setOrg(data ?? { found: false }) })
+    return () => { alive = false }
+  }, [])
 
   const docs: Doc[] = info?.documents ?? []
   const activeDocs = docs.filter((d) => !d.withdrawn_at)
@@ -121,14 +128,24 @@ export default function ListingAuthorityPage() {
   const underReview = status === 'submitted' || status === 'on_hold'
   const canEdit = !underReview
   const locked = !canEdit
-  const missing = useMemo(
-    () => (role ? missingForClaim({ role, ownerName, ownerPhone, companyName, companyCac, note }, docs) : ['Your relationship to the property']),
-    [role, ownerName, ownerPhone, companyName, companyCac, note, docs],
-  )
   const showOwner = role === 'agent' || role === 'manager'
   const showCompany = role === 'company_representative'
   const gateBlocked = !!gate && !gate.allowed
   const gateText = gateInfo(gate?.code)
+  // A company claim comes from the person's own APPROVED company. The server copies the name and registration number
+  // from the company and ignores anything typed here. Old free-text claims are only possible during the legacy transition.
+  const orgApproved = !!org?.found && org.status === 'approved'
+  const legacyFreeText = showCompany && !orgApproved && gate?.code === 'legacy_exemption'
+  const effCompanyName = orgApproved ? (org?.name ?? '') : companyName
+  const effCompanyCac = orgApproved ? (org?.reg_number || 'none') : companyCac
+  const missing = useMemo(() => {
+    if (!role) return ['Your relationship to the property']
+    const base = missingForClaim({ role, ownerName, ownerPhone, companyName: effCompanyName, companyCac: effCompanyCac, note }, docs)
+    if (role === 'company_representative' && !orgApproved && !legacyFreeText) {
+      return ['An approved company profile', ...base.filter((m) => m !== 'Company name' && m !== 'Company CAC number')]
+    }
+    return base
+  }, [role, ownerName, ownerPhone, effCompanyName, effCompanyCac, note, docs, orgApproved, legacyFreeText])
 
   const ed = (fn: (v: string) => void) => (v: string) => { setTouched(true); fn(v) }
 
@@ -145,7 +162,7 @@ export default function ListingAuthorityPage() {
     const { error } = await supabase.rpc('save_authority_draft', {
       p_listing: id, p_role: role || null, p_situation: situation || null,
       p_owner_name: ownerName || null, p_owner_phone: ownerPhone || null,
-      p_company_name: companyName || null, p_company_cac: companyCac || null, p_note: note || null,
+      p_company_name: orgApproved ? null : (companyName || null), p_company_cac: orgApproved ? null : (companyCac || null), p_note: note || null,
     })
     if (error) { setDraftErr(friendlyAuthorityError(error.message, 'Could not save your draft.')); return false }
     setDraftAt(new Date().toISOString()); setTouched(false)
@@ -245,13 +262,13 @@ export default function ListingAuthorityPage() {
     const { error } = await supabase.rpc('submit_listing_authority', {
       p_listing: id, p_role: role, p_situation: situation || null,
       p_owner_name: showOwner ? ownerName : null, p_owner_phone: showOwner ? ownerPhone : null,
-      p_company_name: showCompany ? companyName : null, p_company_cac: showCompany ? companyCac : null,
+      p_company_name: showCompany ? effCompanyName : null, p_company_cac: showCompany ? effCompanyCac : null,
       p_note: note || null,
     })
     if (error) {
       setBusy(false)
       // The professional-profile gate uses its own plain messages (error code 42501).
-      setErr(error.code === '42501' && /professional/i.test(error.message) ? error.message : friendlyAuthorityError(error.message))
+      setErr(error.code === '42501' && /professional|company/i.test(error.message) ? error.message : friendlyAuthorityError(error.message))
       await load() // the status may have changed (for example it was already sent from another tab)
       return
     }
@@ -313,12 +330,34 @@ export default function ListingAuthorityPage() {
           <div><label className={label} htmlFor="op">Owner phone number</label>
             <input id="op" inputMode="tel" className={field} value={ownerPhone} disabled={locked || busy} onChange={(e) => ed(setOwnerPhone)(e.target.value)} /></div>
         </>)}
-        {showCompany && (<>
+        {showCompany && (orgApproved ? (
+          <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+            <p className="font-semibold">Your company: {org?.name}</p>
+            <p>{org?.reg_number ? `Registration number ${org.reg_number}` : 'No registration number on file'}</p>
+            <p className="mt-1 text-xs">Your company is verified, but that does not approve this property. You still need the company authorization or appointment document for this property below.</p>
+          </div>
+        ) : gate === null || org === null ? (
+          <p className="text-sm text-muted-foreground">Checking your company...</p>
+        ) : legacyFreeText ? (<>
+          <p className="rounded-lg border border-slate-300 bg-slate-50 p-3 text-xs text-slate-900">This listing was already live before company verification, so you can still type the company details until its transition deadline. After that, an approved company is needed.</p>
           <div><label className={label} htmlFor="cn">Company name</label>
             <input id="cn" className={field} value={companyName} disabled={locked || busy} onChange={(e) => ed(setCompanyName)(e.target.value)} /></div>
           <div><label className={label} htmlFor="cc">Company CAC number</label>
             <input id="cc" className={field} value={companyCac} disabled={locked || busy} onChange={(e) => ed(setCompanyCac)(e.target.value)} /></div>
-        </>)}
+        </>) : (
+          <div className={`rounded-lg border p-3 text-sm ${org.found && org.status === 'suspended' ? TONE.bad : TONE.warn}`}>
+            <p className="font-semibold">
+              {!org.found ? 'Register your company first'
+                : org.status === 'suspended' ? 'Your company profile is suspended'
+                : org.status === 'pending_review' ? 'Your company is being reviewed'
+                : org.status === 'info_required' ? 'EboHomes needs more information about your company'
+                : org.status === 'rejected' ? 'Your company was not approved'
+                : 'Finish and send your company for review'}
+            </p>
+            <p>To act for a company, it must be approved by EboHomes first. You can keep filling this in. Your draft is saved.</p>
+            <Link href="/dashboard/company" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">{org.found ? 'Open my company' : 'Register my company'}</Link>
+          </div>
+        ))}
         <div>
           <label className={label} htmlFor="note">{role === 'other' ? 'Explain your relationship to the property' : 'Anything EboHomes should know (optional)'}</label>
           <textarea id="note" rows={3} className={field} value={note} disabled={locked || busy} onChange={(e) => ed(setNote)(e.target.value)} />
@@ -422,4 +461,4 @@ export default function ListingAuthorityPage() {
       )}
     </div>
   )
-                                                                                                                                                                         }
+    }
