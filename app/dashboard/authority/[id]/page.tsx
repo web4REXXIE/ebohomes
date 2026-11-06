@@ -9,6 +9,7 @@ import {
   AUTHORITY_DOC_TYPES, AUTHORITY_ROLES, AUTHORITY_SITUATIONS, authorityStatusInfo, documentStatusInfo, missingForClaim, needsDescription,
 } from '@/lib/listing-authority'
 import { AUTHORITY_ACCEPT, AUTHORITY_BUCKET, friendlyAuthorityError, validateAuthorityFileMeta } from '@/lib/authority-evidence'
+import PayeeRequestSection from '@/components/payee-request-section'
 
 const field = 'w-full min-h-11 rounded-lg border border-border bg-input px-3 py-2 text-base'
 const label = 'mb-1 block text-sm font-semibold text-foreground'
@@ -19,6 +20,26 @@ const TONE: Record<string, string> = {
   bad: 'border-red-300 bg-red-50 text-red-900',
 }
 const docLabel = (v: string) => AUTHORITY_DOC_TYPES.find((d) => d.value === v)?.label ?? v
+const PRO_ROLES = ['agent', 'manager', 'company_representative']
+
+// What the professional-profile gate means for the lister. The server enforces it again on submit.
+function gateInfo(code?: string): { tone: string; title: string; text: string; apply: boolean } | null {
+  switch (code) {
+    case 'blocked_none': return { tone: 'warn', apply: true, title: 'A professional profile is needed to send this',
+      text: 'Agents, property managers and company representatives need an approved professional profile before sending a property for review. You can keep filling this in. Your draft is saved.' }
+    case 'blocked_pending': return { tone: 'warn', apply: true, title: 'Your professional profile is being reviewed',
+      text: 'You can keep editing your draft, but it can only be sent after your professional profile is approved.' }
+    case 'blocked_rejected': return { tone: 'bad', apply: true, title: 'Your professional application was not approved',
+      text: 'This cannot be sent for review until you update your application and it is approved. Your draft is kept.' }
+    case 'blocked_suspended': return { tone: 'bad', apply: false, title: 'Your professional profile is suspended',
+      text: 'Please contact EboHomes. Your draft is kept.' }
+    case 'legacy_exemption': return { tone: 'neutral', apply: true, title: 'Existing listing: transition period',
+      text: 'This listing was already live before professional profiles were introduced, so you can still send it for review until its transition deadline. After that, a professional profile is needed.' }
+    case 'approved': return { tone: 'good', apply: false, title: 'Professional profile approved',
+      text: 'This only confirms you as a professional. It does not approve this property. EboHomes still reviews the evidence for it.' }
+    default: return null
+  }
+}
 
 async function authedFetch(path: string, body: unknown) {
   const t = (await supabase.auth.getSession()).data.session?.access_token ?? ''
@@ -41,6 +62,11 @@ export default function ListingAuthorityPage() {
   const [err, setErr] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [gate, setGate] = useState<{ allowed: boolean; code: string; professional_status?: string } | null>(null)
+  const [touched, setTouched] = useState(false)
+  const [draftAt, setDraftAt] = useState<string | null>(null)
+  const [draftErr, setDraftErr] = useState<string | null>(null)
+  const initialised = useRef(false)
 
   const [role, setRole] = useState('')
   const [situation, setSituation] = useState('')
@@ -64,10 +90,21 @@ export default function ListingAuthorityPage() {
     if (error) { setErr(friendlyAuthorityError(error.message, 'Could not load this page.')); setLoading(false); return }
     setTitle(l?.title ?? 'Your listing')
     setInfo(data)
-    const c = data?.claim
-    if (c) {
-      setRole(c.claimed_role ?? ''); setSituation(c.situation ?? ''); setOwnerName(c.owner_name ?? ''); setOwnerPhone(c.owner_phone ?? '')
-      setCompanyName(c.company_name ?? ''); setCompanyCac(c.company_cac ?? ''); setNote(c.declaration_note ?? '')
+    // Fill the form once. Later reloads (after an upload, for example) must not wipe what the person is typing.
+    if (!initialised.current) {
+      initialised.current = true
+      const c = data?.claim
+      if (c) {
+        setRole(c.claimed_role ?? ''); setSituation(c.situation ?? ''); setOwnerName(c.owner_name ?? ''); setOwnerPhone(c.owner_phone ?? '')
+        setCompanyName(c.company_name ?? ''); setCompanyCac(c.company_cac ?? ''); setNote(c.declaration_note ?? '')
+      }
+      // A saved draft is newer than the last sent claim, so it wins. A draft is not a claim and proves nothing.
+      const { data: dr } = await supabase.rpc('my_authority_draft', { p_listing: id })
+      if (dr?.found) {
+        setRole(dr.claimed_role ?? ''); setSituation(dr.situation ?? ''); setOwnerName(dr.owner_name ?? ''); setOwnerPhone(dr.owner_phone ?? '')
+        setCompanyName(dr.company_name ?? ''); setCompanyCac(dr.company_cac ?? ''); setNote(dr.declaration_note ?? '')
+        setDraftAt(dr.updated_at ?? null)
+      }
     }
     setLoading(false)
     return data
@@ -90,6 +127,47 @@ export default function ListingAuthorityPage() {
   )
   const showOwner = role === 'agent' || role === 'manager'
   const showCompany = role === 'company_representative'
+  const gateBlocked = !!gate && !gate.allowed
+  const gateText = gateInfo(gate?.code)
+
+  const ed = (fn: (v: string) => void) => (v: string) => { setTouched(true); fn(v) }
+
+  // Does this person's professional status allow sending this role right now? (The server checks again on submit.)
+  useEffect(() => {
+    if (loading || !role) { setGate(null); return }
+    let alive = true
+    supabase.rpc('authority_submit_eligibility', { p_listing: id, p_role: role }).then(({ data }) => { if (alive) setGate(data ?? null) })
+    return () => { alive = false }
+  }, [id, role, loading])
+
+  async function saveDraft(): Promise<boolean> {
+    setDraftErr(null)
+    const { error } = await supabase.rpc('save_authority_draft', {
+      p_listing: id, p_role: role || null, p_situation: situation || null,
+      p_owner_name: ownerName || null, p_owner_phone: ownerPhone || null,
+      p_company_name: companyName || null, p_company_cac: companyCac || null, p_note: note || null,
+    })
+    if (error) { setDraftErr(friendlyAuthorityError(error.message, 'Could not save your draft.')); return false }
+    setDraftAt(new Date().toISOString()); setTouched(false)
+    return true
+  }
+
+  // Autosave 1.5 seconds after the last edit.
+  useEffect(() => {
+    if (!touched || locked || loading) return
+    const t = setTimeout(() => { void saveDraft() }, 1500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [touched, role, situation, ownerName, ownerPhone, companyName, companyCac, note])
+
+  // The person pressed send but their professional status does not allow it. Keep the draft and say why.
+  async function blockedAttempt() {
+    setErr(null); setMsg(null); setBusy(true)
+    await saveDraft()
+    void supabase.rpc('professional_log_blocked_submit', { p_listing: id, p_role: role })
+    setBusy(false)
+    setErr(gateInfo(gate?.code)?.text ?? 'This cannot be sent for review right now.')
+  }
 
   // One path for "add" and "replace". For a replacement the old document is named, and the kind stays the same.
   async function sendFile(file: File, type: string, supersedesId: string | null, description: string | null) {
@@ -162,6 +240,7 @@ export default function ListingAuthorityPage() {
   }
 
   async function submit() {
+    if (gateBlocked) { await blockedAttempt(); return }
     setBusy(true); setErr(null); setMsg(null)
     const { error } = await supabase.rpc('submit_listing_authority', {
       p_listing: id, p_role: role, p_situation: situation || null,
@@ -171,7 +250,8 @@ export default function ListingAuthorityPage() {
     })
     if (error) {
       setBusy(false)
-      setErr(friendlyAuthorityError(error.message))
+      // The professional-profile gate uses its own plain messages (error code 42501).
+      setErr(error.code === '42501' && /professional/i.test(error.message) ? error.message : friendlyAuthorityError(error.message))
       await load() // the status may have changed (for example it was already sent from another tab)
       return
     }
@@ -215,33 +295,33 @@ export default function ListingAuthorityPage() {
         <h2 className="text-base font-bold">Your relationship to the property</h2>
         <div>
           <label className={label} htmlFor="role">I am</label>
-          <select id="role" className={field} value={role} disabled={locked || busy} onChange={(e) => setRole(e.target.value)}>
+          <select id="role" className={field} value={role} disabled={locked || busy} onChange={(e) => ed(setRole)(e.target.value)}>
             <option value="">Choose...</option>
             {AUTHORITY_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
         </div>
         <div>
           <label className={label} htmlFor="sit">Property situation</label>
-          <select id="sit" className={field} value={situation} disabled={locked || busy} onChange={(e) => setSituation(e.target.value)}>
+          <select id="sit" className={field} value={situation} disabled={locked || busy} onChange={(e) => ed(setSituation)(e.target.value)}>
             <option value="">Choose...</option>
             {AUTHORITY_SITUATIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
         </div>
         {showOwner && (<>
           <div><label className={label} htmlFor="on">Owner full name</label>
-            <input id="on" className={field} value={ownerName} disabled={locked || busy} onChange={(e) => setOwnerName(e.target.value)} /></div>
+            <input id="on" className={field} value={ownerName} disabled={locked || busy} onChange={(e) => ed(setOwnerName)(e.target.value)} /></div>
           <div><label className={label} htmlFor="op">Owner phone number</label>
-            <input id="op" inputMode="tel" className={field} value={ownerPhone} disabled={locked || busy} onChange={(e) => setOwnerPhone(e.target.value)} /></div>
+            <input id="op" inputMode="tel" className={field} value={ownerPhone} disabled={locked || busy} onChange={(e) => ed(setOwnerPhone)(e.target.value)} /></div>
         </>)}
         {showCompany && (<>
           <div><label className={label} htmlFor="cn">Company name</label>
-            <input id="cn" className={field} value={companyName} disabled={locked || busy} onChange={(e) => setCompanyName(e.target.value)} /></div>
+            <input id="cn" className={field} value={companyName} disabled={locked || busy} onChange={(e) => ed(setCompanyName)(e.target.value)} /></div>
           <div><label className={label} htmlFor="cc">Company CAC number</label>
-            <input id="cc" className={field} value={companyCac} disabled={locked || busy} onChange={(e) => setCompanyCac(e.target.value)} /></div>
+            <input id="cc" className={field} value={companyCac} disabled={locked || busy} onChange={(e) => ed(setCompanyCac)(e.target.value)} /></div>
         </>)}
         <div>
           <label className={label} htmlFor="note">{role === 'other' ? 'Explain your relationship to the property' : 'Anything EboHomes should know (optional)'}</label>
-          <textarea id="note" rows={3} className={field} value={note} disabled={locked || busy} onChange={(e) => setNote(e.target.value)} />
+          <textarea id="note" rows={3} className={field} value={note} disabled={locked || busy} onChange={(e) => ed(setNote)(e.target.value)} />
         </div>
       </section>
 
@@ -297,8 +377,24 @@ export default function ListingAuthorityPage() {
           </div>)}
       </section>
 
+      {status === 'accepted' && PRO_ROLES.includes(info?.claim?.claimed_role) && (
+        <PayeeRequestSection listingId={id} claimedRole={info.claim.claimed_role} />
+      )}
+
       {canEdit ? (
         <>
+          {PRO_ROLES.includes(role) && gateText && (
+            <div className={`rounded-lg border p-3 text-sm ${TONE[gateText.tone]}`}>
+              <p className="font-semibold">{gateText.title}</p>
+              <p>{gateText.text}</p>
+              {gateText.apply && gate?.code !== 'approved' && (
+                <Link href="/dashboard/professional" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">
+                  {gate?.code === 'blocked_none' ? 'Apply for a professional profile' : 'View my professional application'}
+                </Link>)}
+            </div>)}
+          <p className="rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
+            Your progress is saved as a draft. A draft is not a claim: it is not sent to EboHomes and does not make this property verified, approved or authorized.
+          </p>
           {missing.length > 0 && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
               <p className="font-semibold">Still needed before you can send:</p>
@@ -310,6 +406,12 @@ export default function ListingAuthorityPage() {
             {busy && <Loader2 size={16} className="animate-spin" aria-hidden />}
             {status === 'accepted' ? 'Send changes for review' : status === 'needs_evidence' || status === 'rejected' ? 'Send again' : 'Send to EboHomes'}
           </button>
+          <button type="button" disabled={busy || (!role && !situation && !ownerName && !companyName && !note)} onClick={async () => { setMsg(null); const ok = await saveDraft(); if (ok) setMsg('Draft saved. It is not sent to EboHomes.') }}
+            className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-border bg-card px-4 text-sm font-semibold disabled:opacity-50">
+            Save draft
+          </button>
+          {draftErr && <p role="alert" className="text-center text-xs text-red-900">{draftErr}</p>}
+          {!draftErr && draftAt && <p className="text-center text-xs text-muted-foreground">{touched ? 'Saving...' : `Draft saved ${new Date(draftAt).toLocaleString('en-NG')}`}</p>}
           <p className="text-center text-xs text-muted-foreground">{activeDocs.length} active document{activeDocs.length === 1 ? '' : 's'}</p>
         </>
       ) : (
@@ -320,4 +422,4 @@ export default function ListingAuthorityPage() {
       )}
     </div>
   )
-        }
+                                                                                                                                                                         }
