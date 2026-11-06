@@ -220,6 +220,7 @@ function Detail({ alert: a, names, loadNames, onBack, onChanged }: { alert: any;
           <div><dt>Assigned to</dt><dd className="text-foreground">{a.assigned_to ? names[a.assigned_to] ?? 'Assigned' : 'Nobody yet'}</dd></div>
         </dl>
         {a.listing_id && <Link href="/admin/listing-authority" className="mt-2 inline-block text-xs underline">Property authority is reviewed separately in Listing authority</Link>}
+        {!resolved && <Link href={`/admin/operations?tab=cases&alert=${a.id}`} className="mt-2 inline-flex min-h-11 items-center text-xs underline">Open an investigation case for this alert</Link>}
       </div>
 
       <section className="rounded-lg border border-border bg-card p-3">
