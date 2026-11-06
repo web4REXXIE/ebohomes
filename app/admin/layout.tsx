@@ -21,6 +21,7 @@ const NAV_GROUPS: { title: string | null; items: NavItem[] }[] = [
     { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
     { href: '/admin/payout-accounts', label: 'Payout Accounts', icon: CreditCard },
   ] },
+      { href: '/admin/payee-requests', label: 'Rent Payees', icon: CreditCard },
   { title: 'Rentals', items: [
     { href: '/admin/applications', label: 'Applications', icon: ClipboardCheck },
     { href: '/admin/viewings', label: 'Viewings', icon: ClipboardList },
