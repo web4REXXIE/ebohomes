@@ -48,6 +48,8 @@ export default function PropertyReviewPage() {
 
   const filtered = listings.filter((l) => (l.status ?? 'pending') === tab)
   const selected = listings.find((l) => l.id === selectedId) ?? filtered[0]
+  // The database only lets a listing awaiting review be approved or rejected here.
+  const awaitingReview = ['pending', 'inspection_required'].includes(selected?.status ?? 'pending')
 
   useEffect(() => {
     if (filtered.length > 0 && !filtered.find((l) => l.id === selectedId)) {
@@ -114,96 +116,74 @@ export default function PropertyReviewPage() {
     }
   }
 
-  const handleApprove = async (id: string) => {
+  // Every publication decision goes through one database function that locks the listing,
+  // refuses stale or self-review decisions, requires reasons and records who decided.
+  const reviewListing = async (
+    listing: any,
+    action: 'approve' | 'reject' | 'suspend' | 'reinstate',
+    reason: string | null
+  ): Promise<string | null> => {
     setUpdating(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const nowIso = new Date().toISOString()
-
-    const { error } = await supabase
-      .from('listings')
-      .update({
-        status: 'approved',
-        reviewed_by: user?.id ?? null,
-        reviewed_at: nowIso,
-        rejection_reason: null,
-      })
-      .eq('id', id)
-
-    if (!error) {
-      setListings((prev) => prev.map((l) =>
-        l.id === id ? { ...l, status: 'approved', reviewed_at: nowIso, rejection_reason: null } : l
-      ))
-    } else {
-      alert('Failed to approve: ' + error.message)
-    }
+    const { data, error } = await supabase.rpc('admin_review_listing', {
+      p_listing: listing.id,
+      p_action: action,
+      p_reason: reason,
+      p_expected_status: listing.status ?? 'pending',
+    })
     setUpdating(false)
+    if (error) {
+      alert(`Could not ${action} this listing: ${error.message}`)
+      if (error.code === '40001') fetchListings()
+      return null
+    }
+    const newStatus = String(data)
+    const nowIso = new Date().toISOString()
+    setListings((prev) =>
+      prev.map((l) =>
+        l.id !== listing.id
+          ? l
+          : {
+              ...l,
+              status: newStatus,
+              ...(action === 'approve' ? { reviewed_at: nowIso, rejection_reason: null } : {}),
+              ...(action === 'reject' ? { reviewed_at: nowIso, rejection_reason: reason } : {}),
+              ...(action === 'suspend' ? { suspension_reason: reason, suspended_at: nowIso } : {}),
+              ...(action === 'reinstate' ? { suspension_reason: null, suspended_at: null } : {}),
+            }
+      )
+    )
+    return newStatus
+  }
+
+  const handleApprove = async (id: string) => {
+    const l = listings.find((x) => x.id === id)
+    if (l) await reviewListing(l, 'approve', null)
   }
 
   const handleReject = async (id: string) => {
-    if (!rejectReason.trim()) {
-      alert('Please enter a rejection reason before rejecting.')
+    const reason = rejectReason.trim()
+    if (reason.length < 5) {
+      alert('Please enter a rejection reason (at least 5 characters).')
       return
     }
-    setUpdating(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const nowIso = new Date().toISOString()
-    const reason = rejectReason.trim()
-
-    const { error } = await supabase
-      .from('listings')
-      .update({
-        status: 'rejected',
-        reviewed_by: user?.id ?? null,
-        reviewed_at: nowIso,
-        rejection_reason: reason,
-      })
-      .eq('id', id)
-
-    if (!error) {
-      setListings((prev) => prev.map((l) =>
-        l.id === id ? { ...l, status: 'rejected', reviewed_at: nowIso, rejection_reason: reason } : l
-      ))
-      setRejectReason('')
-    } else {
-      alert('Failed to reject: ' + error.message)
-    }
-    setUpdating(false)
+    const l = listings.find((x) => x.id === id)
+    if (l && (await reviewListing(l, 'reject', reason))) setRejectReason('')
   }
 
   const handleSuspend = async (id: string) => {
-    if (!suspendReason.trim()) {
-      alert('Enter the reason for suspending this listing.')
+    const reason = suspendReason.trim()
+    if (reason.length < 5) {
+      alert('Enter the reason for suspending this listing (at least 5 characters).')
       return
     }
-    setUpdating(true)
-    const nowIso = new Date().toISOString()
-    const reason = suspendReason.trim()
-    const { error } = await supabase
-      .from('listings')
-      .update({ status: 'suspended', suspension_reason: reason, suspended_at: nowIso })
-      .eq('id', id)
-    if (!error) {
-      setListings((prev) => prev.map((l) => (l.id === id ? { ...l, status: 'suspended', suspension_reason: reason } : l)))
-      setSuspendReason('')
-    } else {
-      alert('Failed to suspend: ' + error.message)
-    }
-    setUpdating(false)
+    const l = listings.find((x) => x.id === id)
+    if (l && (await reviewListing(l, 'suspend', reason))) setSuspendReason('')
   }
 
   const handleReinstate = async (id: string) => {
     if (!window.confirm('Reinstate this listing and put it back in review?')) return
-    setUpdating(true)
-    const { error } = await supabase
-      .from('listings')
-      .update({ status: 'pending', suspension_reason: null, suspended_at: null })
-      .eq('id', id)
-    if (!error) {
-      setListings((prev) => prev.map((l) => (l.id === id ? { ...l, status: 'pending', suspension_reason: null } : l)))
-    } else {
-      alert('Failed to reinstate: ' + error.message)
-    }
-    setUpdating(false)
+    const l = listings.find((x) => x.id === id)
+    if (l) await reviewListing(l, 'reinstate', null)
   }
 
   const counts = {
@@ -452,14 +432,14 @@ export default function PropertyReviewPage() {
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button
                     onClick={() => handleApprove(selected.id)}
-                    disabled={updating || selected.status === 'approved' || !canApprove}
+                    disabled={updating || !awaitingReview || !canApprove}
                     className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold flex items-center justify-center gap-2"
                   >
                     <Check size={16} /> Approve Property
                   </Button>
                   <Button
                     onClick={() => handleReject(selected.id)}
-                    disabled={updating || selected.status === 'rejected' || !rejectReason.trim()}
+                    disabled={updating || !awaitingReview || rejectReason.trim().length < 5}
                     variant="outline"
                     className="flex-1 border-destructive text-destructive hover:bg-destructive/10 font-semibold flex items-center justify-center gap-2"
                   >
@@ -503,7 +483,7 @@ export default function PropertyReviewPage() {
                     />
                     <Button
                       onClick={() => handleSuspend(selected.id)}
-                      disabled={updating || !suspendReason.trim()}
+                      disabled={updating || suspendReason.trim().length < 5}
                       variant="outline"
                       className="w-full border-destructive text-destructive hover:bg-destructive/10 font-semibold"
                     >
