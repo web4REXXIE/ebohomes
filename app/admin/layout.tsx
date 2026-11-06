@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -14,6 +13,7 @@ type NavItem = { href: string; label: string; icon: typeof LayoutDashboard }
 const NAV_GROUPS: { title: string | null; items: NavItem[] }[] = [
   { title: null, items: [{ href: '/admin', label: 'Dashboard', icon: LayoutDashboard }] },
   { title: 'Reviews', items: [
+    { href: '/admin/operations', label: 'Trust Operations', icon: ShieldCheck },
     { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
     { href: '/admin/listing-authority', label: 'Listing Authority', icon: ShieldCheck },
     { href: '/admin/risk', label: 'Risk Alerts', icon: ShieldAlert },
