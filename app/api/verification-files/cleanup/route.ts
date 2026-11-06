@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { authUser } from '@/lib/user-auth-server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { identityDeletionEnabled, orphanedIdentityFiles, planIdentityCleanup } from '@/lib/verification-files'
+import { identityDeletionEnabled, orphanedIdentityFiles, pathsFromHistory, planIdentityCleanup } from '@/lib/verification-files'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,9 +32,20 @@ export async function POST(req: Request) {
     const { data: files, error: listErr } = await admin.storage.from(BUCKET).list(u.user.id, { limit: 200 })
     if (listErr) return json({ error: 'Could not check your files.' }, 500)
 
+    // PHASE 9.6: files an earlier review looked at are evidence. Keep every path in the file history,
+    // not only the current profile pointers. If the history cannot be read in full, do nothing.
+    const { data: hist, error: histErr, count } = await admin
+      .from('landlord_verification_file_history')
+      .select('id_document_url, selfie_url, ownership_doc_url', { count: 'exact' })
+      .eq('profile_id', u.user.id)
+      .limit(5000)
+    if (histErr || count === null || (hist ?? []).length < count) {
+      return json({ ok: true, removed: 0, paused: true, candidates: 0 })
+    }
+
     const doomed = orphanedIdentityFiles(
       (files ?? []).map((f) => f.name),
-      [p.id_document_url, p.selfie_url, p.ownership_doc_url],
+      [p.id_document_url, p.selfie_url, p.ownership_doc_url, ...pathsFromHistory(hist)],
       Date.now()
     )
     const plan = planIdentityCleanup(doomed, identityDeletionEnabled(process.env.EB_ALLOW_IDENTITY_FILE_DELETION))
