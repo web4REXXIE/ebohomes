@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/cron/authority-expiry", "schedule": "0 7 * * *" }
+  ]
+}
