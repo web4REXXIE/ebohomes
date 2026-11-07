@@ -21,6 +21,7 @@ import {
   landlordLabel,
   landlordTone,
   localToIso,
+  reportHref,
   statusLabel,
   statusTone,
   tenantGroup,
@@ -251,7 +252,9 @@ export function RemoteInspectionsManager({ role }: Props) {
                         </button>
                       )}
                       {role === 'tenant' && r.status === 'completed' && r.report_ready && (
-                        <span className="text-xs text-muted-foreground">Your report will open from here once released.</span>
+                        <Link href={reportHref(r.id)} className={`${btnP} inline-flex items-center`}>
+                          View report
+                        </Link>
                       )}
                       {role === 'landlord' && LANDLORD_ANSWERABLE.includes(r.status) && (
                         <>
@@ -337,4 +340,4 @@ export function RemoteInspectionsManager({ role }: Props) {
       ))}
     </div>
   )
-                  }
+                                                         }
