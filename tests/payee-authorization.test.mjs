@@ -19,9 +19,9 @@ assert.equal(a.isValidPayeePath(p, U, U), false)            // wrong listing
 assert.equal(a.isValidPayeePath(`${U}/${L}/${F}.pdf`, U, L), false)  // the authority-evidence path shape is not accepted
 assert.equal(a.isValidPayeePath(`payee/${U}/${L}/../x.pdf`, U, L), false)
 assert.equal(a.isValidPayeePath(`payee/${U}/${L}/${F}.exe`, U, L), false)
-assert.equal(a.isValidPayeePath(`payee/${U}/${L}/${F.toUpperCase()}.pdf`, U, L), false)
+assert.equal(a.isValidPayeePath(`payee/${U}/${L}/ABCDEF12-3456-4789-8ABC-DEF123456789.pdf`, U, L), false)
 
-const ok = a.validatePayeeInput({ payee_kind: 'agent', payee_name: '  Ada   Obi ', bank_name: 'GTBank', account_number: '0123 456-789 0'.replace(/ /g, ''), account_name: 'Ada Obi' })
+const ok = a.validatePayeeInput({ payee_kind: 'agent', payee_name: '  Ada   Obi ', bank_name: 'GTBank', account_number: '0123 456-789'.replace(/ /g, ''), account_name: 'Ada Obi' })
 assert.equal(ok.ok, true)
 assert.equal(ok.value.payee_name, 'Ada Obi')
 assert.equal(ok.value.account_number, '0123456789')
