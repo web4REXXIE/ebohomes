@@ -21,6 +21,7 @@ import {
   Building2,
   FileText,
   CalendarClock,
+  ClipboardCheck,
   KeyRound,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -39,6 +40,7 @@ const NAV: NavItem[] = [
   { label: 'My Properties', href: '/dashboard/listings', icon: List },
   { label: 'Applications', href: '/dashboard/applications', icon: FileText, badgeKey: 'applications' },
   { label: 'Viewings', href: '/dashboard/viewings', icon: CalendarClock },
+  { label: 'Inspection requests', href: '/dashboard/inspection-requests', icon: ClipboardCheck },
   { label: 'Tenancies', href: '/dashboard/tenancies', icon: KeyRound },
   { label: 'Payments', href: '/dashboard/payments', icon: CreditCard },
   { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badgeKey: 'messages' },
