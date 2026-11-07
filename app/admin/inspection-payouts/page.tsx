@@ -179,5 +179,4 @@ export default function InspectionPayoutsPage() {
       </section>
     </div>
   )
-}￼Enter file contents here
- 
+}
