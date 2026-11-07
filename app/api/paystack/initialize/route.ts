@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { amountForPurpose, isPurpose, newReference, paystackConfig } from '@/lib/paystack'
 import { settledByPayments } from '@/lib/payment-complete'
+import { canTakePayment } from '@/lib/payable-tenancy'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,8 +29,11 @@ export async function POST(req: Request) {
   const user = auth.user
   if (!user.email) return NextResponse.json({ error: 'Your account has no email address.' }, { status: 400 })
 
-  const { data: tenancy } = await db.from('tenancies').select('id, tenant_id').eq('id', tenancyId).maybeSingle()
+  const { data: tenancy } = await db.from('tenancies').select('id, tenant_id, status, offer_id').eq('id', tenancyId).maybeSingle()
   if (!tenancy || tenancy.tenant_id !== user.id) return NextResponse.json({ error: 'Tenancy not found.' }, { status: 404 })
+  if (!canTakePayment(tenancy.status, tenancy.offer_id)) {
+    return NextResponse.json({ error: 'Online payment is only open on an active or reserved tenancy.' }, { status: 409 })
+  }
 
   const { data: terms } = await db.from('rental_terms')
     .select('id, rent_amount, deposit_amount, fees_amount').eq('tenancy_id', tenancyId).eq('status', 'signed').maybeSingle()
@@ -38,13 +42,30 @@ export async function POST(req: Request) {
   const amount = amountForPurpose(terms, purpose)
   if (!amount) return NextResponse.json({ error: 'There is nothing to pay for this item.' }, { status: 409 })
 
-  if (purpose !== 'rent') {
+  const { data: payRows } = await db.from('payments').select('id, amount, type, status, verified_by, created_at').eq('tenancy_id', tenancyId)
+  const { data: proofRows } = await db.from('payment_submissions').select('payment_type, amount_paid, status').eq('tenancy_id', tenancyId)
+
+  if (purpose === 'rent') {
+    // Never open a second payment while EboHomes is checking evidence for this rent.
+    const checking = (proofRows ?? []).some((p: any) => p.payment_type === 'rent' && ['submitted', 'under_review'].includes(p.status))
+    if (checking) {
+      return NextResponse.json({ error: 'EboHomes is already checking a rent payment for you. You do not need to pay again.' }, { status: 409 })
+    }
+    // The FIRST rent (before the tenancy is active) can only be paid once.
+    if (tenancy.status !== 'active') {
+      const { data: paidRent } = await db.from('paystack_transactions').select('id')
+        .eq('tenancy_id', tenancyId).eq('purpose', 'rent').eq('status', 'paid').limit(1)
+      const hasRentRow = (payRows ?? []).some((p: any) => p.type === 'rent' && !['rejected', 'failed', 'cancelled'].includes(String(p.status ?? '')))
+      const rentVerifiedProof = (proofRows ?? []).some((p: any) => p.payment_type === 'rent' && p.status === 'verified')
+      if ((paidRent && paidRent.length) || hasRentRow || rentVerifiedProof) {
+        return NextResponse.json({ error: 'The first rent has already been paid, or EboHomes is checking it. You do not need to pay again.' }, { status: 409 })
+      }
+    }
+  } else {
     const { data: already } = await db.from('paystack_transactions').select('id')
       .eq('tenancy_id', tenancyId).eq('purpose', purpose).eq('status', 'paid').limit(1)
     if (already && already.length) return NextResponse.json({ error: 'This has already been paid online.' }, { status: 409 })
     // Also stop a second payment when a payment record or bank proof already covers this one-off charge.
-    const { data: payRows } = await db.from('payments').select('id, amount, type, status, verified_by, created_at').eq('tenancy_id', tenancyId)
-    const { data: proofRows } = await db.from('payment_submissions').select('payment_type, amount_paid, status').eq('tenancy_id', tenancyId)
     const agreedAmount = purpose === 'deposit' ? terms.deposit_amount : terms.fees_amount
     if (settledByPayments(payRows ?? [], purpose, agreedAmount, proofRows ?? [])) {
       return NextResponse.json({ error: 'This has already been paid, or EboHomes is checking a payment for it. You do not need to pay again.' }, { status: 409 })
