@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { ApplicantFacts, ApplicationStatusBadge } from '@/components/application-ui'
+import { ApplicationDocuments } from '@/components/application-documents'
 
 // Landlord view of applications for the landlord's OWN properties.
 // EboHomes makes every decision. The landlord can only add a recommendation while the application is still open.
@@ -144,6 +145,9 @@ export default function LandlordApplicationsPage() {
         <ApplicantFacts data={a.application_data} />
         {a.message && <p className="rounded-md bg-secondary p-3 text-sm text-foreground">{a.message}</p>}
 
+        {/* Phase 11.6: landlords see which document TYPES were provided. They never get the files. */}
+        <ApplicationDocuments applicationId={a.id} mode="landlord" />
+
         {rec && (
           <p className="rounded-md border border-border bg-secondary/60 p-3 text-sm">
             <span className="font-semibold">{CHOICE_LABEL[rec] ?? 'Recommendation saved'}.</span>
@@ -199,7 +203,15 @@ export default function LandlordApplicationsPage() {
           <p className="text-xs text-muted-foreground">
             {a.status === 'approved'
               ? 'EboHomes approved this application. Approval does not reserve the property or create a tenancy. Set up the tenancy from Tenancies.'
-              : 'This application is closed.'}
+              : a.status === 'accepted'
+                ? 'The rental was completed with this applicant.'
+                : a.status === 'not_selected'
+                  ? 'Another applicant secured this property. This is not a rejection of this applicant.'
+                  : a.status === 'rejected'
+                    ? 'EboHomes declined this application.'
+                    : a.status === 'withdrawn'
+                      ? 'The applicant withdrew this application.'
+                      : 'This application is closed.'}
           </p>
         )}
       </li>
