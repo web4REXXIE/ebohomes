@@ -258,3 +258,78 @@ export function friendlyError(message: string | null | undefined): string {
   const technical = /relation|column|function|syntax|violates|permission denied|jwt|schema|pg_|uuid/i.test(m)
   return technical ? 'Something went wrong. Please try again.' : m
                       }
+
+// ---------------------------------------------------------------- Step D: admin queue and inspector offers (pure helpers)
+export type QueueRow = {
+  id: string
+  ref: string
+  status: string
+  title?: string | null
+  location_text?: string | null
+  landlord_time?: string | null
+  landlord_note?: string | null
+  ready_at?: string | null
+  assign_due_at?: string | null
+  escalated_at?: string | null
+  offered_inspector?: string | null
+  inspector_name?: string | null
+  offer_due_at?: string | null
+  scheduled_for?: string | null
+}
+
+export type Suggestion = {
+  user_id: string
+  name?: string | null
+  areas?: string | null
+  area_match: boolean
+  workload: number
+  approved_work: number
+  declined_this: boolean
+}
+
+export const QUEUE_ORDER = ['ready_for_assignment', 'offered', 'scheduled', 'awaiting_rescheduling', 'awaiting_landlord']
+export const QUEUE_TITLE: Record<string, string> = {
+  ready_for_assignment: 'Needs an inspector',
+  offered: 'Waiting for the inspector to answer',
+  scheduled: 'Booked',
+  awaiting_rescheduling: 'Waiting for a new time from the landlord',
+  awaiting_landlord: 'Waiting for the landlord',
+}
+
+// "in 25 min", "in 3 h", "overdue by 40 min". Only wording; the database owns every deadline.
+export function dueText(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ''
+  const mins = Math.round((t - now.getTime()) / 60000)
+  const abs = Math.abs(mins)
+  const span = abs < 90 ? `${abs} min` : abs < 48 * 60 ? `${Math.round(abs / 60)} h` : `${Math.round(abs / 1440)} days`
+  return mins >= 0 ? `in ${span}` : `overdue by ${span}`
+}
+
+export function isOverdue(iso: string | null | undefined, now: Date = new Date()): boolean {
+  if (!iso) return false
+  const t = new Date(iso).getTime()
+  return !Number.isNaN(t) && t < now.getTime()
+}
+
+export function checkAdminReason(text: string): string | null {
+  const t = text.trim()
+  if (t.length < 3) return 'Give a short reason.'
+  if (t.length > REASON_MAX) return `Keep the reason under ${REASON_MAX} characters.`
+  return null
+}
+
+export function checkBudgetAmount(text: string): string | null {
+  const n = Number(text.replace(/,/g, ''))
+  if (!Number.isFinite(n) || n <= 0) return 'Enter an amount above zero.'
+  if (n > 1_000_000_000) return 'That amount is too large.'
+  return null
+}
+
+// Suggestion line shown to the admin. The admin still decides.
+export function suggestionLine(s: Suggestion): string {
+  const parts = [s.area_match ? 'Works in this area' : 'Area not matched', `${s.workload} open`, `${s.approved_work} approved before`]
+  if (s.declined_this) parts.push('declined or missed this one')
+  return parts.join(' · ')
+}
