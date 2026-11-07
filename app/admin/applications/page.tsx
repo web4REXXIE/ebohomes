@@ -1,10 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, CheckCircle2, XCircle, HelpCircle, Clock, Undo2 } from 'lucide-react'
+import {
+  Loader2, CheckCircle2, XCircle, HelpCircle, Clock, Undo2, BadgeCheck, UserX, History as HistoryIcon,
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { ApplicantFacts } from '@/components/application-ui'
+import { ApplicationDocuments } from '@/components/application-documents'
 import { fmtDate } from '@/lib/case-status'
 
 type App = {
@@ -28,10 +31,25 @@ type App = {
   tenant_interest_at: string | null
 }
 
+type Ev = {
+  id: string
+  event: string
+  from_status: string | null
+  to_status: string | null
+  actor_role: string | null
+  note: string | null
+  created_at: string
+}
+
+const MIN_NOTE = 5
+const MIN_REASON = 10
+
 const TABS = [
   ['pending', 'Needs review'],
   ['info_requested', 'Waiting for tenant'],
   ['approved', 'Approved'],
+  ['accepted', 'Accepted'],
+  ['not_selected', 'Not selected'],
   ['rejected', 'Declined'],
   ['withdrawn', 'Withdrawn'],
 ] as const
@@ -52,12 +70,163 @@ const BADGES: Record<string, { label: string; cls: string; icon: any }> = {
   pending: { label: 'Needs review', cls: 'border-amber-300 bg-amber-50 text-amber-900', icon: Clock },
   info_requested: { label: 'Waiting for tenant', cls: 'border-amber-300 bg-amber-50 text-amber-900', icon: HelpCircle },
   approved: { label: 'Approved', cls: 'border-emerald-300 bg-emerald-50 text-emerald-900', icon: CheckCircle2 },
+  accepted: { label: 'Accepted', cls: 'border-emerald-300 bg-emerald-50 text-emerald-900', icon: BadgeCheck },
+  not_selected: { label: 'Not selected', cls: 'border-slate-300 bg-slate-100 text-slate-800', icon: UserX },
   rejected: { label: 'Declined', cls: 'border-red-300 bg-red-50 text-red-900', icon: XCircle },
   withdrawn: { label: 'Withdrawn', cls: 'border-slate-300 bg-slate-100 text-slate-800', icon: Undo2 },
 }
 
+const CORRECTIONS: Record<string, [string, string][]> = {
+  approved: [['pending', 'Send back for review'], ['rejected', 'Decline instead']],
+  rejected: [['pending', 'Reopen for review']],
+  not_selected: [['pending', 'Reopen for review'], ['rejected', 'Decline instead']],
+}
+
 const btnBase =
   'inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 text-sm font-semibold disabled:opacity-60'
+
+const lab = (s: string | null) => (s && BADGES[s]?.label) || s || '—'
+
+function eventText(e: Ev) {
+  if (e.event === 'submitted') return 'Application submitted'
+  if (e.event === 'admin_override') return `Corrected by staff: ${lab(e.from_status)} to ${lab(e.to_status)}`
+  if (e.event === 'document_added') return 'Document added'
+  if (e.event === 'document_removed') return 'Document removed'
+  return `${lab(e.from_status)} to ${lab(e.to_status)}`
+}
+
+function HistoryList({ appId }: { appId: string }) {
+  const [rows, setRows] = useState<Ev[] | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('application_events')
+      .select('id, event, from_status, to_status, actor_role, note, created_at')
+      .eq('application_id', appId)
+      .order('created_at', { ascending: true })
+    if (error) {
+      setFailed(true)
+      return
+    }
+    setRows((data ?? []) as Ev[])
+  }, [appId])
+
+  return (
+    <details
+      className="text-xs"
+      onToggle={(e) => {
+        if ((e.currentTarget as HTMLDetailsElement).open && rows === null && !failed) void load()
+      }}
+    >
+      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 py-3 font-semibold text-primary">
+        <HistoryIcon size={13} aria-hidden /> History
+      </summary>
+      {failed ? (
+        <p className="pb-2 text-muted-foreground">History is not available yet.</p>
+      ) : rows === null ? (
+        <p className="pb-2 text-muted-foreground">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="pb-2 text-muted-foreground">No history recorded.</p>
+      ) : (
+        <ol className="space-y-1.5 pb-2">
+          {rows.map((r) => (
+            <li key={r.id} className="rounded-md bg-secondary/60 px-3 py-2">
+              <span className="font-semibold text-foreground">{eventText(r)}</span>
+              <span className="block text-muted-foreground">
+                {new Date(r.created_at).toLocaleString('en-NG')}
+                {r.actor_role ? ` · ${r.actor_role}` : ''}
+              </span>
+              {r.note && <span className="block break-words text-foreground">{r.note}</span>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </details>
+  )
+}
+
+function CorrectPanel({
+  app,
+  onDone,
+  onError,
+}: {
+  app: App
+  onDone: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const options = CORRECTIONS[app.status] ?? []
+  const [target, setTarget] = useState(options[0]?.[0] ?? '')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  if (options.length === 0) return null
+
+  const submit = async () => {
+    if (busy) return
+    if (reason.trim().length < MIN_REASON) {
+      onError(`Write a clear reason for the correction (at least ${MIN_REASON} characters).`)
+      return
+    }
+    if (!window.confirm('Correct this decision? The reason is recorded in the history.')) return
+    setBusy(true)
+    const { error } = await supabase.rpc('eb_admin_override_application', {
+      p_application: app.id,
+      p_new_status: target,
+      p_reason: reason.trim(),
+    })
+    setBusy(false)
+    if (error) {
+      onError(error.message)
+      return
+    }
+    setReason('')
+    onDone('Decision corrected and recorded.')
+  }
+
+  return (
+    <details className="text-xs">
+      <summary className="min-h-11 cursor-pointer py-3 font-semibold text-muted-foreground">Correct this decision</summary>
+      <div className="space-y-2 rounded-md border border-border p-3">
+        <label className="block font-semibold text-foreground">
+          Change to
+          <select
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            className="mt-1 w-full min-h-11 rounded-md border border-border bg-input px-3 py-2 text-sm font-normal"
+          >
+            {options.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block font-semibold text-foreground">
+          Reason (recorded)
+          <textarea
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={600}
+            className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm font-normal"
+          />
+        </label>
+        <p className="text-muted-foreground">
+          This does not work once a tenancy exists for the application. Use the tenancy process instead.
+        </p>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={busy}
+          className={`${btnBase} border border-border`}
+        >
+          {busy && <Loader2 size={14} className="animate-spin" aria-hidden />} Save correction
+        </button>
+      </div>
+    </details>
+  )
+}
 
 export default function AdminApplicationsPage() {
   const [apps, setApps] = useState<App[]>([])
@@ -100,12 +269,15 @@ export default function AdminApplicationsPage() {
   const decide = async (app: App, action: 'request_info' | 'approve' | 'reject') => {
     if (busyId) return
     const note = (notes[app.id] ?? '').trim()
-    if (action === 'request_info' && !note) {
-      setError('Write the question for the tenant first.')
-      return
-    }
-    if (action === 'reject' && !note) {
-      setError('Write a short reason for the tenant first.')
+    if (note.length < MIN_NOTE) {
+      setNotice(null)
+      setError(
+        action === 'request_info'
+          ? 'Write the question for the tenant first.'
+          : action === 'reject'
+            ? 'Write a short reason for the tenant first.'
+            : `Write the reason for approving (at least ${MIN_NOTE} characters). Every decision records why.`
+      )
       return
     }
     const confirmText =
@@ -122,7 +294,7 @@ export default function AdminApplicationsPage() {
     const { error: e } = await supabase.rpc('admin_decide_application', {
       p_application: app.id,
       p_action: action,
-      p_note: note === '' ? null : note,
+      p_note: note,
     })
     if (e) {
       setError(e.message)
@@ -149,7 +321,7 @@ export default function AdminApplicationsPage() {
     <div className="mx-auto w-full max-w-4xl p-4 md:p-6">
       <h1 className="mb-1 text-2xl font-bold text-foreground">Application review</h1>
       <p className="mb-4 text-sm text-muted-foreground">
-        EboHomes makes every final decision. Landlords can only add a recommendation. Approving does not create a tenancy and does not mean any payment was made.
+        EboHomes makes every final decision. Landlords can only add a recommendation. Approving does not create a tenancy and does not mean any payment was made. Every decision needs a reason and is recorded in the history.
       </p>
 
       <div className="mb-4 flex gap-1 overflow-x-auto border-b border-border" role="tablist" aria-label="Application status">
@@ -249,6 +421,8 @@ export default function AdminApplicationsPage() {
                   </details>
                 )}
 
+                <ApplicationDocuments applicationId={a.id} mode="admin" />
+
                 {a.info_request && (a.status === 'info_requested' || a.tenant_reply) && (
                   <p className="text-xs">
                     <span className="font-semibold">Question sent:</span> {a.info_request}
@@ -260,12 +434,12 @@ export default function AdminApplicationsPage() {
                   </p>
                 )}
 
-                {(a.status === 'approved' || a.status === 'rejected') && (
+                {(a.status === 'approved' || a.status === 'rejected' || a.status === 'not_selected' || a.status === 'accepted') && (
                   <p className="text-xs text-muted-foreground">
                     {a.decided_by
                       ? `Decided by ${names[a.decided_by] ?? 'EboHomes staff'}${a.decided_at ? ` on ${fmtDate(a.decided_at)}` : ''}.`
                       : 'Decided by the landlord before EboHomes review began.'}
-                    {a.decision_note ? ` Note: ${a.decision_note}` : ''}
+                    {a.decision_note ? ` Reason: ${a.decision_note}` : ''}
                   </p>
                 )}
                 {a.status === 'approved' && (
@@ -276,21 +450,23 @@ export default function AdminApplicationsPage() {
                   </p>
                 )}
 
+                <HistoryList appId={a.id} />
+
                 {open && (
                   <div className="space-y-2 border-t border-border pt-3">
                     <label className="block text-xs font-semibold text-foreground">
-                      Note for the tenant
+                      Reason or question
                       <textarea
                         rows={2}
                         value={notes[a.id] ?? ''}
                         onChange={(e) => setNotes((n) => ({ ...n, [a.id]: e.target.value }))}
-                        placeholder="Question for the tenant, or reason / note for the decision"
+                        placeholder="Your question for the tenant, or the reason for your decision"
                         maxLength={600}
                         className="mt-1 w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm font-normal"
                       />
                     </label>
                     <p className="text-xs text-muted-foreground">
-                      A note is required to ask a question or to decline. It is optional when approving.
+                      A reason is required for every decision (approve, decline or ask a question). The tenant can see it. It is also saved in the history.
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {a.status === 'pending' && (
@@ -321,6 +497,20 @@ export default function AdminApplicationsPage() {
                     </div>
                   </div>
                 )}
+
+                <CorrectPanel
+                  key={`${a.id}-${a.status}`}
+                  app={a}
+                  onError={(m) => {
+                    setNotice(null)
+                    setError(m)
+                  }}
+                  onDone={async (m) => {
+                    setError(null)
+                    setNotice(m)
+                    await load()
+                  }}
+                />
               </section>
             )
           })}
