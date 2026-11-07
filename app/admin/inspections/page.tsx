@@ -416,6 +416,7 @@ export default function AdminInspectionsPage() {
     const { data } = await supabase
       .from('inspection_jobs')
       .select('id, listing_id, inspector_id, reason, status, needs_second_inspector, created_at, listing:listings(title, location_text)')
+      .eq('service_type', 'verification')
       .neq('status', 'cancelled')
       .order('created_at', { ascending: false })
       .limit(100)
@@ -426,6 +427,7 @@ export default function AdminInspectionsPage() {
     const { data } = await supabase
       .from('property_inspections')
       .select('*, listing:listings(title, location_text)')
+      .eq('service_type', 'verification')
       .eq('review_status', filter)
       .order('inspected_at', { ascending: false })
       .limit(50)
