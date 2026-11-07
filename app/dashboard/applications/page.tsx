@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { ApplicantFacts, ApplicationStatusBadge } from '@/components/application-ui'
 import { ApplicationDocuments } from '@/components/application-documents'
+import { RentalOfferPanel } from '@/components/rental-offer-panel'
 
 // Landlord view of applications for the landlord's OWN properties.
 // EboHomes makes every decision. The landlord can only add a recommendation while the application is still open.
@@ -148,6 +149,9 @@ export default function LandlordApplicationsPage() {
         {/* Phase 11.6: landlords see which document TYPES were provided. They never get the files. */}
         <ApplicationDocuments applicationId={a.id} mode="landlord" />
 
+        {/* Phase 11.7: offers EboHomes prepared for this applicant. Shows nothing until an offer exists. */}
+        <RentalOfferPanel applicationId={a.id} mode="landlord" />
+
         {rec && (
           <p className="rounded-md border border-border bg-secondary/60 p-3 text-sm">
             <span className="font-semibold">{CHOICE_LABEL[rec] ?? 'Recommendation saved'}.</span>
@@ -202,7 +206,7 @@ export default function LandlordApplicationsPage() {
         ) : (
           <p className="text-xs text-muted-foreground">
             {a.status === 'approved'
-              ? 'EboHomes approved this application. Approval does not reserve the property or create a tenancy. Set up the tenancy from Tenancies.'
+              ? 'EboHomes approved this application. Approval does not reserve the property or create a tenancy. EboHomes sends the tenant a rental offer next. Set up the tenancy from Tenancies once they accept.'
               : a.status === 'accepted'
                 ? 'The rental was completed with this applicant.'
                 : a.status === 'not_selected'
