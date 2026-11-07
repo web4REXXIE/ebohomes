@@ -18,6 +18,6 @@ assert.match(sql, /revoke insert, delete, truncate on public\.property_inspectio
 assert.match(sql, /inspection_cutover_policy_backup/)
 assert.match(sql, /cmd = 'ALL'/)
 assert.doesNotMatch(sql, /revoke[^;]*update[^;]*property_inspections/i)  // admin summary edits keep working
-assert.doesNotMatch(sql, /inspection-files/)                             // new bucket untouched
+assert.doesNotMatch(sql.replace(/^\s*--.*$/gm, ''), /inspection-files/)   // new bucket untouched (comments ignored)
 
 console.log('inspection-cutover: all checks passed')
