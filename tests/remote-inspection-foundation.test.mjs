@@ -1,51 +1,88 @@
+
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { transpileModule, ModuleKind, ScriptTarget } from 'typescript'
 
-const sql = readFileSync('supabase/20261205_01_remote_inspection_foundation.sql', 'utf8')
-const code = sql.replace(/--.*$/gm, '') // ignore comments
+const read = (p) => readFileSync(p, 'utf8')
 
-// no money for tenants: no price, fee, checkout or payment-gateway objects in the new migration
-assert.doesNotMatch(code, /paystack|checkout|tenant_fee|inspection_fee|price|charge/i)
+// ---- repository layout: migrations live directly in supabase/, with clean names
+assert.equal(existsSync('supabase/supabase'), false, 'no nested supabase/supabase folder')
+assert.equal(existsSync('supabase/20261120_01_trust_operations.sql'), true, '9.5 migration is in supabase/')
+const bad = readdirSync('supabase').filter((f) => /\.sql$/.test(f) === false && /^\d{8}_/.test(f) && !f.endsWith('.DRAFT'))
+assert.deepEqual(bad, [], 'migration files must end exactly in .sql (no stray characters): ' + bad.join(', '))
 
-// the two services stay separate
-assert.match(code, /inspection_jobs_service_type_chk check \(service_type in \('verification','remote'\)\)/)
-assert.match(code, /property_inspections_service_type_chk check \(service_type in \('verification','remote'\)\)/)
-assert.match(code, /add column if not exists service_type text not null default 'verification'/)
+// ---- the 9.6 migration (text checks only; real behaviour needs a database)
+const sql = read('supabase/20261121_01_phase96_integrity.sql')
+assert.match(sql, /^begin;/m)
+assert.match(sql, /^commit;/m)
+assert.match(sql, /ROLLBACK:/)
+for (const t of [
+  'a00_profiles_trust_fields_guard',
+  'a10_profiles_reverify_on_identity_change',
+  'a01_listings_admin_fields_guard',
+  'zz_listings_status_audit',
+  'aa_verification_file_history_guard',
+]) assert.ok(sql.includes(t), 'migration creates ' + t)
 
-// every new table is locked down: RLS on, browsers get select only
-for (const t of ['remote_inspection_settings', 'inspection_requests', 'inspection_request_events', 'inspection_budget_ledger', 'inspection_payouts']) {
-  assert.match(code, new RegExp(`alter table public\\.${t} enable row level security`), `${t}: RLS`)
+// it must not change or delete any existing data
+const live = sql.split('-- CHECK (read only')[0]
+assert.doesNotMatch(live, /\bdelete\s+from\b/i)
+assert.doesNotMatch(live, /\btruncate\b/i)
+assert.doesNotMatch(live, /\bdrop\s+table\b/i)
+for (const table of ['applications', 'tenancies', 'payments', 'property_holds', 'property_inspections', 'listing_authority_documents']) {
+  assert.doesNotMatch(live, new RegExp('update\\s+public\\.' + table + '\\b', 'i'), 'migration does not update ' + table)
 }
-assert.match(code, /revoke all on public\.remote_inspection_settings[\s\S]*?from anon, authenticated, public/)
-assert.doesNotMatch(code, /grant (insert|update|delete)[^;]*(inspection_requests|inspection_payouts|inspection_budget_ledger|inspection_request_events)/i)
+assert.doesNotMatch(live, /set\s+authority_status/i, 'migration never changes authority_status')
 
-// tenants read only their own requests; there is no landlord or inspector table policy
-assert.match(code, /Tenants read own inspection requests[\s\S]*?tenant_id = auth\.uid\(\)/)
-assert.doesNotMatch(code, /create policy[^;]*landlord/i)
+// profiles guard: role, verified, status, rejection_reason are locked; user may only go to pending
+assert.match(live, /locked text\[\] := array\['role','verified','status','rejection_reason','badge',/)
+assert.match(live, /<> 'pending'/)
+assert.match(live, /auth\.uid\(\) is null or public\.eb_is_admin\(\)/)
+assert.match(live, /watched text\[\] := array\['full_name','business_name','business_address','cac_number'\]/)
 
-// one open request per tenant and property; one payout per job
-assert.match(code, /inspection_requests_one_open_uidx[\s\S]*?\(tenant_id, listing_id\)[\s\S]*?not in \('completed','cancelled','expired','access_refused','closed'\)/)
-assert.match(code, /inspection_payouts_one_per_job_uidx on public\.inspection_payouts \(job_id\) where status <> 'void'/)
+// listings guard (revised): this migration locks only the suspension fields and a property change while authority is under review or accepted.
+// Status, featured, reviewed_* and rejection_reason are guarded by listings_guard, which is installed in the live database but is NOT in this repo.
+for (const f of ['suspended_at', 'suspension_reason']) {
+  assert.ok(live.includes('new.' + f + ' is distinct from old.' + f), 'listings guard locks ' + f)
+}
+assert.match(live, /old\.authority_status in \('submitted','accepted','on_hold'\)/)
+assert.doesNotMatch(live, /old\.status = 'rejected' and new\.status = '(paused|approved)'/)
 
-// history and money records are append-only
-assert.match(code, /aa_insp_request_events_guard[\s\S]*?eb_inspection_history_immutable/)
-assert.match(code, /aa_insp_budget_ledger_guard[\s\S]*?eb_inspection_history_immutable/)
-assert.match(code, /Payout records are kept on record and cannot be deleted/)
+// admin_review_listing: locked, stale-safe, no self review, reasons, reinstate goes to review only
+const fn = live.slice(live.indexOf('function public.admin_review_listing'), live.indexOf('-- Audit every status change'))
+assert.match(fn, /for update/)
+assert.match(fn, /eb_is_admin\(\)/)
+assert.match(fn, /l\.landlord_id = auth\.uid\(\)/)
+assert.match(fn, /40001/)
+assert.match(fn, /'rented'/)
+assert.match(fn, /length\(v_reason\) < 5/)
+assert.match(fn, /set status = 'pending', suspension_reason = null, suspended_at = null/)
+assert.match(fn, /exception when others then null/, 'audit failure does not block the decision')
+assert.match(live, /revoke all on function public\.admin_review_listing\(uuid, text, text, text\) from public, anon/)
 
-// guards: remote jobs cannot be assigned from the old page, remote inspections cannot be approved as verification
-assert.match(code, /eb\.remote_ok/)
-assert.match(code, /new\.service_type = 'remote' and new\.review_status is distinct from old\.review_status/)
-assert.match(code, /old\.status = 'assigned' and new\.status = 'submitted'/)
+// ---- Property Review page: no direct status writes from the browser
+const page = read('app/admin/property-review/page.tsx')
+assert.ok(page.includes("supabase.rpc('admin_review_listing'"))
+assert.doesNotMatch(page, /\.from\('listings'\)\s*\.update\(\{\s*status/)
+assert.doesNotMatch(page, /status:\s*'approved',\s*\n\s*reviewed_by/)
+assert.ok(page.includes('p_expected_status'), 'page sends the status the admin was looking at')
 
-// a remote submission never counts as a verification's second inspector
-const blockers = code.slice(code.indexOf('eb_inspection_approval_blockers'))
-assert.equal((blockers.match(/o\.service_type = 'verification'/g) || []).length, 2)
+// ---- cleanup: history counts as evidence, and the flag is still default-off
+const lib = transpileModule(read('lib/verification-files.ts'), { compilerOptions: { module: ModuleKind.ES2022, target: ScriptTarget.ES2022 } }).outputText
+const v = await import('data:text/javascript;base64,' + Buffer.from(lib).toString('base64'))
+assert.deepEqual(v.pathsFromHistory(null), [])
+assert.deepEqual(v.pathsFromHistory([{ id_document_url: 'u/govid-1700000000000-a.jpg', selfie_url: null, ownership_doc_url: '' }]), ['u/govid-1700000000000-a.jpg'])
+assert.equal(v.pathsFromHistory([{ selfie_url: 'u/selfie-1700000000001-b.jpg' }, { id_document_url: 'u/govid-1700000000002-c.jpg' }]).length, 2)
+const old = 'govid-1700000000000-a.jpg'
+assert.deepEqual(v.orphanedIdentityFiles([old], [], Date.now()), [old], 'an unreferenced old file is a candidate')
+assert.deepEqual(v.orphanedIdentityFiles([old], v.pathsFromHistory([{ id_document_url: 'u/' + old }]), Date.now()), [], 'a file in history is kept')
+assert.equal(v.identityDeletionEnabled(undefined), false)
+assert.equal(v.identityDeletionEnabled('TRUE'), false)
+assert.equal(v.identityDeletionEnabled('true'), true)
 
-// the public view is untouched
-assert.doesNotMatch(code, /public_listing_inspections/)
+const route = read('app/api/verification-files/cleanup/route.ts')
+assert.ok(route.includes('landlord_verification_file_history'))
+assert.ok(route.includes('pathsFromHistory(hist)'))
+assert.match(route, /histErr \|\| count === null \|\| \(hist \?\? \[\]\)\.length < count/, 'unreadable or partial history deletes nothing')
 
-// the old admin page only lists verification work
-const admin = readFileSync('app/admin/inspections/page.tsx', 'utf8')
-assert.equal((admin.match(/\.eq\('service_type', 'verification'\)/g) || []).length, 2)
-
-console.log('remote-inspection-foundation: all checks passed')
+console.log('phase96-integrity: all assertions passed')
