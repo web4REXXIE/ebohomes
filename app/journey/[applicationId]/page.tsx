@@ -5,6 +5,7 @@ import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { RentalJourney } from '@/components/rental-journey'
 import { RentalOfferPanel } from '@/components/rental-offer-panel'
+import { ReservationBanner } from '@/components/reservation-banner'
 
 export default function TenantRentalJourneyPage() {
   const params = useParams()
@@ -14,7 +15,8 @@ export default function TenantRentalJourneyPage() {
       <Header />
       <main className="flex-1">
         {/* Phase 11.7: appears only when EboHomes has sent this tenant a rental offer. */}
-        <div className="mx-auto w-full max-w-4xl px-4 pt-6 empty:hidden">
+        <div className="mx-auto w-full max-w-4xl space-y-4 px-4 pt-6 empty:hidden">
+          <ReservationBanner applicationId={applicationId} />
           <RentalOfferPanel applicationId={applicationId} mode="tenant" />
         </div>
         <RentalJourney applicationId={applicationId} />
