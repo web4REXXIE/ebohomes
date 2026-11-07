@@ -4,13 +4,14 @@ import {
   INSPECTION_BUCKET, UUID_RE, friendlyInspectionError, isValidInspectionPath, kindForMime, normaliseCaptureMethod,
   sniffInspectionMime, validateInspectionFileMeta,
 } from '@/lib/inspection-evidence'
+import { PHOTO_TOPICS } from '@/lib/surroundings'
 import { authUser, fail } from '@/lib/payment-submission-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// POST { job_id, request_id?, path, name, capture_method } -> registers an uploaded file as evidence ("staged").
+// POST { job_id, request_id?, path, name, capture_method, topic? } -> registers an uploaded file as evidence ("staged").
 // The server re-checks the file exists, reads its true size, streams it to read its real type from its first bytes and to compute
 // a SHA-256 fingerprint. A file that fails any check is removed from storage. Registering a file never makes an inspection pass:
 // only an admin decision does, and only after the files are reviewed.
@@ -64,10 +65,12 @@ export async function POST(req: Request) {
   const kind = kindForMime(mime)!
   const original = typeof body.name === 'string' ? body.name.replace(/[\u0000-\u001f]/g, '').slice(0, 200) : null
   const method = normaliseCaptureMethod(body.capture_method)
+  // Empty topic means "the property itself". Anything not in the list is ignored.
+  const topic = typeof body.topic === 'string' && PHOTO_TOPICS.some((t) => t.value === body.topic) ? body.topic : null
 
   const { data, error } = requestId
     ? await db.rpc('eb_inspection_register_supplement_file', { p_user: user.id, p_request: requestId, p_kind: kind, p_path: path, p_name: original, p_mime: mime, p_size: bytes, p_sha256: sha256, p_method: method })
-    : await db.rpc('eb_inspection_register_file', { p_user: user.id, p_job: jobId, p_kind: kind, p_path: path, p_name: original, p_mime: mime, p_size: bytes, p_sha256: sha256, p_method: method })
+    : await db.rpc('eb_inspection_register_file', { p_user: user.id, p_job: jobId, p_kind: kind, p_path: path, p_name: original, p_mime: mime, p_size: bytes, p_sha256: sha256, p_method: method, p_topic: topic })
   if (error) {
     console.error('inspection file register failed:', error.code)
     // These codes are the database's own plain refusals. The stored object is removed so nothing is left behind.
