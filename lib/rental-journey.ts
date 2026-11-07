@@ -33,7 +33,7 @@ export type JourneyInput = {
 }
 
 export type Phase =
-  | 'withdrawn' | 'rejected' | 'unknown' | 'under_review' | 'info_requested'
+  | 'withdrawn' | 'rejected' | 'not_selected' | 'unknown' | 'under_review' | 'info_requested'
   | 'v_none' | 'v_waiting' | 'v_proposed' | 'v_scheduled' | 'v_decide' | 'v_confirm' | 'v_declined' | 'v_retry'
   | 'awaiting_tenancy' | 'waitlisted'
   | 'terms_none' | 'terms_review' | 'terms_waiting_landlord' | 'terms_accepted' | 'terms_signed' | 'payment_confirm'
@@ -58,6 +58,9 @@ export type Journey = {
 }
 
 const ENDED = ['ended', 'terminated', 'cancelled', 'expired']
+
+// A closed application: nothing more will happen on it.
+const isClosed = (p: Phase) => p === 'withdrawn' || p === 'rejected' || p === 'not_selected'
 
 export const STEP_TITLE: Record<StepKey, string> = {
   application: 'Application',
@@ -110,6 +113,7 @@ export function computePhase(inp: JourneyInput): Phase {
   }
   if (app.status === 'withdrawn') return 'withdrawn'
   if (app.status === 'rejected') return 'rejected'
+  if (app.status === 'not_selected') return 'not_selected'
   if (app.status === 'info_requested') return 'info_requested'
   if (app.status === 'pending') return 'under_review'
   if (app.status !== 'approved') return 'unknown'
@@ -139,6 +143,7 @@ function currentIndex(p: Phase): number {
   switch (p) {
     case 'withdrawn': return 0
     case 'rejected':
+    case 'not_selected':
     case 'unknown':
     case 'under_review':
     case 'info_requested': return 1
@@ -168,6 +173,7 @@ function stepLabel(key: StepKey, phase: Phase, state: StepState, v: JourneyViewi
     case 'decision':
       if (state === 'done') return { label: 'Approved', tone: 'green' }
       if (phase === 'rejected') return { label: 'Not approved', tone: 'red' }
+      if (phase === 'not_selected') return { label: 'Not selected', tone: 'grey' }
       if (phase === 'info_requested') return { label: 'More information needed', tone: 'amber' }
       if (phase === 'under_review') return { label: 'Awaiting decision', tone: 'amber' }
       if (phase === 'unknown') return { label: 'Status not recognised', tone: 'grey' }
@@ -184,12 +190,12 @@ function stepLabel(key: StepKey, phase: Phase, state: StepState, v: JourneyViewi
           : viewingLabel(v?.status)
         return { label, tone }
       }
-      if (phase === 'withdrawn' || phase === 'rejected') return { label: 'Unavailable', tone: 'grey' }
+      if (isClosed(phase)) return { label: 'Unavailable', tone: 'grey' }
       return { label: sideViewingLabel(v), tone: v ? 'blue' : 'grey' }
     }
     case 'setup': {
       if (state === 'done') return { label: 'Complete', tone: 'green' }
-      if (state === 'upcoming') return { label: phase === 'withdrawn' || phase === 'rejected' ? 'Unavailable' : 'Not started', tone: 'grey' }
+      if (state === 'upcoming') return { label: isClosed(phase) ? 'Unavailable' : 'Not started', tone: 'grey' }
       switch (phase) {
         case 'awaiting_tenancy': return { label: 'Landlord setting up', tone: 'amber' }
         case 'waitlisted': return { label: 'On the waiting list', tone: 'blue' }
@@ -205,7 +211,7 @@ function stepLabel(key: StepKey, phase: Phase, state: StepState, v: JourneyViewi
     case 'active':
       if (phase === 'active') return { label: 'Tenancy record active', tone: 'green' }
       if (phase === 'ended') return { label: 'Tenancy ended', tone: 'grey' }
-      return { label: phase === 'withdrawn' || phase === 'rejected' ? 'Unavailable' : 'Not started', tone: 'grey' }
+      return { label: isClosed(phase) ? 'Unavailable' : 'Not started', tone: 'grey' }
   }
 }
 
@@ -213,7 +219,7 @@ export function buildJourney(inp: JourneyInput): Journey {
   const phase = computePhase(inp)
   const cur = currentIndex(phase)
   const v = pickViewing(inp.viewings)
-  const closed = phase === 'withdrawn' || phase === 'rejected'
+  const closed = isClosed(phase)
   const steps = STEP_ORDER.map((key, i): JourneyStep => {
     const state: StepState = i < cur ? 'done' : i === cur ? (closed ? 'stopped' : 'current') : 'upcoming'
     const { label, tone } = stepLabel(key, phase, state, v, inp.app)
@@ -227,7 +233,7 @@ export function buildJourney(inp: JourneyInput): Journey {
 export function lockedReason(journey: Journey, key: StepKey): string | null {
   const step = journey.steps.find((s) => s.key === key)
   if (!step || step.state !== 'upcoming') return null
-  const closed = journey.phase === 'withdrawn' || journey.phase === 'rejected'
+  const closed = isClosed(journey.phase)
   if (closed) return 'This application is closed, so this step will not happen. No tenancy will be set up from it.'
   switch (key) {
     case 'viewing':
@@ -280,7 +286,7 @@ export const NO_RESERVATION_NOTICE =
 
 // The notice applies from the moment of applying until the signed agreement is recorded.
 export function showsNoReservationNotice(phase: Phase): boolean {
-  return !['withdrawn', 'rejected', 'unknown', 'terms_signed', 'payment_confirm', 'active', 'ended'].includes(phase)
+  return !['withdrawn', 'rejected', 'not_selected', 'unknown', 'terms_signed', 'payment_confirm', 'active', 'ended'].includes(phase)
 }
 
 const on = (d?: string | null) => (d ? ` on ${d}` : '')
@@ -293,6 +299,8 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
       return { tone: 'grey', needsYou: false, heading: 'Application withdrawn', happened: 'You withdrew this application.', means: 'It is closed. No tenancy will be set up and nothing was charged.', next: 'You can apply again if you change your mind and the property is still listed.', action: 'Nothing to do.', cta: apply }
     case 'rejected':
       return { tone: 'red', needsYou: false, heading: 'EboHomes did not approve this application', happened: `EboHomes reviewed your application${on(c.decidedOn)} and did not approve it.`, means: 'The application is closed. No payment was taken and no tenancy will be created from it.', next: 'Read EboHomes’ note below if one was given. You can apply again or look at other properties.', action: 'Nothing to do on this application.', cta: apply }
+    case 'not_selected':
+      return { tone: 'grey', needsYou: false, heading: 'Another applicant secured this property', happened: `Another applicant completed the rental for this property${on(c.decidedOn)}.`, means: 'This is not a rejection of you. Your application is closed, no tenancy will be created from it and nothing was charged.', next: 'You can look at other properties and apply again.', action: 'Nothing to do on this application.', cta: { label: 'Browse other properties', href: '/search' } }
     case 'unknown':
       return { tone: 'grey', needsYou: false, heading: 'We cannot tell where this application is', happened: `Its saved status is “${c.appStatus ?? 'unknown'}”.`, means: 'We do not recognise this status, so we are not guessing what happens next.', next: 'Contact EboHomes and quote your application reference.', action: 'Contact EboHomes if you need help.', cta: { label: 'Contact EboHomes', href: '/contact' } }
     case 'under_review':
@@ -318,7 +326,7 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
     case 'awaiting_tenancy':
       return { tone: 'amber', needsYou: false, heading: 'Your tenancy is being set up', happened: `You confirmed${on(c.interestOn)} that you want to proceed.`, means: 'The landlord now creates your tenancy and proposes the rental terms. Nothing is reserved or charged yet.', next: 'You will be notified, and your tenancy will appear here.', action: none, cta: null }
     case 'waitlisted':
-      return { tone: 'blue', needsYou: false, heading: 'You are on the waiting list for this property', happened: 'EboHomes approved your application, but another applicant’s tenancy for this property is already in progress.', means: 'You have not been rejected and you have not rented this property. The property is only confirmed as rented after payment is verified and the key handover is confirmed.', next: 'If that rental does not go through, EboHomes can move you forward. You will be notified. You can also look at other properties.', action: 'Nothing to do right now.', cta: { label: 'Browse other properties', href: '/search' } }
+      return { tone: 'blue', needsYou: false, heading: 'You are on the waiting list for this property', happened: 'EboHomes approved your application, but another applicant’s tenancy for this property is already in progress.', means: 'You have not been rejected and you have not rented this property. The property is only confirmed as rented after the first rent payment is verified.', next: 'If that rental does not go through, EboHomes can move you forward. You will be notified. You can also look at other properties.', action: 'Nothing to do right now.', cta: { label: 'Browse other properties', href: '/search' } }
     case 'terms_none':
       return { tone: 'amber', needsYou: false, heading: 'Your rental terms are being prepared', happened: 'Your tenancy record has been created.', means: 'The landlord proposes the rent, deposit, fees and dates. You will be asked to accept them.', next: 'Wait for the landlord’s proposal. You will be notified.', action: none, cta: c.tenancyId ? { label: 'See your tenancy', step: 'setup' } : null }
     case 'terms_review':
@@ -337,16 +345,16 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
       return { tone: 'amber', needsYou: false, heading: 'Agreement recorded. Payment is next', happened: 'EboHomes recorded your signed agreement.', means: 'Your tenancy becomes active after EboHomes verifies your payment. An uploaded receipt is not proof of payment.', next: 'Pay what is due using the payment section, then send your payment evidence. EboHomes checks it before your tenancy becomes active.', action: 'Pay and submit your payment evidence.', cta: pay }
     }
     case 'payment_confirm':
-      return { tone: 'amber', needsYou: true, heading: 'EboHomes verified your payment. Enter your confirmation code', happened: 'EboHomes confirmed that your payment arrived and emailed you a confirmation code.', means: 'Your confirmation is not complete until you enter the code. The property is only confirmed as rented after payment is verified and the key handover is confirmed.', next: 'Open the confirmation page and enter the code from your email. If it has not arrived, contact EboHomes.', action: 'Enter your confirmation code.', cta: c.awaitingConfirmationId ? { label: 'Enter confirmation code', href: `/payment-confirmation/${c.awaitingConfirmationId}` } : null }
+      return { tone: 'amber', needsYou: true, heading: 'EboHomes verified your payment. Enter your confirmation code', happened: 'EboHomes confirmed that your payment arrived and emailed you a confirmation code.', means: 'Your confirmation is not complete until you enter the code. The property is only confirmed as rented after the first rent payment is verified.', next: 'Open the confirmation page and enter the code from your email. If it has not arrived, contact EboHomes.', action: 'Enter your confirmation code.', cta: c.awaitingConfirmationId ? { label: 'Enter confirmation code', href: `/payment-confirmation/${c.awaitingConfirmationId}` } : null }
     case 'active':
       if (c.renewalOffered)
         return { tone: 'amber', needsYou: true, heading: 'Your tenancy is active. You have a renewal offer', happened: 'The landlord sent you a renewal offer.', means: 'Responding records your decision only. No payment is taken.', next: 'Accept or decline the offer in the Active Tenancy stage below.', action: 'Respond to the renewal offer.', cta: { label: 'Respond to renewal offer', step: 'active' } }
       if (c.handover === 'completed')
         return { tone: 'green', needsYou: false, heading: 'Rental complete. Payment verified and key handover confirmed', happened: 'EboHomes verified your payment and the key handover was confirmed.', means: 'Your agreed rent, payments, receipts and records are kept here.', next: 'Pay rent when it is due and keep your receipts.', action: 'Nothing is required unless a payment is due.', cta: c.tenancyId ? { label: 'See rent, receipts and records', step: 'active' } : null }
       if (c.handover === 'disputed')
-        return { tone: 'amber', needsYou: false, heading: 'Your tenancy is active. The key handover is under review', happened: 'The key handover was disputed.', means: 'EboHomes is reviewing it. The rental is not complete until the handover is confirmed.', next: 'Wait for EboHomes’ decision. You will be notified.', action: none, cta: c.tenancyId ? { label: 'See handover', step: 'active' } : null }
+        return { tone: 'amber', needsYou: false, heading: 'Your tenancy is active. The key handover is under review', happened: 'The key handover was disputed.', means: 'EboHomes is reviewing it. The handover is not complete until it is confirmed.', next: 'Wait for EboHomes’ decision. You will be notified.', action: none, cta: c.tenancyId ? { label: 'See handover', step: 'active' } : null }
       if (c.handover === 'none' || c.handover === 'tenant_confirmed' || c.handover === 'landlord_confirmed')
-        return { tone: 'amber', needsYou: c.handover === 'none' || c.handover === 'landlord_confirmed', heading: 'Payment verified. Key handover still to confirm', happened: 'EboHomes verified your payment.', means: c.handover === 'tenant_confirmed' ? 'You confirmed the key handover. The landlord has not yet.' : c.handover === 'landlord_confirmed' ? 'The landlord confirmed the key handover. You have not yet.' : 'Neither you nor the landlord has confirmed the key handover yet. The rental is not complete until both do.', next: 'Confirm the key handover in the Active Tenancy stage once you have the keys.', action: c.handover === 'tenant_confirmed' ? none : 'Confirm the key handover when you receive the keys.', cta: c.tenancyId ? { label: 'Confirm key handover', step: 'active' } : null }
+        return { tone: 'amber', needsYou: c.handover === 'none' || c.handover === 'landlord_confirmed', heading: 'Payment verified. Key handover still to confirm', happened: 'EboHomes verified your payment.', means: c.handover === 'tenant_confirmed' ? 'You confirmed the key handover. The landlord has not yet.' : c.handover === 'landlord_confirmed' ? 'The landlord confirmed the key handover. You have not yet.' : 'Neither you nor the landlord has confirmed the key handover yet. Your tenancy is active, and the handover is recorded when both of you confirm.', next: 'Confirm the key handover in the Active Tenancy stage once you have the keys.', action: c.handover === 'tenant_confirmed' ? none : 'Confirm the key handover when you receive the keys.', cta: c.tenancyId ? { label: 'Confirm key handover', step: 'active' } : null }
       return { tone: 'green', needsYou: false, heading: 'Your tenancy is active', happened: 'Your tenancy status is active.', means: 'Your agreed rent, payments, receipts and records are kept here.', next: 'Pay rent when it is due and keep your receipts. Handover, repairs, disputes and deposit are in the Active Tenancy stage.', action: 'Nothing is required unless a payment is due.', cta: c.tenancyId ? { label: 'See rent, receipts and handover', step: 'active' } : null }
     case 'ended':
       return { tone: 'grey', needsYou: false, heading: 'This tenancy has ended', happened: 'Your tenancy is no longer running.', means: 'Your records and receipts stay available here for your reference.', next: 'You can look at other properties if you want to rent again.', action: 'Nothing to do.', cta: { label: 'Browse other properties', href: '/search' } }
