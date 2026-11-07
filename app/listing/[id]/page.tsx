@@ -1098,4 +1098,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-         }
+        }
