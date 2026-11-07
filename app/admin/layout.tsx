@@ -31,6 +31,7 @@ const NAV_GROUPS: { title: string | null; items: NavItem[] }[] = [
   ] },
   { title: 'Rentals', items: [
     { href: '/admin/applications', label: 'Applications', icon: ClipboardCheck },
+    { href: '/admin/offers', label: 'Rental Offers', icon: ClipboardList },
     { href: '/admin/viewings', label: 'Viewings', icon: ClipboardList },
     { href: '/admin/handovers', label: 'Handovers', icon: ShieldCheck },
     { href: '/admin/cases', label: 'Cases', icon: ClipboardList },
