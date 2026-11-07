@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/run-tests.mjs"
+    "test": "node scripts/run-tests.mjs",
+    "test:db": "node scripts/db-scenarios.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
