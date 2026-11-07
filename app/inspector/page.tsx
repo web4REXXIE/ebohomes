@@ -10,6 +10,7 @@ import {
 } from '@/lib/inspection-evidence'
 import { PHOTO_TOPICS, looksLikeSafetyClaim } from '@/lib/surroundings'
 import { SurroundingsForm, buildSurroundingsFacts } from '@/components/surroundings-form'
+import { InspectorRemoteOffers } from '@/components/inspector-remote-offers'
 
 const CATS = [
   { label: 'Road', notes: 'road_condition', match: 'road_matches', ph: 'e.g. tarred, good condition' },
@@ -354,6 +355,8 @@ export default function InspectorPage() {
         </div>
       )}
 
+      {!job && <InspectorRemoteOffers onChanged={loadJobs} />}
+
       {!job && (
         <div className="space-y-3">
           {jobs.filter((j) => j.status === 'assigned').length === 0 && supp.length === 0 && (
@@ -492,4 +495,4 @@ export default function InspectorPage() {
       )}
     </div>
   )
-                                                                                                    }
+                                        }
