@@ -12,6 +12,7 @@ import { PayOnlinePanel } from '@/components/pay-online-panel'
 import { TenancyHub } from '@/components/tenancy-hub'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { ApplicantFacts, ApplicationStatusBadge } from '@/components/application-ui'
+import { ApplicationDocuments } from '@/components/application-documents'
 import { listingIsLive } from '@/lib/property-display'
 import { fmtDate, fmtDateTime, naira, toIso } from '@/lib/case-status'
 import { OPEN_STATUSES, TONE_CLASS, normaliseNgPhone, tenantPanel, viewingLabel, viewingTone, type Tone } from '@/lib/viewing-status'
@@ -458,6 +459,12 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         <Row label="Application status"><ApplicationStatusBadge status={app.status} /></Row>
       </dl>
       <ApplicantFacts data={extra.application_data} />
+      {/* Phase 11.6: optional private documents. Only you and EboHomes staff can open them. */}
+      <ApplicationDocuments
+        applicationId={app.id}
+        mode="tenant"
+        canEdit={app.status === 'pending' || app.status === 'info_requested' || (app.status === 'approved' && !tenancyRow)}
+      />
       {app.message && <p className="rounded-md bg-secondary p-3 text-sm"><span className="font-semibold">Your message: </span>{app.message}</p>}
       <details className="text-sm">
         <summary className="min-h-11 cursor-pointer py-2 font-semibold text-foreground">Full property details</summary>
@@ -896,4 +903,4 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       </section>
     </div>
   )
-}
+        }
