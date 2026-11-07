@@ -57,7 +57,7 @@ export default function EditListingPage() {
 
       const { data, error } = await supabase
         .from('listings')
-        .select('*')
+        .select('id, location_text, property_type, bedrooms, price_monthly, description, availability_date')
         .eq('id', id)
         .eq('landlord_id', user.id)
         .single();
@@ -84,9 +84,11 @@ export default function EditListingPage() {
         availabilityDate: data.availability_date || '',
       });
 
-      if (data.lat != null && data.lng != null) {
-        const lat = Number(data.lat);
-        const lng = Number(data.lng);
+      // The exact pin is not readable from the table any more. The owner gets their own pin from this function.
+      const { data: exact } = await supabase.rpc('listing_exact_location', { p_listing: id });
+      if (exact && exact.lat != null && exact.lng != null) {
+        const lat = Number(exact.lat);
+        const lng = Number(exact.lng);
         if (!Number.isNaN(lat) && !Number.isNaN(lng)) setPin({ lat, lng });
       }
 
