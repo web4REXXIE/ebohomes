@@ -257,7 +257,7 @@ export function friendlyError(message: string | null | undefined): string {
   if (!m) return 'Something went wrong. Please try again.'
   const technical = /relation|column|function|syntax|violates|permission denied|jwt|schema|pg_|uuid/i.test(m)
   return technical ? 'Something went wrong. Please try again.' : m
-                      }
+}
 
 // ---------------------------------------------------------------- Step D: admin queue and inspector offers (pure helpers)
 export type QueueRow = {
@@ -332,4 +332,61 @@ export function suggestionLine(s: Suggestion): string {
   const parts = [s.area_match ? 'Works in this area' : 'Area not matched', `${s.workload} open`, `${s.approved_work} approved before`]
   if (s.declined_this) parts.push('declined or missed this one')
   return parts.join(' · ')
+}
+
+// ---------------------------------------------------------------- Step E2: the tenant's private report (pure helpers)
+export type ReportFinding = { key: string; text?: string | null; matches?: boolean | null }
+export type ReportFile = { id: string; kind: 'photo' | 'video'; name?: string | null; bytes?: number }
+export type Report = {
+  request_id: string
+  ref?: string | null
+  title?: string | null
+  location_text?: string | null
+  visited_at?: string | null
+  released_at?: string | null
+  message?: string | null
+  verdict: string
+  verdict_reason?: string | null
+  rent_matches?: boolean | null
+  listing_matches?: boolean | null
+  neighborhood_type?: string | null
+  nearby_landmarks?: string | null
+  notes?: string | null
+  findings: ReportFinding[]
+  files: ReportFile[]
+}
+
+export const FINDING_LABEL: Record<string, string> = {
+  road: 'Road',
+  water: 'Water',
+  electricity: 'Electricity',
+  network: 'Phone network',
+  security: 'Security',
+  condition: 'Condition of the property',
+  environment: 'Surroundings',
+}
+
+// Plain words for the tenant. A FAIL or UNCERTAIN is a valid report, not an error.
+export function verdictText(verdict: string): { label: string; line: string; tone: Tone } {
+  switch ((verdict ?? '').toLowerCase()) {
+    case 'pass':
+      return { label: 'Matches the listing', line: 'The inspector found the property broadly as it was described.', tone: 'green' }
+    case 'fail':
+      return { label: 'Does not match the listing', line: 'The inspector found important differences from the listing. Read the details below before you decide.', tone: 'red' }
+    default:
+      return { label: 'Could not be confirmed', line: 'The inspector could not confirm everything. Read the details below before you decide.', tone: 'amber' }
+  }
+}
+
+export function matchText(v: boolean | null | undefined): { label: string; tone: Tone } | null {
+  if (v === true) return { label: 'Matches the listing', tone: 'green' }
+  if (v === false) return { label: 'Differs from the listing', tone: 'amber' }
+  return null
+}
+
+export const REPORT_PRIVACY_NOTE =
+  'This report is private to you. The owner and other tenants cannot see it, and it does not give the property an Inspected badge. Please do not share the photos or videos.'
+
+export function reportHref(requestId: string): string {
+  return `/inspections/${requestId}`
 }
