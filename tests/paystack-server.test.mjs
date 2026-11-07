@@ -92,7 +92,7 @@ for (const [st, want] of [['failed', 'failed'], ['abandoned', 'abandoned']]) {
 {
   const row = mkRow(); const db = fakeDb(row)
   const r = await settleReference(db, 'sk', 'EBO-1', reply({ ...good, amount: 100 }))
-  assert.equal(r.status, 'mismatch'); assert.equal(r.linked, false); assert.deepEqual(db.log.rpc, [])
+  assert.equal(r.status, 'mismatch'); assert.equal(r.linked, false); assert.deepEqual(db.log.rpc, ['notify_admins'])
 }
 // 8. Paystack unreachable or erroring: safe to retry, nothing changes.
 {
