@@ -20,15 +20,25 @@ async function readRow(db: SupabaseClient, reference: string) {
   return data as any
 }
 
+// The database function (20261207_03) creates the payments row exactly once ('recorded', waiting for EboHomes to verify it).
+// If it fails, the reason is saved on the Paystack row and admins reconcile by hand. A later webhook or status check tries again.
 async function tryLink(db: SupabaseClient, reference: string): Promise<boolean> {
-  // The database function (20261024_04, not installed yet) creates the payments row exactly once.
-  // Until it exists this returns false and admins reconcile by hand from the notification.
   try {
     const { error } = await db.rpc('eb_link_paystack_payment', { p_reference: reference })
-    return !error
+    if (!error) return true
+    try {
+      await db.from('paystack_transactions').update({ link_error: String(error.message ?? 'link failed').slice(0, 500) }).eq('reference', reference)
+    } catch { /* best effort only */ }
+    return false
   } catch {
     return false
   }
+}
+
+async function alertAdmins(db: SupabaseClient, title: string, message: string) {
+  try {
+    await db.rpc('notify_admins', { p_title: title, p_message: message, p_link: '/admin/payments', p_type: 'payment' })
+  } catch { /* best effort only */ }
 }
 
 export async function settleReference(
@@ -76,15 +86,20 @@ export async function settleReference(
   if (status === 'paid' && !linked) linked = await tryLink(db, reference)
 
   if (changed && status === 'paid') {
-    try {
-      await db.rpc('notify_admins', {
-        p_title: 'Online payment received',
-        p_message: linked
-          ? 'A Paystack payment was confirmed by the server and added to Payments. Please verify it.'
-          : 'A Paystack payment was confirmed by the server but is not in Payments yet. Reconcile it by hand.',
-        p_link: '/admin/payments', p_type: 'payment',
-      })
-    } catch { /* best effort only */ }
+    await alertAdmins(
+      db,
+      'Online payment received',
+      linked
+        ? 'A Paystack payment was confirmed by the server and added to Payments. Please verify it.'
+        : 'A Paystack payment was confirmed by the server but is not in Payments yet. Reconcile it by hand.',
+    )
+  }
+  if (changed && status === 'mismatch') {
+    await alertAdmins(
+      db,
+      'Online payment does not match',
+      'Paystack reported a charge whose amount, currency or reference does not match what EboHomes expected. It was not added to Payments. Review it by hand.',
+    )
   }
   return { found: true, status, changed, linked, providerError: false }
 }
