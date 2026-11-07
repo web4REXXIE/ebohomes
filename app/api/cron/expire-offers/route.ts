@@ -14,18 +14,33 @@ function secretMatches(header: string | null, secret: string): boolean {
 }
 
 // Vercel Cron calls this with GET and "Authorization: Bearer <CRON_SECRET>".
-// It only marks overdue offers as expired and sends notifications.
-// It never changes a listing, tenancy, application or payment. Expiry is also checked whenever someone responds to an offer.
+// 1. Marks overdue offers as expired.
+// 2. Expires overdue 48 hour reservations that have no signed agreement and no payment evidence.
+// It never touches an active tenancy, a payment or a listing. Each step runs on its own so one failure does not stop the other.
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET
   if (!secret || secret.length < 16) return json({ error: 'Not configured.' }, 503)
   if (!secretMatches(req.headers.get('authorization'), secret)) return json({ error: 'Unauthorized.' }, 401)
 
+  const db = getSupabaseAdmin()
+  let offers: number | null = null
+  let reservations: number | null = null
+  let failed = false
+
   try {
-    const { data, error } = await getSupabaseAdmin().rpc('eb_expire_rental_offers')
-    if (error) return json({ error: 'The job failed.' }, 500)
-    return json({ ok: true, expired: data ?? 0 })
+    const r = await db.rpc('eb_expire_rental_offers')
+    if (r.error) failed = true
+    else offers = (r.data as number) ?? 0
   } catch {
-    return json({ error: 'The job failed.' }, 500)
+    failed = true
   }
+  try {
+    const r = await db.rpc('eb_expire_reservations')
+    if (r.error) failed = true
+    else reservations = (r.data as number) ?? 0
+  } catch {
+    failed = true
+  }
+
+  return json({ ok: !failed, offers_expired: offers, reservations_expired: reservations }, failed ? 500 : 200)
 }
