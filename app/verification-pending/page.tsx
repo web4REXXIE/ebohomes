@@ -23,7 +23,7 @@ export default function VerificationPendingPage() {
 
       const { data } = await supabase
         .from('listings')
-        .select('*')
+        .select('id, title, location_text, photos, status, created_at')
         .eq('landlord_id', userId)
         .order('created_at', { ascending: false })
         .limit(1)
