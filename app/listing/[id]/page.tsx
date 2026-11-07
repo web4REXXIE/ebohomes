@@ -27,7 +27,6 @@ import {
   PropertyRentCard,
   PropertyDescription,
   PropertyAmenities,
-  PropertyLocationFallback,
 } from '@/components/property-details'
 import { displayTitle } from '@/lib/property-display'
 import { cleanMediaUrls } from '@/lib/property-media'
@@ -45,8 +44,8 @@ import { OPEN_STATUSES as VIEWING_OPEN_STATUSES } from '@/lib/viewing-status'
 
 const ListingLocation = dynamic(
   () =>
-    import('@/components/listing-location').then((mod) => ({
-      default: mod.ListingLocation,
+    import('@/components/listing-location-public').then((mod) => ({
+      default: mod.ListingLocationPublic,
     })),
   { ssr: false }
 )
@@ -258,7 +257,7 @@ export default function ListingDetailPage() {
         const { data, error } = await supabase
           .from('listings')
           .select(
-            'id, landlord_id, title, description, location_text, lat, lng, price_monthly, service_charge, caution_deposit, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, listed_by_role, status, properties(public_id)'
+            'id, landlord_id, title, description, location_text, price_monthly, service_charge, caution_deposit, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, listed_by_role, status, properties(public_id)'
           )
           .eq('id', id)
           .maybeSingle()
@@ -862,19 +861,11 @@ export default function ListingDetailPage() {
               className="mb-6"
             />
 
-            {listing.lat != null && listing.lng != null ? (
-              <ListingLocation
-                lat={Number(listing.lat)}
-                lng={Number(listing.lng)}
-                title={displayTitle(listing)}
-                address={listing.location_text}
-              />
-            ) : (
-              <PropertyLocationFallback
-                address={listing.location_text}
-                className="mb-6"
-              />
-            )}
+            <ListingLocation
+              listingId={listing.id}
+              title={displayTitle(listing)}
+              address={listing.location_text}
+            />
 
             {/* Safety tip */}
             <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4">
@@ -1097,4 +1088,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-            }
+    }
