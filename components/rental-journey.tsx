@@ -903,4 +903,4 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       </section>
     </div>
   )
-        }
+                                                                                                           }
