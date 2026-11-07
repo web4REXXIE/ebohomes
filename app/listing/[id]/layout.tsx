@@ -33,6 +33,7 @@ import { cleanMediaUrls } from '@/lib/property-media'
 import { isValidListingId } from '@/lib/listing-id'
 import { PropertyVideo } from '@/components/property-video'
 import { PropertyTrust } from '@/components/property-trust'
+import { RemoteInspectionEntry } from '@/components/remote-inspection-entry'
 import { identityState } from '@/lib/property-trust'
 import { listedByLabel as toListedByLabel } from '@/lib/listing-authority'
 import {
@@ -859,6 +860,15 @@ export default function ListingDetailPage() {
               className="mb-6"
             />
 
+            <RemoteInspectionEntry
+              listingId={String(listing.id)}
+              listingStatus={listing.status}
+              userId={userId}
+              isOwner={isOwner}
+              onHold={onHold}
+              className="mb-6"
+            />
+
             <ListingLocation
               listingId={listing.id}
               title={displayTitle(listing)}
@@ -1086,4 +1096,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-            }
+      }
