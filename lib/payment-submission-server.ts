@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { UUID_RE, type SubmissionType } from '@/lib/payment-submission'
+import { canTakePayment } from '@/lib/payable-tenancy'
 
 export const fail = (error: string, status: number, extra?: Record<string, unknown>) =>
   NextResponse.json({ error, ...extra }, { status })
@@ -23,9 +24,9 @@ export type PayContext = { tenancyId: string; termsId: string; expected: number;
 export async function loadPayContext(db: SupabaseClient, userId: string, tenancyId: unknown, type: SubmissionType, renewalId?: unknown):
   Promise<PayContext | { res: NextResponse }> {
   if (typeof tenancyId !== 'string' || !UUID_RE.test(tenancyId)) return { res: fail('Invalid request.', 400) }
-  const { data: tenancy } = await db.from('tenancies').select('id, tenant_id, status').eq('id', tenancyId).maybeSingle()
+  const { data: tenancy } = await db.from('tenancies').select('id, tenant_id, status, offer_id').eq('id', tenancyId).maybeSingle()
   if (!tenancy || tenancy.tenant_id !== userId) return { res: fail('Tenancy not found.', 404) }
-  if (tenancy.status !== 'active') return { res: fail('Payments can only be submitted on an active tenancy.', 409) }
+  if (!canTakePayment(tenancy.status, tenancy.offer_id)) return { res: fail('Payments can only be submitted on an active or reserved tenancy.', 409) }
   const { data: terms } = await db.from('rental_terms')
     .select('id, rent_amount, deposit_amount, fees_amount').eq('tenancy_id', tenancyId).eq('status', 'signed')
     .order('version', { ascending: false }).limit(1).maybeSingle()
