@@ -1,3 +1,4 @@
+
 // Maps the EXISTING applications.status values to the agreed workflow wording.
 // No new status values are introduced. Where the agreed workflow has a stage the database does not
 // model (Under Review vs Submitted, Awaiting Landlord Decision) it is derived or left unmapped, never faked.
@@ -18,6 +19,8 @@ export type ApplicationStage =
   | 'approved'
   | 'rejected'
   | 'withdrawn'
+  | 'accepted'
+  | 'not_selected'
 
 export function applicationStage(a: { status: string; landlord_recommendation?: string | null }): ApplicationStage {
   switch (a.status) {
@@ -25,6 +28,8 @@ export function applicationStage(a: { status: string; landlord_recommendation?: 
     case 'approved': return 'approved'
     case 'rejected': return 'rejected'
     case 'withdrawn': return 'withdrawn'
+    case 'accepted': return 'accepted'
+    case 'not_selected': return 'not_selected'
     default:
       // A landlord recommendation only exists once EboHomes has passed the application on.
       return a.landlord_recommendation ? 'under_review' : 'submitted'
@@ -38,6 +43,8 @@ export const STAGE_LABEL: Record<ApplicationStage, string> = {
   approved: 'Approved',
   rejected: 'Rejected',
   withdrawn: 'Withdrawn',
+  accepted: 'Accepted',
+  not_selected: 'Not selected',
 }
 
 export function existingApplicationMessage(status: string): string {
@@ -56,6 +63,8 @@ export const STAGE_TONE: Record<ApplicationStage, string> = {
   approved: 'text-primary-foreground bg-primary border-primary',
   rejected: 'text-destructive bg-destructive/10 border-destructive/30',
   withdrawn: 'text-muted-foreground bg-secondary border-border',
+  accepted: 'text-primary-foreground bg-primary border-primary',
+  not_selected: 'text-muted-foreground bg-secondary border-border',
 }
 
 // One-line plain-English meaning of each stage, for staff and landlord screens.
@@ -66,4 +75,6 @@ export const STAGE_HELP: Record<ApplicationStage, string> = {
   approved: 'Approved by EboHomes. This is not a viewing, payment, reservation or tenancy.',
   rejected: 'Declined by EboHomes.',
   withdrawn: 'Withdrawn by the tenant.',
+  accepted: 'The rental was completed for this applicant.',
+  not_selected: 'Another applicant secured this property. This is not a rejection of the applicant.',
 }
