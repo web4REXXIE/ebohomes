@@ -26,6 +26,7 @@ import { useInspectedIds } from '@/lib/use-inspected-ids'
 import { listingIsLive } from '@/lib/property-display'
 import { groupListings, isNewlyApproved, listingStatusInfo } from '@/lib/listing-status'
 import { TONE_CLASS } from '@/lib/viewing-status'
+import { OWNER_LISTING_COLUMNS } from '@/lib/listing-columns'
 import { PropertySummary, type PropertyLite } from '@/components/property-summary'
 
 // Shown on the main page only when someone is signed in.
@@ -179,7 +180,7 @@ function LandlordSections({ userId }: { userId: string }) {
     ;(async () => {
       const [pRes, lRes, nRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).single(),
-        supabase.from('listings').select('*, properties(public_id)').eq('landlord_id', userId).order('created_at', { ascending: false }),
+        supabase.from('listings').select(`${OWNER_LISTING_COLUMNS}, properties(public_id)`).eq('landlord_id', userId).order('created_at', { ascending: false }),
         supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(5),
       ])
       if (cancelled) return
