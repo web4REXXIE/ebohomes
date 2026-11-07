@@ -18,6 +18,7 @@ const NAV_GROUPS: { title: string | null; items: NavItem[] }[] = [
     { href: '/admin/listing-authority', label: 'Listing Authority', icon: ShieldCheck },
     { href: '/admin/risk', label: 'Risk Alerts', icon: ShieldAlert },
     { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
+    { href: '/admin/remote-inspections', label: 'Remote Inspections', icon: ClipboardList },
     { href: '/admin/surroundings', label: 'Surroundings', icon: MapPin },
     { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
     { href: '/admin/professionals', label: 'Professionals', icon: BadgeCheck },
