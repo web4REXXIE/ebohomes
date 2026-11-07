@@ -8,6 +8,8 @@ import { ClipboardCheck, MapPin, Loader2, Camera, ImagePlus, Video, Trash2 } fro
 import {
   INSPECTION_BUCKET, INSPECTION_PHOTO_ACCEPT, INSPECTION_VIDEO_ACCEPT, validateInspectionFileMeta, type CaptureMethod,
 } from '@/lib/inspection-evidence'
+import { PHOTO_TOPICS, looksLikeSafetyClaim } from '@/lib/surroundings'
+import { SurroundingsForm, buildSurroundingsFacts } from '@/components/surroundings-form'
 
 const CATS = [
   { label: 'Road', notes: 'road_condition', match: 'road_matches', ph: 'e.g. tarred, good condition' },
@@ -22,7 +24,7 @@ const CATS = [
 const input = 'w-full px-3 py-2 rounded-lg border border-border bg-background text-sm'
 const PLAIN_CODES = ['42501', '22023', '23514', '23505', 'P0002']
 
-type Staged = { id: string; kind: 'photo' | 'video'; name: string | null; bytes: number; capture_method: CaptureMethod; uploaded_at: string }
+type Staged = { id: string; kind: 'photo' | 'video'; name: string | null; bytes: number; capture_method: CaptureMethod; topic?: string | null; uploaded_at: string }
 type Gps = { lat: number; lng: number; accuracy: number | null; fixAt: string | null }
 
 async function authedFetch(path: string, body: unknown) {
@@ -38,9 +40,10 @@ const rpcMessage = (error: { code?: string; message?: string }, fallback: string
 
 // Adds files to one inspection (or to one admin request for more evidence). Every file goes through the server:
 // the server checks the real file type, computes the fingerprint and saves the record. Files are kept even if the page closes.
-function EvidenceUploader({ jobId, requestId, onStaged, disabled }: {
-  jobId: string; requestId: string | null; onStaged: (files: Staged[]) => void; disabled?: boolean
+function EvidenceUploader({ jobId, requestId, onStaged, disabled, withTopic }: {
+  jobId: string; requestId: string | null; onStaged: (files: Staged[]) => void; disabled?: boolean; withTopic?: boolean
 }) {
+  const [topic, setTopic] = useState('')
   const [staged, setStaged] = useState<Staged[]>([])
   const [active, setActive] = useState<{ key: string; name: string; state: 'uploading' | 'error'; error?: string }[]>([])
   const [err, setErr] = useState('')
@@ -65,7 +68,7 @@ function EvidenceUploader({ jobId, requestId, onStaged, disabled }: {
     if (!p.ok) return p.j?.error ?? 'Could not prepare the upload.'
     const up = await supabase.storage.from(INSPECTION_BUCKET).uploadToSignedUrl(p.j.path, p.j.token, f, { contentType: f.type })
     if (up.error) return 'The upload failed. Check your connection and choose the file again.'
-    const r = await authedFetch('/api/inspection-evidence/register', { job_id: jobId, request_id: requestId, path: p.j.path, name: f.name, capture_method: method })
+    const r = await authedFetch('/api/inspection-evidence/register', { job_id: jobId, request_id: requestId, path: p.j.path, name: f.name, capture_method: method, topic: withTopic ? topic : null })
     if (!r.ok) return r.j?.error ?? 'Could not save this file.'
     return null
   }
@@ -106,6 +109,15 @@ function EvidenceUploader({ jobId, requestId, onStaged, disabled }: {
 
   return (
     <div className="space-y-3">
+      {withTopic && (
+        <div>
+          <label className="mb-1 block text-xs font-semibold" htmlFor="ptopic">What do the next files show?</label>
+          <select id="ptopic" className={input} value={topic} disabled={disabled || uploading} onChange={(e) => setTopic(e.target.value)}>
+            <option value="">The property itself</option>
+            {PHOTO_TOPICS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" className={btn} disabled={disabled || uploading} onClick={() => camPhoto.current?.click()}><Camera size={15} /> Take photo</button>
         <button type="button" className={btn} disabled={disabled || uploading} onClick={() => galPhoto.current?.click()}><ImagePlus size={15} /> Choose photos</button>
@@ -135,7 +147,7 @@ function EvidenceUploader({ jobId, requestId, onStaged, disabled }: {
           {staged.map((s) => (
             <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg border border-border p-2 text-xs">
               <span className="min-w-0">
-                <span className="block truncate font-medium">{s.kind === 'video' ? 'Video' : 'Photo'}: {s.name ?? 'file'}</span>
+                <span className="block truncate font-medium">{s.kind === 'video' ? 'Video' : 'Photo'}: {s.name ?? 'file'}{s.topic ? ` · ${PHOTO_TOPICS.find((t) => t.value === s.topic)?.label ?? s.topic}` : ''}</span>
                 <span className="text-muted-foreground">{(s.bytes / (1024 * 1024)).toFixed(1)} MB · {s.capture_method === 'camera' ? 'camera button' : s.capture_method === 'gallery' ? 'gallery upload' : 'source unknown'}</span>
               </span>
               <button type="button" onClick={() => remove(s.id)} disabled={disabled || removing === s.id} aria-label="Remove file"
@@ -194,6 +206,7 @@ export default function InspectorPage() {
   const [staged, setStaged] = useState<Staged[]>([])
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [retrySurr, setRetrySurr] = useState<{ jobId: string; facts: any[] } | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -259,6 +272,8 @@ export default function InspectorPage() {
     if (!form.verdict) return setMsg('Choose PASS, FAIL or UNCERTAIN.')
     if (!String(form.verdict_reason ?? '').trim()) return setMsg('Give the reason for your verdict.')
     if (!String(form.claimant_name ?? '').trim()) return setMsg('Enter the name of the person you met.')
+    if (buildSurroundingsFacts(form.surroundings, form.surroundings_context).some((f) => looksLikeSafetyClaim(f.note) || looksLikeSafetyClaim(f.name) || looksLikeSafetyClaim(f.context)))
+      return setMsg('Surroundings notes must describe only what you saw. Remove words about crime or safety.')
 
     setBusy(true)
     setMsg('')
@@ -282,12 +297,38 @@ export default function InspectorPage() {
     const { error } = await supabase.rpc('submit_inspection', {
       p_job: job.job_id, p_gps_lat: gps.lat, p_gps_lng: gps.lng, p_gps_accuracy: gps.accuracy, p_gps_fix_at: gps.fixAt, p_form: payload,
     })
+    if (error) {
+      setBusy(false)
+      return setMsg(rpcMessage(error, 'Could not submit. Your files and answers are kept. Please try again.'))
+    }
+
+    // The inspection is saved. Now send the surroundings facts, tied to it. A failure here never undoes the inspection.
+    const surr = buildSurroundingsFacts(form.surroundings, form.surroundings_context)
+    let surrNote = ''
+    if (surr.length > 0) {
+      const r = await supabase.rpc('inspector_record_surroundings', { p_job: job.job_id, p_facts: surr })
+      if (r.error) {
+        setRetrySurr({ jobId: job.job_id, facts: surr })
+        surrNote = ' Your surroundings notes were not saved: ' + rpcMessage(r.error, 'please try again below.')
+      } else {
+        surrNote = ` ${r.data} surroundings fact(s) sent for review.`
+      }
+    }
     setBusy(false)
-    if (error) return setMsg(rpcMessage(error, 'Could not submit. Your files and answers are kept. Please try again.'))
     try { sessionStorage.removeItem(formKey(job.job_id)) } catch { /* ignore */ }
     setJob(null); setForm({}); setStaged([]); setGps(null)
-    setMsg('Submitted. A reviewer will check your evidence.')
+    setMsg('Submitted. A reviewer will check your evidence.' + surrNote)
     loadJobs()
+  }
+
+  const retrySurroundings = async () => {
+    if (!retrySurr || busy) return
+    setBusy(true)
+    const r = await supabase.rpc('inspector_record_surroundings', { p_job: retrySurr.jobId, p_facts: retrySurr.facts })
+    setBusy(false)
+    if (r.error) return setMsg(rpcMessage(r.error, 'Could not save the surroundings. Try again.'))
+    setRetrySurr(null)
+    setMsg(`Surroundings saved: ${r.data} new fact(s) sent for review.`)
   }
 
   if (!ready) return <div className="p-6 text-muted-foreground">Loading…</div>
@@ -306,6 +347,12 @@ export default function InspectorPage() {
         You are paid for completing an inspection, not for approving a property. Report exactly what you find.
       </p>
       {msg && <div role="status" className="mb-4 text-sm rounded-lg border border-border bg-secondary px-3 py-2">{msg}</div>}
+      {retrySurr && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>Your inspection was sent, but your surroundings notes were not saved yet.</p>
+          <Button type="button" onClick={retrySurroundings} disabled={busy} className="mt-2 w-full font-semibold">Save surroundings again</Button>
+        </div>
+      )}
 
       {!job && (
         <div className="space-y-3">
@@ -418,7 +465,7 @@ export default function InspectorPage() {
 
           <div className="bg-card border border-border rounded-lg p-4">
             <p className="text-sm font-semibold mb-2">4. Evidence (at least 3 photographs; videos are optional)</p>
-            <EvidenceUploader jobId={job.job_id} requestId={null} onStaged={setStaged} disabled={busy} />
+            <EvidenceUploader jobId={job.job_id} requestId={null} onStaged={setStaged} disabled={busy} withTopic />
           </div>
 
           <div className="bg-card border border-border rounded-lg p-4 space-y-2">
@@ -430,6 +477,13 @@ export default function InspectorPage() {
             </div>
             <textarea rows={3} className={input} placeholder="Reason for your verdict (required)" value={form.verdict_reason ?? ''} onChange={(e) => set('verdict_reason', e.target.value)} />
           </div>
+
+          <SurroundingsForm
+            value={form.surroundings ?? []}
+            context={form.surroundings_context ?? ''}
+            disabled={busy}
+            onChange={(v, c) => { set('surroundings', v); set('surroundings_context', c) }}
+          />
 
           <Button onClick={submit} disabled={busy} className="w-full font-semibold flex items-center justify-center gap-2">
             {busy ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />} Submit inspection
