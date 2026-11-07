@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getOwnershipSignedUrl } from '@/lib/ownership-docs'
 import { Button } from '@/components/ui/button'
 import { authorityStatusInfo, isAuthorityReviewed } from '@/lib/listing-authority'
+import { AdminLocationPanel } from '@/components/admin-location-panel'
 
 const CHECKLIST = [
   'Property photos are clear and real',
@@ -399,6 +400,9 @@ export default function PropertyReviewPage() {
                 </div>
               )}
 
+              {/* Location and surroundings: pin review, inspector comparison, history, surroundings facts */}
+              <AdminLocationPanel listingId={selected.id} />
+
               {/* Review checklist + actions */}
               <div className="bg-card border border-border rounded-lg p-5">
                 <h3 className="font-semibold text-foreground mb-3">Check before approving</h3>
@@ -531,4 +535,4 @@ export default function PropertyReviewPage() {
       )}
     </div>
   )
-        }
+}
