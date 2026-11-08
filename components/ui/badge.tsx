@@ -10,10 +10,15 @@ const badgeVariants = cva(
         verified: 'bg-primary text-primary-foreground',
         // Featured: dark brown on gold (about 7:1)
         featured: 'bg-featured text-featured-foreground',
-        // Status colours: tinted background with a dark text colour
-        success: 'bg-accent text-accent-foreground border-primary/20',
-        warning: 'bg-featured/15 text-featured-foreground border-featured/40 dark:text-featured',
-        error: 'bg-destructive/10 text-[color-mix(in_oklab,var(--destructive),black_25%)] border-destructive/30 dark:text-destructive',
+        // Verified, soft version for dense lists (the solid one above is for the main trust mark)
+        'verified-soft': 'bg-verified-soft text-verified border-verified/20',
+        // Status colours (Stage 4 tokens): dark text on the matching soft surface. Pair with an icon or label.
+        success: 'bg-success-soft text-success border-success/20',
+        warning: 'bg-warning-soft text-warning border-warning/25',
+        error: 'bg-danger-soft text-danger border-danger/25',
+        info: 'bg-info-soft text-info border-info/25',
+        pending: 'bg-pending-soft text-pending border-pending/25',
+        unverified: 'bg-unverified-soft text-unverified border-border',
         // Neutral category / label
         neutral: 'bg-secondary text-secondary-foreground border-border',
       },
