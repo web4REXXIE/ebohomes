@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { HelpCircle, X, ChevronDown, MessageCircle } from 'lucide-react'
 import { EBOHOMES_WHATSAPP } from '@/lib/contact'
+import { useModal } from '@/lib/use-modal'
+import { Button } from '@/components/ui/button'
 
 const FAQS = [
   {
@@ -45,6 +47,7 @@ export function HelpBubble() {
   const [open, setOpen] = useState(false)
   const [openIndex, setOpenIndex] = useState<number | null>(0)
   const openerRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
 
   // Close the sheet when you move to another page
@@ -52,24 +55,8 @@ export function HelpBubble() {
     setOpen(false)
   }, [pathname])
 
-  // Lock page scroll and allow Esc to close while the sheet is open.
-  // Focus moves into the sheet when it opens and returns to the help button when it closes.
-  useEffect(() => {
-    if (!open) return
-    const prevOverflow = document.body.style.overflow
-    const opener = openerRef.current
-    document.body.style.overflow = 'hidden'
-    closeRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.body.style.overflow = prevOverflow
-      window.removeEventListener('keydown', onKey)
-      opener?.focus()
-    }
-  }, [open])
+  const closeSheet = useCallback(() => setOpen(false), [])
+  useModal(open, closeSheet, dialogRef, closeRef)
 
   const onListingPage = pathname?.startsWith('/listing/')
 
@@ -95,27 +82,28 @@ export function HelpBubble() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Help and frequently asked questions"
-        className={`fixed right-3 z-40 flex h-11 w-11 opacity-90 items-center justify-center rounded-full border border-border bg-background text-primary shadow-lg transition hover:bg-secondary sm:right-5 sm:h-12 sm:w-12 ${position}`}
+        className={`fixed right-3 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border-strong bg-surface-elevated text-primary shadow-dropdown transition-colors hover:bg-muted focus-ring sm:right-5 sm:h-12 sm:w-12 ${position}`}
       >
-        <HelpCircle size={22} />
+        <HelpCircle size={22} aria-hidden="true" />
       </button>
 
       {open && (
         <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 sm:items-center"
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-forest/60 sm:items-center"
           onClick={() => setOpen(false)}
           role="dialog"
           aria-modal="true"
           aria-label="Help and FAQs"
         >
           <div
-            className="flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-2xl bg-background shadow-xl sm:max-h-[80dvh] sm:rounded-2xl"
+            ref={dialogRef}
+            className="flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-modal bg-surface-elevated shadow-modal sm:max-h-[80dvh] sm:rounded-modal"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
               <div>
-                <h2 className="text-lg font-bold text-foreground">
+                <h2 className="text-lg font-semibold text-foreground">
                   Help and FAQs
                 </h2>
                 <p className="text-xs text-muted-foreground">
@@ -128,9 +116,9 @@ export function HelpBubble() {
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close help"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-secondary"
+                className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-muted"
               >
-                <X size={20} />
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
 
@@ -141,19 +129,20 @@ export function HelpBubble() {
                 return (
                   <div
                     key={item.q}
-                    className="mb-2 overflow-hidden rounded-xl border border-border bg-card"
+                    className="mb-2 overflow-hidden rounded-card border border-border-subtle bg-card"
                   >
                     <button
                       type="button"
                       onClick={() => setOpenIndex(isOpen ? null : i)}
                       aria-expanded={isOpen}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
+                      className="focus-ring flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
                     >
                       <span className="text-sm font-semibold text-foreground">
                         {item.q}
                       </span>
                       <ChevronDown
                         size={18}
+                        aria-hidden="true"
                         className={`shrink-0 text-muted-foreground transition-transform ${
                           isOpen ? 'rotate-180' : ''
                         }`}
@@ -175,14 +164,10 @@ export function HelpBubble() {
               className="border-t border-border px-4 pt-3"
               style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
             >
-              <button
-                type="button"
-                onClick={contactSupport}
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-bold text-primary-foreground transition hover:bg-primary/90"
-              >
-                <MessageCircle size={18} />
+              <Button size="lg" className="w-full" onClick={contactSupport}>
+                <MessageCircle size={18} aria-hidden="true" />
                 Contact EboHomes Support
-              </button>
+              </Button>
               <p className="mt-2 text-center text-[11px] text-muted-foreground">
                 Opens WhatsApp with EboHomes. We never ask you to pay outside
                 official channels.
