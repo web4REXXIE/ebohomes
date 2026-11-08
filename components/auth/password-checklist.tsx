@@ -1,6 +1,7 @@
-import { Check } from 'lucide-react'
+import { Check, Circle } from 'lucide-react'
 import { getPasswordChecks } from '@/lib/password'
 
+// Shows the existing password rules. The rules themselves come from lib/password and are unchanged.
 export function PasswordChecklist({ password }: { password: string }) {
   const c = getPasswordChecks(password)
   const items = [
@@ -10,15 +11,17 @@ export function PasswordChecklist({ password }: { password: string }) {
     { ok: c.special, label: 'One special character' },
   ]
   return (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+    <ul aria-label="Password requirements" className="grid grid-cols-1 gap-x-4 gap-y-1 min-[360px]:grid-cols-2">
       {items.map((it) => (
-        <span
+        <li
           key={it.label}
-          className={`flex items-center gap-1 ${it.ok ? 'text-primary' : 'text-muted-foreground'}`}
+          className={`flex items-center gap-1.5 text-caption ${it.ok ? 'font-medium text-success' : 'text-muted-foreground'}`}
         >
-          <Check size={12} /> {it.label}
-        </span>
+          {it.ok ? <Check size={14} aria-hidden /> : <Circle size={14} aria-hidden />}
+          {it.label}
+          <span className="sr-only">{it.ok ? ' (met)' : ' (not met yet)'}</span>
+        </li>
       ))}
-    </div>
+    </ul>
   )
 }
