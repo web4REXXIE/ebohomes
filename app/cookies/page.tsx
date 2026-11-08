@@ -2,8 +2,9 @@ import type { Metadata } from 'next'
 import { LegalLayout, LegalSection } from '@/components/legal-layout'
 
 export const metadata: Metadata = {
-  title: 'Cookie Policy | EboHomes',
+  title: 'Cookie Policy',
   description: 'How EboHomes uses cookies and similar technologies.',
+  alternates: { canonical: '/cookies' },
 }
 
 const TOC = [
@@ -19,7 +20,7 @@ const TOC = [
 export default function CookiePolicyPage() {
   return (
     <LegalLayout title="Cookie Policy" activeHref="/cookies" toc={TOC}>
-      <p className="text-sm text-[#171717]/80 leading-relaxed">
+      <p className="text-body text-foreground/85 leading-relaxed">
         This Cookie Policy explains how EboHomes uses cookies and similar
         technologies when you visit our website or use our platform.
       </p>
@@ -76,7 +77,7 @@ export default function CookiePolicyPage() {
       <LegalSection id="contact" number="7" title="Contact Us">
         <p>
           Questions about this Cookie Policy can be sent via WhatsApp at{' '}
-          <a href="https://wa.me/2349169069445" className="text-[#0A2E1A] underline underline-offset-2">
+          <a href="https://wa.me/2349169069445" className="font-medium text-primary underline underline-offset-2">
             +234 916 906 9445
           </a>.
         </p>
