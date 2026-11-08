@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { EBOHOMES_WHATSAPP, EBOHOMES_EMAIL, EBOHOMES_PHONE_DISPLAY } from '@/lib/contact'
-import { MessageCircle, Phone, Mail, MapPin, Clock, ShieldAlert, ChevronDown, Send, ShieldCheck, Lock, Users, Headphones, Home } from 'lucide-react'
+import { MessageCircle, Phone, Mail, MapPin, Clock, ShieldAlert, ChevronDown, Send, ShieldCheck, Headphones, Home, ClipboardCheck } from 'lucide-react'
 
 const faqs = [
   { q: 'How do I contact a landlord?', a: 'EboHomes handles communication for you. Open the listing and tap "Chat with EboHomes". Once your interest is approved and an inspection is arranged, we coordinate the next steps with the landlord..' },
@@ -13,6 +14,10 @@ const faqs = [
   { q: 'What if I see a scam listing?', a: 'Use the "Report a Scam Listing" button below or on any listing page — our team reviews reports within 24 hours.' },
   { q: 'How do payments work?', a: 'Pay only to the official EboHomes payment details shown on your tenancy page after you sign in. EboHomes checks each payment before it counts. We cannot protect payments made anywhere else, so if you are unsure, message our team on WhatsApp first.' },
 ]
+
+const fieldCls =
+  'w-full min-h-12 border border-border rounded-control px-4 py-2.5 text-base bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/30'
+const labelCls = 'text-label font-semibold text-foreground mb-1.5 block'
 
 export default function ContactPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
@@ -47,7 +52,7 @@ export default function ContactPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 grid md:grid-cols-2 gap-10 items-center">
           <div>
             <span className="text-xs font-semibold text-primary tracking-wide">CONTACT &amp; SUPPORT</span>
-            <h1 className="text-3xl sm:text-4xl font-bold text-foreground mt-2 mb-3">
+            <h1 className="text-h1 sm:text-display font-bold text-foreground mt-2 mb-3">
               Need Help Finding <br className="hidden sm:block" />
               or Listing a <span className="text-primary">Home?</span>
             </h1>
@@ -56,7 +61,7 @@ export default function ContactPage() {
             </p>
           </div>
           <div className="rounded-2xl overflow-hidden shadow-lg h-56 md:h-64">
-            <img src="/hero.jpg" alt="EboHomes support team" className="w-full h-full object-cover" />
+            <img src="/hero.jpg" alt="" className="w-full h-full object-cover" />
           </div>
         </div>
       </section>
@@ -64,51 +69,61 @@ export default function ContactPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 grid lg:grid-cols-3 gap-8">
 
         {/* Contact form */}
-        <div className="lg:col-span-1 bg-card border border-border rounded-2xl p-6">
-          <h2 className="font-semibold text-lg text-foreground mb-5">Send us a message</h2>
+        <div className="lg:col-span-1 bg-card border border-border rounded-card shadow-rest p-5 sm:p-6">
+          <h2 className="text-h3 font-semibold text-foreground mb-5">Send us a message</h2>
           {sent ? (
-            <div className="text-center py-10">
+            <div role="status" className="text-center py-10">
               <p className="text-primary font-semibold mb-1">Message sent!</p>
-              <p className="text-sm text-muted-foreground">We&apos;ll get back to you within 15 minutes during business hours.</p>
+              <p className="text-body text-muted-foreground">We&apos;ll get back to you within 15 minutes during business hours.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">Full Name</label>
+                <label htmlFor="contact-name" className={labelCls}>Full Name</label>
                 <input
+                  id="contact-name"
+                  autoComplete="name"
                   required
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="Enter your full name"
-                  className="w-full border border-border rounded-xl px-4 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                  className={fieldCls}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">Email Address</label>
+                <label htmlFor="contact-email" className={labelCls}>Email Address</label>
                 <input
+                  id="contact-email"
+                  autoComplete="email"
+                  inputMode="email"
                   required
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   placeholder="Enter your email"
-                  className="w-full border border-border rounded-xl px-4 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                  className={fieldCls}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">Phone Number</label>
+                <label htmlFor="contact-phone" className={labelCls}>Phone Number</label>
                 <input
+                  id="contact-phone"
+                  type="tel"
+                  autoComplete="tel"
+                  inputMode="tel"
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   placeholder="+234 801 234 5678"
-                  className="w-full border border-border rounded-xl px-4 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                  className={fieldCls}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">Subject</label>
+                <label htmlFor="contact-subject" className={labelCls}>Subject</label>
                 <select
+                  id="contact-subject"
                   value={form.subject}
                   onChange={(e) => setForm({ ...form, subject: e.target.value })}
-                  className="w-full border border-border rounded-xl px-4 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                  className={fieldCls}
                 >
                   <option value="">Select a subject</option>
                   <option value="tenant">I&apos;m looking for a home</option>
@@ -118,26 +133,28 @@ export default function ContactPage() {
                 </select>
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">Message</label>
+                <label htmlFor="contact-message" className={labelCls}>Message</label>
                 <textarea
+                  id="contact-message"
                   required
                   rows={4}
                   value={form.message}
                   onChange={(e) => setForm({ ...form, message: e.target.value })}
                   placeholder="Type your message here..."
-                  className="w-full border border-border rounded-xl px-4 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  className={`${fieldCls} resize-none`}
                 />
               </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              {error && <p role="alert" className="text-body text-destructive">{error}</p>}
               <button
                 type="submit"
                 disabled={sending}
-                className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-semibold py-3 rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-60"
+                className="w-full min-h-12 flex items-center justify-center gap-2 bg-primary text-primary-foreground font-semibold py-3 rounded-button hover:bg-primary/90 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
               >
                 {sending ? 'Sending...' : 'Send Message'} <Send size={16} />
               </button>
-              <p className="text-xs text-muted-foreground flex items-center gap-1.5 justify-center">
-                <Lock size={12} /> Your information is safe with us. We never share your data.
+              <p className="text-caption text-muted-foreground text-center">
+                See how we use your details in our{' '}
+                <Link href="/privacy" className="font-semibold text-primary underline underline-offset-2">Privacy Policy</Link>.
               </p>
             </form>
           )}
@@ -145,50 +162,57 @@ export default function ContactPage() {
 
         {/* Other ways to reach us */}
         <div className="lg:col-span-1">
-          <h2 className="font-semibold text-lg text-foreground mb-5">Other ways to reach us</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <a href={`https://wa.me/${EBOHOMES_WHATSAPP}`} target="_blank" rel="noopener noreferrer" className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+          <h2 className="text-h3 font-semibold text-foreground mb-5">Other ways to reach us</h2>
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-4">
+            <a href={`https://wa.me/${EBOHOMES_WHATSAPP}`} target="_blank" rel="noopener noreferrer" className="bg-card border border-border rounded-card shadow-rest p-4 hover:border-primary transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><MessageCircle size={18} /></span>
-              <p className="font-medium text-sm text-foreground">WhatsApp Support</p>
-              <p className="text-xs text-muted-foreground mb-1">Chat with us instantly</p>
-              <span className="text-xs text-primary font-medium">Chat now →</span>
+              <p className="font-semibold text-body text-foreground">WhatsApp Support</p>
+              <p className="text-caption text-muted-foreground mb-1">Chat with us instantly</p>
+              <span className="text-caption text-primary font-semibold break-all">Chat now →</span>
             </a>
-            <a href={`tel:+${EBOHOMES_WHATSAPP}`} className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href={`tel:+${EBOHOMES_WHATSAPP}`} className="bg-card border border-border rounded-card shadow-rest p-4 hover:border-primary transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Phone size={18} /></span>
-              <p className="font-medium text-sm text-foreground">Call Support</p>
-              <p className="text-xs text-muted-foreground mb-1">Speak with our team</p>
-              <span className="text-xs text-primary font-medium">{EBOHOMES_PHONE_DISPLAY}</span>
+              <p className="font-semibold text-body text-foreground">Call Support</p>
+              <p className="text-caption text-muted-foreground mb-1">Speak with our team</p>
+              <span className="text-caption text-primary font-semibold break-all">{EBOHOMES_PHONE_DISPLAY}</span>
             </a>
-            <a href={`mailto:${EBOHOMES_EMAIL}`} className="bg-card border border-border rounded-2xl p-4 hover:border-primary transition-colors">
+            <a href={`mailto:${EBOHOMES_EMAIL}`} className="bg-card border border-border rounded-card shadow-rest p-4 hover:border-primary transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Mail size={18} /></span>
-              <p className="font-medium text-sm text-foreground">Email Support</p>
-              <p className="text-xs text-muted-foreground mb-1">We&apos;ll get back to you</p>
-              <span className="text-xs text-primary font-medium">{EBOHOMES_EMAIL}</span>
+              <p className="font-semibold text-body text-foreground">Email Support</p>
+              <p className="text-caption text-muted-foreground mb-1">We&apos;ll get back to you</p>
+              <span className="text-caption text-primary font-semibold break-all">{EBOHOMES_EMAIL}</span>
             </a>
-            <div className="bg-card border border-border rounded-2xl p-4">
+            <div className="bg-card border border-border rounded-card shadow-rest p-4">
               <span className="inline-flex bg-accent text-primary p-2 rounded-lg mb-2"><Headphones size={18} /></span>
-              <p className="font-medium text-sm text-foreground">Live Chat</p>
-              <p className="text-xs text-muted-foreground mb-1">Chat with our team</p>
-              <span className="text-xs text-primary font-medium">Coming soon</span>
+              <p className="font-semibold text-body text-foreground">Live Chat</p>
+              <p className="text-caption text-muted-foreground mb-1">Chat with our team</p>
+              <span className="text-caption text-primary font-semibold break-all">Coming soon</span>
             </div>
           </div>
 
           <div className="mt-5 bg-accent/40 border border-border rounded-2xl p-4 flex items-center gap-3">
             <Clock size={18} className="text-primary shrink-0" />
-            <p className="text-sm text-foreground">We reply within 15 minutes during business hours.</p>
+            <p className="text-body text-foreground">We reply within 15 minutes during business hours.</p>
           </div>
+
+          <p className="mt-4 text-body text-muted-foreground">
+            Follow EboHomes on{' '}
+            <a href="https://www.tiktok.com/@ebohomes7" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center font-semibold text-primary underline underline-offset-2">
+              TikTok
+            </a>
+            .
+          </p>
         </div>
 
         {/* Office + scam report */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-card border border-border rounded-2xl p-5">
-            <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-              <MapPin size={16} className="text-primary" /> Our Office
-            </h3>
-            <div className="h-32 bg-muted rounded-xl mb-3" />
-            <p className="text-sm font-medium text-foreground">EboHomes Headquarters</p>
-            <p className="text-sm text-muted-foreground mb-3">Abakaliki, Ebonyi State, Nigeria</p>
-            <div className="border-t border-border pt-3 text-sm space-y-1">
+          <div className="bg-card border border-border rounded-card shadow-rest p-5">
+            <h2 className="text-h3 font-semibold text-foreground mb-3 flex items-center gap-2">
+              <MapPin size={16} className="text-primary" aria-hidden /> Our Office
+            </h2>
+            <p className="text-body font-semibold text-foreground">EboHomes Headquarters</p>
+            <p className="text-body text-muted-foreground mb-3">Abakaliki, Ebonyi State, Nigeria</p>
+            <div className="border-t border-border pt-3 text-body space-y-1">
               <div className="flex justify-between text-muted-foreground">
                 <span>Monday – Friday</span><span className="text-foreground">8AM – 6PM</span>
               </div>
@@ -201,57 +225,59 @@ export default function ContactPage() {
             </div>
           </div>
 
-          <div className="bg-destructive/5 border border-destructive/20 rounded-2xl p-5">
-            <h3 className="font-semibold text-destructive mb-1.5 flex items-center gap-2">
-              <ShieldAlert size={16} /> Report a Scam Listing
-            </h3>
-            <p className="text-sm text-muted-foreground mb-3">
+          <div className="bg-destructive/5 border border-destructive/20 rounded-card p-5">
+            <h2 className="text-h3 font-semibold text-destructive mb-1.5 flex items-center gap-2">
+              <ShieldAlert size={16} aria-hidden /> Report a Scam Listing
+            </h2>
+            <p className="text-body text-muted-foreground mb-3">
               Found a suspicious listing or fake agent? Help us keep EboHomes safe.
             </p>
-            <a href="/report-listing" className="text-sm font-semibold text-destructive">Report Now →</a>
+            <Link href="/report-listing" className="inline-flex min-h-11 items-center text-body font-semibold text-destructive underline underline-offset-2">Report now →</Link>
           </div>
         </div>
       </div>
 
       {/* FAQ */}
       <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-        <h2 className="text-2xl font-bold text-foreground mb-6">Frequently Asked Questions</h2>
+        <h2 className="text-h2 font-bold text-foreground mb-6">Frequently Asked Questions</h2>
         <div className="space-y-3">
           {faqs.map((f, i) => (
-            <div key={i} className="bg-card border border-border rounded-xl overflow-hidden">
+            <div key={i} className="bg-card border border-border rounded-card shadow-rest overflow-hidden">
               <button
+                type="button"
                 onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                className="w-full flex items-center justify-between px-5 py-4 text-left"
+                aria-expanded={openFaq === i}
+                aria-controls={`faq-${i}`}
+                className="w-full min-h-12 flex items-center justify-between gap-3 px-5 py-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
               >
-                <span className="font-medium text-sm text-foreground">{f.q}</span>
-                <ChevronDown size={18} className={`text-muted-foreground transition-transform ${openFaq === i ? 'rotate-180' : ''}`} />
+                <span className="font-semibold text-body text-foreground">{f.q}</span>
+                <ChevronDown aria-hidden size={18} className={`text-muted-foreground transition-transform ${openFaq === i ? 'rotate-180' : ''}`} />
               </button>
               {openFaq === i && (
-                <p className="px-5 pb-4 text-sm text-muted-foreground">{f.a}</p>
+                <p id={`faq-${i}`} className="px-5 pb-4 text-body text-muted-foreground">{f.a}</p>
               )}
             </div>
           ))}
         </div>
       </section>
 
-      {/* Trust badges */}
+      {/* What you can rely on */}
       <section className="bg-muted/40 py-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 gap-6">
+        <ul className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
           {[
-            { icon: Home, title: 'Verified Listings', desc: 'Every property is checked' },
-            { icon: ShieldCheck, title: 'Secure Platform', desc: 'Your data is protected' },
-            { icon: Users, title: 'Trusted Community', desc: 'Thousands of happy users' },
-            { icon: Headphones, title: '24/7 Support', desc: "We're always here to help" },
+            { icon: Home, title: 'Reviewed listings', desc: 'A property goes live after EboHomes has reviewed it.' },
+            { icon: ClipboardCheck, title: 'Checks are shown', desc: 'Each property page says what has and has not been checked.' },
+            { icon: ShieldCheck, title: 'Report a problem', desc: 'Use the scam report on this page or on any listing.' },
           ].map((b, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <span className="bg-accent text-primary p-2.5 rounded-xl shrink-0"><b.icon size={20} /></span>
+            <li key={i} className="flex items-start gap-3">
+              <span aria-hidden className="bg-accent text-primary p-2.5 rounded-xl shrink-0"><b.icon size={20} /></span>
               <div>
-                <p className="text-sm font-semibold text-foreground">{b.title}</p>
-                <p className="text-xs text-muted-foreground">{b.desc}</p>
+                <p className="text-body font-semibold text-foreground">{b.title}</p>
+                <p className="text-body text-muted-foreground">{b.desc}</p>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
     </div>
   )
