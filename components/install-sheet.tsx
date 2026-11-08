@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { CheckCircle2, Download, Monitor, Share, ShieldCheck, Smartphone, X } from 'lucide-react'
 import { useInstall } from '@/components/install-provider'
+import { useModal } from '@/lib/use-modal'
 
 type Guide = {
   title: string
@@ -144,20 +145,8 @@ export function InstallSheet() {
   } = useInstall()
   const closeRef = useRef<HTMLButtonElement>(null)
 
-  useEffect(() => {
-    if (!sheetOpen) return
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    closeRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeSheet()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.body.style.overflow = prevOverflow
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [sheetOpen, closeSheet])
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModal(sheetOpen, closeSheet, dialogRef, closeRef)
 
   if (!sheetOpen) return null
 
@@ -172,21 +161,18 @@ export function InstallSheet() {
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 backdrop-blur-[2px] sm:items-center sm:p-4 motion-safe:animate-in motion-safe:fade-in"
+      className="fixed inset-0 z-[80] flex items-end justify-center bg-forest/60 sm:items-center sm:p-4 motion-safe:animate-in motion-safe:fade-in"
       onClick={closeSheet}
       role="dialog"
       aria-modal="true"
       aria-labelledby="install-sheet-title"
     >
       <div
-        className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-[#FAF7F2] shadow-2xl sm:rounded-3xl motion-safe:animate-in motion-safe:slide-in-from-bottom-8"
+        ref={dialogRef}
+        className="relative flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-modal bg-background shadow-modal sm:rounded-modal motion-safe:animate-in motion-safe:slide-in-from-bottom-8"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative bg-gradient-to-br from-[#0A2E1A] via-[#0A7A3B] to-[#0A2E1A] px-6 pb-6 pt-7 text-white">
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.07]"
-            style={{ backgroundImage: 'radial-gradient(circle, #fbbf24 1px, transparent 1px)', backgroundSize: '22px 22px' }}
-          />
+        <div className="relative bg-forest px-6 pb-6 pt-7 text-white">
           <button
             ref={closeRef}
             type="button"
