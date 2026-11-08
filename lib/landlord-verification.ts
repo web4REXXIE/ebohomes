@@ -49,3 +49,116 @@ export function verificationBucket(p: VerificationFields): VerificationBucket {
   if (p.verification_status === 'rejected') return 'rejected'
   return isSubmissionComplete(p) ? 'pending' : 'not_submitted'
 }
+
+
+// ---------------------------------------------------------------------------------------------
+// Stage 16: what a landlord is allowed to be TOLD about their verification.
+//
+// This is deliberately more cautious than verificationBucket() above, which the admin screens use
+// and which is left unchanged. It never reinterprets the `verified` flag on its own.
+//
+// What the records can prove (supabase admin_decide_landlord_verification):
+//   - An administrator decision sets verification_status = 'verified' AND verified = true together,
+//     or verification_status = 'rejected' AND verified = false together. Nothing else writes them.
+//   - The decision checks that business details, ID type, ID photo and selfie are on file. The ownership
+//     document is optional; each property gets its own authority review.
+//   So the records can support "EboHomes approved this landlord account". They cannot support
+//   "ownership is verified", and nothing here says so.
+//   - verification_status defaults to 'pending', so 'pending' alone is not a submission.
+//   - There is no submitted-at timestamp and no "reviewer has opened it" record, so "submitted"
+//     is the furthest honest claim before a decision. "Under active review" is never claimed.
+//
+// Fields that disagree (verified = true without status 'verified', status 'approved', an unrecognised
+// status) produce 'unknown', a neutral message. They never produce "verified".
+// ---------------------------------------------------------------------------------------------
+export type VerificationDisplayState = 'not_submitted' | 'submitted' | 'verified' | 'rejected' | 'unknown'
+
+export type VerificationDisplay = {
+  state: VerificationDisplayState
+  label: string
+  detail: string
+  tone: 'green' | 'blue' | 'amber' | 'red' | 'grey'
+  missing: string[]
+  actionLabel: string
+  // True when the landlord has something to do (not submitted or rejected).
+  needsAction: boolean
+}
+
+export function landlordVerificationDisplay(
+  p: (VerificationFields & { rejection_reason?: string | null }) | null | undefined,
+): VerificationDisplay {
+  if (!p) {
+    return {
+      state: 'unknown',
+      label: 'Status unavailable',
+      detail: 'We could not read your verification records. Open Get Verified to check, or contact EboHomes.',
+      tone: 'grey',
+      missing: [],
+      actionLabel: 'Open Get Verified',
+      needsAction: false,
+    }
+  }
+
+  const status = (p.verification_status ?? '').trim()
+  const missing = missingItems(p)
+
+  // 1. Explicit administrator outcomes. Both fields must agree.
+  if (status === 'verified' && p.verified === true) {
+    return {
+      state: 'verified',
+      label: 'Verified',
+      detail: 'EboHomes reviewed the details you submitted and approved your landlord account. Each property is still checked separately.',
+      tone: 'green',
+      missing: [],
+      actionLabel: 'View details',
+      needsAction: false,
+    }
+  }
+  if (status === 'rejected' && p.verified !== true) {
+    return {
+      state: 'rejected',
+      label: 'Not approved',
+      detail: 'EboHomes did not approve this submission. Read the reason, update your details and submit again.',
+      tone: 'red',
+      missing,
+      actionLabel: 'Update details',
+      needsAction: true,
+    }
+  }
+
+  // 2. Anything that claims or contradicts an outcome but did not match above is not trusted.
+  const recognisedNoDecision = status === '' || status === 'pending'
+  if (p.verified === true || !recognisedNoDecision) {
+    return {
+      state: 'unknown',
+      label: 'Status unavailable',
+      detail: 'Your account records do not give a clear verification result. Open Get Verified to see your details, or contact EboHomes.',
+      tone: 'grey',
+      missing: [],
+      actionLabel: 'Open Get Verified',
+      needsAction: false,
+    }
+  }
+
+  // 3. No decision recorded: either complete and waiting, or not complete.
+  if (missing.length === 0) {
+    return {
+      state: 'submitted',
+      label: 'Submitted, waiting for EboHomes',
+      detail: 'You have submitted the required details. EboHomes has not recorded a decision yet. You will be notified when there is one.',
+      tone: 'amber',
+      missing: [],
+      actionLabel: 'View submission',
+      needsAction: false,
+    }
+  }
+  return {
+    state: 'not_submitted',
+    label: 'Not submitted',
+    detail: `Still needed: ${missing.join(', ')}.`,
+    tone: 'grey',
+    missing,
+    actionLabel: 'Complete verification',
+    needsAction: true,
+  }
+}
