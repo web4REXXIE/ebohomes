@@ -35,13 +35,15 @@ type PaymentRow = {
   created_at?: string | null
 }
 
+// Stage 16 Part 2: presentation only. Payment states, labels, queries and the record-payment flow are unchanged.
+// Colours come from the status tokens so they follow light and dark mode. The label text always carries the meaning.
 const PAY_TONE: Record<string, string> = {
-  verified: 'border-emerald-300 bg-emerald-50 text-emerald-900',
-  legacy_confirmed: 'border-amber-300 bg-amber-50 text-amber-900',
-  awaiting_verification: 'border-amber-300 bg-amber-50 text-amber-900',
-  pending: 'border-slate-300 bg-slate-100 text-slate-800',
-  rejected: 'border-red-300 bg-red-50 text-red-900',
-  other: 'border-slate-300 bg-slate-100 text-slate-800',
+  verified: 'border-success/30 bg-success-soft text-success',
+  legacy_confirmed: 'border-warning/30 bg-warning-soft text-warning',
+  awaiting_verification: 'border-warning/30 bg-warning-soft text-warning',
+  pending: 'border-border bg-unverified-soft text-unverified',
+  rejected: 'border-danger/30 bg-danger-soft text-danger',
+  other: 'border-border bg-unverified-soft text-unverified',
 }
 
 const methodLabel = (method: string | null) => {
@@ -142,12 +144,12 @@ export default function LandlordPaymentsPage() {
       <h1 className="mb-1 text-2xl font-bold text-foreground">Payments</h1>
       <p className="mb-4 text-sm text-muted-foreground">Payment records for your active tenancies.</p>
 
-      <p className="mb-6 flex items-start gap-2 rounded-lg border border-border bg-secondary/60 p-3 text-xs text-muted-foreground">
+      <p className="mb-6 flex items-start gap-2 rounded-lg border border-border bg-secondary/60 p-3 text-sm text-muted-foreground">
         <Info size={14} className="mt-0.5 shrink-0" aria-hidden />
         <span>
           When you record a payment, it waits for EboHomes to check it. Only EboHomes can mark a payment as verified.
           {!loading && totalAwaiting > 0 && (
-            <b className="mt-1 block text-amber-900">
+            <b className="mt-1 block text-foreground">
               {totalAwaiting} {totalAwaiting === 1 ? 'payment is' : 'payments are'} waiting for EboHomes to verify.
             </b>
           )}
@@ -155,15 +157,22 @@ export default function LandlordPaymentsPage() {
       </p>
 
       {loadError && (
-        <p role="alert" className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-900">
-          {loadError}
-        </p>
+        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-danger/30 bg-danger-soft p-3 text-sm font-medium text-danger">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="focus-ring min-h-11 rounded-md border border-danger/40 px-4 font-semibold"
+          >
+            Try again
+          </button>
+        </div>
       )}
 
       {loading ? (
         <div className="space-y-4" aria-busy="true" aria-label="Loading payments">
           {[0, 1].map((i) => (
-            <div key={i} className="animate-pulse space-y-3 rounded-xl border border-border bg-card p-4">
+            <div key={i} className="animate-pulse space-y-3 rounded-card border border-border bg-card p-4">
               <div className="flex gap-3">
                 <div className="h-16 w-20 rounded-lg bg-secondary" />
                 <div className="flex-1 space-y-2">
@@ -175,8 +184,8 @@ export default function LandlordPaymentsPage() {
             </div>
           ))}
         </div>
-      ) : tenancies.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border py-14 text-center">
+      ) : loadError ? null : tenancies.length === 0 ? (
+        <div className="rounded-card border border-dashed border-border py-14 text-center">
           <Wallet size={30} className="mx-auto mb-3 text-muted-foreground" aria-hidden />
           <p className="text-sm font-semibold text-foreground">No active tenancies yet</p>
           <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
@@ -189,16 +198,16 @@ export default function LandlordPaymentsPage() {
             const payments = paymentsByTenancy[t.id] ?? []
             const awaiting = payments.filter((p) => getPaymentState(p) === 'awaiting_verification').length
             return (
-              <section key={t.id} className="overflow-hidden rounded-xl border border-border bg-card">
+              <section key={t.id} className="overflow-hidden rounded-card border border-border bg-card shadow-rest">
                 <div className="space-y-3 border-b border-border p-4">
                   <PropertySummary compact listing={listings[t.listing_id]} inspected={inspected.has(t.listing_id)} />
                   <dl className="grid grid-cols-2 gap-3 rounded-lg bg-secondary/60 p-3 text-sm">
                     <div>
-                      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Tenant</dt>
+                      <dt className="text-xs uppercase tracking-wide text-muted-foreground">Tenant</dt>
                       <dd className="truncate font-medium text-foreground">{t.tenant?.full_name ?? 'Tenant'}</dd>
                     </div>
                     <div>
-                      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Rent</dt>
+                      <dt className="text-xs uppercase tracking-wide text-muted-foreground">Rent</dt>
                       <dd className="font-bold text-foreground">
                         {naira(t.rent_amount)}
                         <span className="text-xs font-normal text-muted-foreground"> / {t.rent_period}</span>
@@ -206,7 +215,7 @@ export default function LandlordPaymentsPage() {
                     </div>
                   </dl>
                   {awaiting > 0 && (
-                    <p role="status" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <p role="status" className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-foreground">
                       {awaiting} {awaiting === 1 ? 'payment is' : 'payments are'} recorded and waiting for EboHomes to verify.
                     </p>
                   )}
@@ -242,7 +251,7 @@ export default function LandlordPaymentsPage() {
                                   : ''}
                             </p>
                             {p.status === 'rejected' && p.review_note && (
-                              <p className="text-xs font-medium text-red-800">Reason: {p.review_note}</p>
+                              <p className="text-xs font-medium text-danger">Reason: {p.review_note}</p>
                             )}
                           </li>
                         )
@@ -252,14 +261,15 @@ export default function LandlordPaymentsPage() {
 
                   <div className="flex flex-wrap items-center gap-2 pt-2">
                     <button
+                      type="button"
                       onClick={() => setRecordModalTenancy(t)}
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+                      className="focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
                     >
                       <Wallet size={14} aria-hidden /> Record a payment
                     </button>
                     <Link
                       href={tenancyPath('landlord', t.id)}
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-4 text-sm font-semibold hover:bg-secondary"
+                      className="focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-4 text-sm font-semibold hover:bg-secondary"
                     >
                       Open tenancy <ArrowRight size={14} aria-hidden />
                     </Link>
