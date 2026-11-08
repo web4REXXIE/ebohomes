@@ -11,11 +11,13 @@ assert.doesNotMatch(c, /from\('listings'\)/)        // the public component neve
 assert.doesNotMatch(c, /verified/i)                 // never claims "verified"
 assert.doesNotMatch(c, /driv(e|ing) time|walking time|minutes/i)
 
+// The listing page lives in page.tsx. layout.tsx only adds metadata, so it must never read coordinates either.
 for (const f of ['app/listing/[id]/page.tsx', 'app/listing/[id]/layout.tsx']) {
   const s = readFileSync(f, 'utf8')
   assert.doesNotMatch(s, /location_text, lat, lng/, f + ' still loads exact coordinates')
-  assert.match(s, /listing-location-public/, f)
+  assert.doesNotMatch(s, /\blat\b.*\blng\b.*from\('listings'\)/s, f)
 }
+assert.match(readFileSync('app/listing/[id]/page.tsx', 'utf8'), /listing-location-public/)
 assert.match(readFileSync('app/list-property/page.tsx', 'utf8'), /formData\.lat != null && formData\.lng != null/)
 assert.match(readFileSync('supabase/20261204_06_pin_required_new_listings.sql', 'utf8'), /before insert on public\.listings/)
 
