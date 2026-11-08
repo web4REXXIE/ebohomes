@@ -35,15 +35,11 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
   },
   icons: {
+    // Real PNG/WebP icons with the brand mark on forest green. The old pair pointed at
+    // /icon.png and /icon-white.png, which are JPEGs on a black background.
     icon: [
-      {
-        url: '/icon.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-white.png',
-        media: '(prefers-color-scheme: dark)',
-      },
+      { url: '/icons/icon-192.png', sizes: '192x192' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: '/icons/apple-touch-icon.png',
   },
