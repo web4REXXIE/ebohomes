@@ -62,7 +62,7 @@ export function HelpBubble() {
 
   // Phones: sit above the bottom nav. Listing pages: also clear the sticky action bar.
   const position = onListingPage
-    ? 'bottom-[calc(9rem+env(safe-area-inset-bottom))] md:bottom-20 lg:bottom-6'
+    ? 'bottom-[calc(10.5rem+env(safe-area-inset-bottom))] md:bottom-[calc(7rem+env(safe-area-inset-bottom))] lg:bottom-6'
     : 'bottom-[calc(5rem+env(safe-area-inset-bottom))] md:bottom-6'
 
   function contactSupport() {
