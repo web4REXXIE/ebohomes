@@ -57,7 +57,7 @@ export function OtpInput({
   }
 
   return (
-    <div className="flex justify-center gap-2 sm:gap-3" onPaste={handlePaste}>
+    <div role="group" aria-label={`${length}-digit code`} className="flex justify-center gap-2 sm:gap-3" onPaste={handlePaste}>
       {digits.map((d, i) => (
         <input
           key={i}
@@ -71,11 +71,12 @@ export function OtpInput({
           value={d}
           autoFocus={autoFocus && i === 0}
           disabled={disabled}
-          aria-label={`Digit ${i + 1}`}
+          aria-label={`Digit ${i + 1} of ${length}`}
+          aria-invalid={error ? true : undefined}
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}
           onFocus={(e) => e.target.select()}
-          className={`w-11 h-14 sm:w-12 text-center text-xl font-semibold rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 disabled:opacity-60 ${
+          className={`h-14 w-11 min-[360px]:w-12 text-center text-xl font-semibold rounded-control border bg-background text-foreground focus:outline-none focus:ring-2 disabled:opacity-60 ${
             error
               ? 'border-destructive focus:ring-destructive'
               : 'border-border focus:ring-primary'
