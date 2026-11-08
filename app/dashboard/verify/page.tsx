@@ -44,7 +44,7 @@ function ChecklistRow({ done, label, value }: { done: boolean; label: string; va
   return (
     <li className="flex items-start gap-3 py-3">
       {done ? (
-        <Check size={18} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden />
+        <Check size={18} className="mt-0.5 shrink-0 text-success" aria-hidden />
       ) : (
         <Circle size={18} className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden />
       )}
@@ -330,8 +330,8 @@ export default function GetVerifiedPage() {
     const company = formData.account_type === 'company'
     return (
       <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
-        <div className="bg-card border border-emerald-200 rounded-2xl p-6 text-center">
-          <ShieldCheck size={40} className="mx-auto text-emerald-600 mb-3" />
+        <div className="bg-card border border-success/30 rounded-card p-6 text-center">
+          <ShieldCheck size={40} className="mx-auto text-success mb-3" />
           <h1 className="text-xl font-bold text-foreground mb-1">You&apos;re Verified</h1>
           <p className="text-sm text-muted-foreground">
             Your landlord account has been verified on EboHomes
@@ -339,7 +339,7 @@ export default function GetVerifiedPage() {
           </p>
         </div>
 
-        <section className="bg-card border border-border rounded-2xl p-4" aria-label="What EboHomes checked">
+        <section className="bg-card border border-border rounded-card shadow-rest p-4" aria-label="What EboHomes checked">
           <h2 className="font-bold text-foreground mb-1">What EboHomes reviewed</h2>
           <ul className="divide-y divide-border">
             <ChecklistRow done label="Business" value={`${formData.business_name || '—'}${company ? ' (company)' : ''}`} />
@@ -351,7 +351,7 @@ export default function GetVerifiedPage() {
           </p>
         </section>
 
-        <section className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900" aria-label="If your details change">
+        <section className="bg-warning-soft border border-warning/25 rounded-card p-4 text-sm text-warning" aria-label="If your details change">
           <p className="font-semibold mb-1">If your details change</p>
           <p>
             Changing your name, business name, business address, CAC number, ID, selfie, documents or payout account sends your
@@ -384,15 +384,15 @@ export default function GetVerifiedPage() {
 
     return (
       <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
-        <div className="bg-card border border-amber-200 rounded-2xl p-6 text-center">
-          <Clock size={36} className="mx-auto text-amber-600 mb-3" />
+        <div className="bg-card border border-warning/30 rounded-card p-6 text-center">
+          <Clock size={36} className="mx-auto text-warning mb-3" />
           <h1 className="text-xl font-bold text-foreground mb-1">Verification under review</h1>
           <p className="text-sm text-muted-foreground">
             We&apos;ve received your details. EboHomes will review them and notify you of the result.
           </p>
         </div>
 
-        <section className="bg-card border border-border rounded-2xl p-4" aria-label="Details submitted for verification">
+        <section className="bg-card border border-border rounded-card shadow-rest p-4" aria-label="Details submitted for verification">
           <h2 className="font-bold text-foreground mb-1">What you submitted</h2>
           <ul className="divide-y divide-border">
             <ChecklistRow done label="Registered as" value={company ? 'A company' : 'An individual'} />
@@ -420,7 +420,7 @@ export default function GetVerifiedPage() {
           </ul>
         </section>
 
-        <section className="bg-card border border-border rounded-2xl p-4" aria-label="Payout account">
+        <section className="bg-card border border-border rounded-card shadow-rest p-4" aria-label="Payout account">
           <h2 className="font-bold text-foreground mb-1">Payout account</h2>
           <ul>
             <ChecklistRow done={payoutDone} label="Bank account for your rent" value={payoutValue} />
@@ -452,9 +452,9 @@ export default function GetVerifiedPage() {
       </div>
 
       {status === 'rejected' && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3">
-          <XCircle size={18} className="text-red-600 shrink-0 mt-0.5" />
-          <div className="text-sm text-red-700">
+        <div className="bg-destructive/10 border border-destructive/30 rounded-card p-4 mb-6 flex items-start gap-3">
+          <XCircle size={18} className="text-destructive shrink-0 mt-0.5" />
+          <div className="text-sm text-destructive">
             <p className="font-semibold mb-1">Your previous submission was not approved.</p>
             {rejectionReason ? (
               <p><span className="font-semibold">Reason:</span> {rejectionReason}</p>
@@ -465,7 +465,7 @@ export default function GetVerifiedPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="bg-card border border-border rounded-2xl p-6 space-y-4">
+      <form onSubmit={handleSubmit} className="bg-card border border-border rounded-card shadow-rest p-5 sm:p-6 space-y-4">
         <div>
           <label className="block text-sm font-semibold text-foreground mb-2">Registering as *</label>
           <select
@@ -561,13 +561,13 @@ export default function GetVerifiedPage() {
               <button
                 type="button"
                 onClick={() => { setFormData((p) => ({ ...p, id_document_url: '' })); setIdDocName('') }}
-                className="text-destructive text-sm font-semibold px-2"
+                className="text-destructive text-sm font-semibold min-h-11 px-3"
               >
                 Remove
               </button>
             </div>
           ) : (
-            <label className="block border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm">
+            <label className="block min-h-14 border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm focus-within:outline-2 focus-within:outline-primary">
               {idUploading === 'id' ? (
                 <span className="text-primary">Uploading ID...</span>
               ) : (
@@ -593,13 +593,13 @@ export default function GetVerifiedPage() {
               <button
                 type="button"
                 onClick={() => { setFormData((p) => ({ ...p, selfie_url: '' })); setSelfieName('') }}
-                className="text-destructive text-sm font-semibold px-2"
+                className="text-destructive text-sm font-semibold min-h-11 px-3"
               >
                 Remove
               </button>
             </div>
           ) : (
-            <label className="block border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm">
+            <label className="block min-h-14 border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm focus-within:outline-2 focus-within:outline-primary">
               {idUploading === 'selfie' ? (
                 <span className="text-primary">Uploading selfie...</span>
               ) : (
@@ -622,12 +622,12 @@ export default function GetVerifiedPage() {
               <a href={docPreviewUrl || '#'} target="_blank" rel="noreferrer" className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
                 <Check size={14} className="text-primary" /> {docName || 'Document uploaded'}
               </a>
-              <button type="button" onClick={removeDoc} className="text-destructive text-sm font-semibold px-2">
+              <button type="button" onClick={removeDoc} className="text-destructive text-sm font-semibold min-h-11 px-3">
                 Remove
               </button>
             </div>
           ) : (
-            <label className="block border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm">
+            <label className="block min-h-14 border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm focus-within:outline-2 focus-within:outline-primary">
               {docUploading ? (
                 <span className="text-primary">Uploading document...</span>
               ) : (
@@ -665,16 +665,16 @@ export default function GetVerifiedPage() {
           </span>
         </label>
 
-        {message && <p className="text-sm text-destructive">{message}</p>}
+        {message && <p role="alert" className="text-sm text-destructive">{message}</p>}
 
         <button
           type="submit"
           disabled={!canSubmit || submitting}
-          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full min-h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? 'Submitting...' : 'Submit for Verification'}
         </button>
       </form>
     </div>
   )
-        }
+}
