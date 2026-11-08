@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase'
 import { CreateTenancyModal } from '@/components/create-tenancy-modal'
 import { buildSetupRows, type SetupRow } from '@/lib/landlord-setup'
 import { fetchTenantNames } from '@/lib/tenant-names'
+import { sizedPhoto } from '@/lib/image-url'
+import { SmartImage } from '@/components/ui/smart-image'
 
 const naira = (n: unknown) => (typeof n === 'number' || (typeof n === 'string' && n !== '') ? '₦' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 0 }) : 'Price not set')
 
@@ -64,7 +66,7 @@ export function LandlordTenancySetup() {
         const who = names[r.app.tenant_id] || 'Approved applicant'
         return (
           <article key={r.app.id} className="overflow-hidden rounded-xl border border-border bg-card">
-            {photo && <img src={photo} alt="" loading="lazy" className="h-36 w-full object-cover" />}
+            {photo && <div className="relative h-36 w-full bg-secondary"><SmartImage src={sizedPhoto(photo, 800)} alt="" /></div>}
             <div className="space-y-1 p-4 text-sm">
               <p className="text-base font-bold text-foreground">{l?.title ?? 'Property'}</p>
               {l?.location_text && <p className="flex items-center gap-1 text-muted-foreground"><MapPin size={14} aria-hidden /> {l.location_text}</p>}
