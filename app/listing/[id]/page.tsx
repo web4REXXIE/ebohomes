@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   Heart,
@@ -13,6 +13,7 @@ import {
   Send,
   X,
 } from 'lucide-react'
+import { useModal } from '@/lib/use-modal'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
@@ -49,7 +50,19 @@ const ListingLocation = dynamic(
     import('@/components/listing-location-public').then((mod) => ({
       default: mod.ListingLocationPublic,
     })),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        role="status"
+        aria-label="Loading location"
+        className="mb-6 animate-pulse rounded-card border border-border bg-card p-card shadow-rest"
+      >
+        <div className="mb-3 h-5 w-24 rounded bg-secondary" />
+        <div className="h-64 w-full rounded-control bg-secondary sm:h-80" />
+      </div>
+    ),
+  }
 )
 
 // Fixes garbled characters (encoding bugs) and tidies spacing in descriptions
@@ -187,17 +200,11 @@ export default function ListingDetailPage() {
     )
   }, [])
 
-  // Close share sheet with Escape
-  useEffect(() => {
-    if (!showShareMenu) return
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setShowShareMenu(false)
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showShareMenu])
+  // Share sheet: Escape closes, Tab stays inside, focus returns to the Share button on close
+  const shareDialogRef = useRef<HTMLDivElement>(null)
+  const shareCloseRef = useRef<HTMLButtonElement>(null)
+  const closeShareMenu = useCallback(() => setShowShareMenu(false), [])
+  useModal(showShareMenu, closeShareMenu, shareDialogRef, shareCloseRef)
 
   // Called by the Share button: opens the share sheet
   function handleShare() {
@@ -586,10 +593,27 @@ export default function ListingDetailPage() {
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
 
-        <main className="max-w-6xl mx-auto px-4 py-10 w-full animate-pulse flex-1">
-          <div className="h-96 bg-secondary rounded-lg mb-4" />
-          <div className="h-6 bg-secondary rounded w-1/3 mb-2" />
-          <div className="h-4 bg-secondary rounded w-1/4" />
+        <main
+          role="status"
+          aria-label="Loading property"
+          className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8"
+        >
+          <div className="grid animate-pulse grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <div className="aspect-[4/3] w-full rounded-card bg-secondary sm:aspect-[16/10]" />
+              <div className="mt-2 flex gap-2">
+                <div className="h-14 w-20 rounded-md bg-secondary" />
+                <div className="h-14 w-20 rounded-md bg-secondary" />
+                <div className="h-14 w-20 rounded-md bg-secondary" />
+              </div>
+              <div className="mt-4 h-28 rounded-card bg-secondary" />
+              <div className="mt-4 h-40 rounded-card bg-secondary lg:hidden" />
+            </div>
+            <div className="hidden space-y-4 lg:block">
+              <div className="h-56 rounded-card bg-secondary" />
+              <div className="h-40 rounded-card bg-secondary" />
+            </div>
+          </div>
         </main>
 
         <Footer />
@@ -602,26 +626,26 @@ export default function ListingDetailPage() {
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
 
-        <main className="max-w-2xl mx-auto px-4 py-20 text-center flex-1">
-          <p className="text-lg font-semibold text-foreground mb-2">
+        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-20 text-center">
+          <h1 className="mb-2 text-h2 font-bold text-foreground">
             Unable to load property
+          </h1>
+
+          <p role="alert" className="mb-6 text-body text-muted-foreground">
+            {pageError}
           </p>
 
-          <p className="text-sm text-muted-foreground mb-5">{pageError}</p>
+          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Button onClick={() => window.location.reload()}>Try again</Button>
 
-          <Button
-            onClick={() => window.location.reload()}
-            className="mr-2"
-          >
-            Try again
-          </Button>
-
-          <button
-            onClick={() => router.push('/search')}
-            className="text-primary text-sm font-medium hover:underline"
-          >
-            Back to search
-          </button>
+            <button
+              type="button"
+              onClick={() => router.push('/search')}
+              className="inline-flex min-h-11 items-center px-3 text-body font-semibold text-primary hover:underline"
+            >
+              Back to search
+            </button>
+          </div>
         </main>
 
         <Footer />
@@ -634,24 +658,25 @@ export default function ListingDetailPage() {
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
 
-        <main className="max-w-2xl mx-auto px-4 py-20 text-center flex-1">
-          <p className="text-lg font-semibold text-foreground mb-2">
+        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-20 text-center">
+          <h1 className="mb-2 text-h2 font-bold text-foreground">
             {notAvailable
               ? 'This listing is no longer available'
               : 'Listing not found'}
-          </p>
+          </h1>
 
-          <p className="text-sm text-muted-foreground mb-4">
+          <p className="mb-6 text-body text-muted-foreground">
             {notAvailable
               ? 'This property is not currently available for applications.'
-              : 'We could not find the property you requested.'}
+              : 'We could not find the property you requested. The link may be mistyped or the listing may have been removed.'}
           </p>
 
           <button
+            type="button"
             onClick={() => router.push('/search')}
-            className="text-primary text-sm font-medium hover:underline"
+            className="inline-flex min-h-11 items-center rounded-lg bg-primary px-5 text-body font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            ← Back to search
+            Browse available homes
           </button>
         </main>
 
@@ -713,7 +738,7 @@ export default function ListingDetailPage() {
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-36 lg:py-6">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-[calc(10rem+env(safe-area-inset-bottom))] md:pb-32 lg:py-6">
         <button
           type="button"
           onClick={() => {
@@ -723,7 +748,7 @@ export default function ListingDetailPage() {
               router.push('/search')
             }
           }}
-          className="mb-4 text-sm font-medium text-primary hover:underline"
+          className="mb-2 inline-flex min-h-11 items-center rounded-md pr-3 text-body font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           ← Back
         </button>
@@ -756,14 +781,14 @@ export default function ListingDetailPage() {
                   saved ? 'Remove from saved properties' : 'Save property'
                 }
                 aria-pressed={saved}
-                className="absolute right-14 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/95 shadow-md transition hover:bg-white disabled:opacity-50"
+                className="absolute right-16 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-forest shadow-md transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50"
               >
                 <Heart
                   size={19}
                   className={
                     saved
                       ? 'fill-destructive text-destructive'
-                      : 'text-foreground'
+                      : 'text-forest'
                   }
                 />
               </button>
@@ -774,9 +799,9 @@ export default function ListingDetailPage() {
                 type="button"
                 onClick={handleShare}
                 aria-label="Share property"
-                className="absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/95 shadow-md transition hover:bg-white"
+                className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-forest shadow-md transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
-                <Share2 size={18} className="text-foreground" />
+                <Share2 size={18} className="text-forest" />
               </button>
             </div>
 
@@ -786,7 +811,7 @@ export default function ListingDetailPage() {
               aria-live="polite"
               className={
                 saveMessage
-                  ? 'mb-4 flex items-center gap-2 text-xs text-primary'
+                  ? 'mb-4 flex items-center gap-2 text-caption font-medium text-primary'
                   : 'sr-only'
               }
             >
@@ -798,7 +823,7 @@ export default function ListingDetailPage() {
             {shareMessage && (
               <div
                 role="status"
-                className="mb-4 flex items-center gap-2 text-xs text-primary"
+                className="mb-4 flex items-center gap-2 text-caption font-medium text-primary"
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
                 {shareMessage}
@@ -876,7 +901,7 @@ export default function ListingDetailPage() {
             />
 
             {/* Safety tip */}
-            <div className="mt-6 rounded-xl border border-warning/25 bg-warning-soft p-4">
+            <div className="mt-6 rounded-card border border-warning/25 bg-warning-soft p-card">
               <div className="flex items-start gap-3">
                 <ShieldCheck
                   size={20}
@@ -884,11 +909,11 @@ export default function ListingDetailPage() {
                 />
 
                 <div className="min-w-0">
-                  <p className="text-sm font-extrabold text-warning">
+                  <h2 className="text-body font-extrabold text-warning">
                     Stay safe: never pay outside EboHomes
-                  </p>
+                  </h2>
 
-                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-warning">
+                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-caption leading-relaxed text-warning">
                     <li>
                       Do not send money to any person or account that is not
                       arranged through EboHomes.
@@ -907,13 +932,13 @@ export default function ListingDetailPage() {
             </div>
 
             {/* Report property */}
-            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-4 flex flex-col gap-3 rounded-card border border-border bg-card p-card shadow-rest sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">
+                <h2 className="text-body font-semibold text-foreground">
                   Something doesn&apos;t look right?
-                </p>
+                </h2>
 
-                <p className="text-xs text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   Report fake, wrong or already-rented listings so EboHomes can
                   check them.
                 </p>
@@ -922,7 +947,7 @@ export default function ListingDetailPage() {
               <button
                 type="button"
                 onClick={() => setShowReportModal(true)}
-                className="flex shrink-0 items-center justify-center gap-2 rounded-md border border-destructive px-3 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive hover:text-white"
+                className="flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-destructive px-4 text-body font-semibold text-destructive transition-colors hover:bg-destructive hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-destructive"
               >
                 <Flag size={14} />
                 Report property
@@ -946,7 +971,7 @@ export default function ListingDetailPage() {
                 className="hidden lg:block"
               />
 
-              <div className="bg-card border border-border rounded-lg p-4 sm:p-5">
+              <div className="rounded-card border border-border bg-card p-card shadow-rest">
                 {landlord && (
                   <div className="mb-4 border-b border-border pb-4">
                     <div className="flex items-center gap-3">
@@ -1001,7 +1026,8 @@ export default function ListingDetailPage() {
           aria-label="Share this property"
         >
           <div
-            className="w-full max-w-md rounded-t-2xl bg-background p-5 shadow-xl sm:rounded-2xl"
+            ref={shareDialogRef}
+            className="max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-t-modal bg-background p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-modal sm:rounded-modal sm:pb-5"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-1 flex items-center justify-between">
@@ -1010,16 +1036,17 @@ export default function ListingDetailPage() {
               </h2>
 
               <button
+                ref={shareCloseRef}
                 type="button"
                 onClick={() => setShowShareMenu(false)}
                 aria-label="Close share menu"
-                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary"
+                className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <p className="mb-4 truncate text-xs text-muted-foreground">
+            <p className="mb-4 truncate text-caption text-muted-foreground">
               {listing.title}
             </p>
 
@@ -1027,7 +1054,7 @@ export default function ListingDetailPage() {
               <button
                 type="button"
                 onClick={() => openShareLink('whatsapp')}
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <MessageCircle size={18} className="text-emerald-600" />
                 WhatsApp
@@ -1036,7 +1063,7 @@ export default function ListingDetailPage() {
               <button
                 type="button"
                 onClick={() => openShareLink('facebook')}
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold leading-none text-white">
                   f
@@ -1047,7 +1074,7 @@ export default function ListingDetailPage() {
               <button
                 type="button"
                 onClick={() => openShareLink('x')}
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black text-[10px] font-bold leading-none text-white">
                   X
@@ -1058,7 +1085,7 @@ export default function ListingDetailPage() {
               <button
                 type="button"
                 onClick={() => openShareLink('telegram')}
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <Send size={18} className="text-sky-500" />
                 Telegram
@@ -1067,7 +1094,7 @@ export default function ListingDetailPage() {
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <Copy size={18} />
                 Copy link
@@ -1077,7 +1104,7 @@ export default function ListingDetailPage() {
                 <button
                   type="button"
                   onClick={handleNativeShare}
-                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+                  className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
                 >
                   <Share2 size={18} />
                   More apps
@@ -1085,7 +1112,7 @@ export default function ListingDetailPage() {
               )}
             </div>
 
-            <p className="mt-4 text-[11px] leading-snug text-muted-foreground">
+            <p className="mt-4 text-caption leading-snug text-muted-foreground">
               For TikTok or Instagram, tap &quot;More apps&quot; on your phone,
               or copy the link and paste it into your post or story.
             </p>
