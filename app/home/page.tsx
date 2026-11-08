@@ -18,6 +18,8 @@ import {
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
 import { TenantNextStep } from '@/components/tenant-next-step'
+import { sizedPhoto } from '@/lib/image-url'
+import { SmartImage } from '@/components/ui/smart-image'
 
 type Listing = {
   id: string
@@ -225,11 +227,9 @@ export default function TenantHomePage() {
             <div className="space-y-3">
               {continueBrowsing.map((l) => (
                 <Link key={l.id} href={`/listing/${l.id}`} className="flex items-center gap-3 hover:bg-secondary/40 rounded-lg p-2 -mx-2">
-                  <img
-                    src={l.photos?.[0] || '/placeholder.jpg'}
-                    alt=""
-                    className="w-14 h-14 rounded-lg object-cover shrink-0"
-                  />
+                  <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-secondary">
+                    <SmartImage src={sizedPhoto(l.photos?.[0], 200) || '/placeholder.jpg'} alt="" fallbackSrc="/placeholder.jpg" compact />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-foreground truncate">{l.title || l.property_type}</p>
                     <p className="text-xs text-muted-foreground truncate">{l.location_text}</p>
@@ -369,7 +369,7 @@ function ListingMini({ listing, verified }: { listing: Listing; verified?: boole
   return (
     <Link href={`/listing/${listing.id}`} className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
       <div className="relative h-28">
-        <img src={listing.photos?.[0] || '/placeholder.jpg'} alt="" className="w-full h-full object-cover" />
+        <SmartImage src={sizedPhoto(listing.photos?.[0], 480) || '/placeholder.jpg'} alt="" fallbackSrc="/placeholder.jpg" />
         {verified && (
           <span className="absolute top-2 left-2 bg-white/95 text-primary text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
             <ShieldCheck size={10} /> Verified
