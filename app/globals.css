@@ -607,13 +607,6 @@
   }
 }
 
-/* LEGACY, remove with the footer migration: the footer still loads /logo-white.png, which has a solid black
-   background, and hides it with a blend mode. docs/BRAND.md forbids blend modes. When footer.tsx switches to
-   BRAND_LOGOS.onDark (transparent file), delete this rule. */
-footer img[src='/logo-white.png'] {
-  mix-blend-mode: screen;
-}
-
 /* Respect "reduce motion" on every page: no looping or sliding animations, no smooth scrolling. */
 @media (prefers-reduced-motion: reduce) {
   *,
