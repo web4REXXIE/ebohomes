@@ -188,7 +188,7 @@ function ShareSheet({
           )}
         </div>
 
-        <p className="mt-4 text-[11px] leading-snug text-muted-foreground">
+        <p className="mt-4 text-xs leading-snug text-muted-foreground">
           For TikTok or Instagram, tap &quot;More apps&quot; on your phone, or copy the link and
           paste it into your post or story.
         </p>
@@ -219,6 +219,7 @@ export function ListingCard({
   const [saved, setSaved] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [saveError, setSaveError] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const router = useRouter()
 
@@ -254,18 +255,15 @@ export function ListingCard({
     }
 
     setBusy(true)
-    if (saved) {
-      await supabase
-        .from('saved_properties')
-        .delete()
-        .eq('tenant_id', userId)
-        .eq('listing_id', id)
-      setSaved(false)
+    setSaveError(false)
+    const { error } = saved
+      ? await supabase.from('saved_properties').delete().eq('tenant_id', userId).eq('listing_id', id)
+      : await supabase.from('saved_properties').insert({ tenant_id: userId, listing_id: id })
+    if (error) {
+      console.error('Failed to update saved property:', error.message)
+      setSaveError(true)
     } else {
-      await supabase
-        .from('saved_properties')
-        .insert({ tenant_id: userId, listing_id: id })
-      setSaved(true)
+      setSaved(!saved)
     }
     setBusy(false)
   }
@@ -284,9 +282,9 @@ export function ListingCard({
   return (
     <>
       <article
-        className={`flex flex-col overflow-hidden rounded-xl bg-card transition-shadow hover:shadow-md ${
+        className={`group flex flex-col overflow-hidden rounded-card bg-card shadow-rest transition-shadow hover:shadow-raised ${
           featured
-            ? 'border border-amber-400 ring-1 ring-amber-300/70 shadow-md shadow-amber-500/10'
+            ? 'border border-featured ring-1 ring-featured/40'
             : 'border border-border'
         } ${isList ? 'md:flex-row' : ''}`}
       >
@@ -294,7 +292,7 @@ export function ListingCard({
         <div className={`relative ${isList ? 'md:w-72 md:shrink-0' : ''}`}>
           <Link href={`/listing/${id}`} className="block h-full" aria-label="View property">
             <div
-              className={`relative w-full bg-secondary/40 ${
+              className={`relative w-full overflow-hidden bg-secondary/40 ${
                 isList ? 'aspect-[4/3] md:aspect-auto md:h-full md:min-h-52' : 'aspect-[4/3]'
               }`}
             >
@@ -305,21 +303,22 @@ export function ListingCard({
                 alt={displayTitle}
                 fallbackSrc={PLACEHOLDER_PHOTO}
                 priority={priority}
+                className="transition-transform duration-500 motion-reduce:transition-none group-hover:scale-[1.03]"
               />
             </div>
           </Link>
 
           {featured && (
-            <div className="absolute left-0 top-0 flex items-center gap-1 rounded-br-xl bg-gradient-to-r from-amber-300 to-amber-500 px-2.5 py-1 text-[10px] font-bold text-amber-950 shadow sm:text-[11px]">
+            <div className="absolute left-0 top-0 flex items-center gap-1 rounded-br-xl bg-featured px-2.5 py-1 text-xs font-bold text-featured-foreground shadow">
               <Star size={11} className="fill-current" />
               FEATURED
             </div>
           )}
 
           {inspected && (
-            <div className="absolute left-0 bottom-9 flex items-center gap-1 rounded-r-lg bg-emerald-700 px-2 py-1 text-[10px] font-semibold text-white shadow sm:text-[11px]">
+            <div className="absolute left-0 bottom-9 flex items-center gap-1 rounded-r-lg bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
               <ShieldCheck size={11} />
-              Physically inspected
+              Inspected by EboHomes
             </div>
           )}
 
@@ -330,16 +329,17 @@ export function ListingCard({
             title={saved ? 'Remove from saved properties' : 'Save this property'}
             aria-label={saved ? 'Unsave property' : 'Save property'}
             aria-pressed={saved}
-            className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow backdrop-blur-md transition hover:scale-105 disabled:opacity-60 sm:h-9 sm:w-9"
+            className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-full bg-card/95 text-foreground shadow-rest backdrop-blur-md transition hover:bg-card disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <Heart
-              size={16}
-              className={saved ? 'fill-primary text-primary' : 'text-foreground'}
+              size={18}
+              aria-hidden="true"
+              className={saved ? 'fill-destructive text-destructive' : 'text-foreground'}
             />
           </button>
 
           {photoCount ? (
-            <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
+            <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm">
               <Camera size={11} />
               {photoCount}
             </div>
@@ -352,13 +352,13 @@ export function ListingCard({
             <div className="min-w-0">
               <p className="whitespace-nowrap text-base font-extrabold leading-tight text-primary sm:text-lg">
                 ₦{Number(price_monthly || 0).toLocaleString('en-NG')}
-                <span className="text-[11px] font-medium text-muted-foreground sm:text-xs">
+                <span className="text-xs font-medium text-muted-foreground">
                   {' '}
                   /month
                 </span>
               </p>
               {Number(price_yearly) > 0 && (
-                <p className="text-[11px] text-muted-foreground sm:text-xs">
+                <p className="text-xs text-muted-foreground">
                   ₦{Number(price_yearly).toLocaleString('en-NG')}/year
                 </p>
               )}
@@ -372,7 +372,7 @@ export function ListingCard({
                 setShowShare(true)
               }}
               aria-label="Share property"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              className="-mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <Share2 size={16} />
             </button>
@@ -397,37 +397,42 @@ export function ListingCard({
             )}
             {bedrooms != null && (
               <span className="flex items-center gap-1">
-                <Bed size={13} className="text-primary" />
-                {bedrooms}
+                <Bed size={13} className="text-primary" aria-hidden="true" />
+                {bedrooms} {Number(bedrooms) === 1 ? 'bed' : 'beds'}
               </span>
             )}
             {bathrooms != null && (
               <span className="flex items-center gap-1">
-                <Bath size={13} className="text-primary" />
-                {bathrooms}
+                <Bath size={13} className="text-primary" aria-hidden="true" />
+                {bathrooms} {Number(bathrooms) === 1 ? 'bath' : 'baths'}
               </span>
             )}
             {living_rooms != null && (
               <span className="flex items-center gap-1">
-                <Sofa size={13} className="text-primary" />
-                {living_rooms}
+                <Sofa size={13} className="text-primary" aria-hidden="true" />
+                {living_rooms} {Number(living_rooms) === 1 ? 'living room' : 'living rooms'}
               </span>
             )}
           </div>
 
-          {added && <p className="mt-2 text-[11px] font-medium text-emerald-700">{added}</p>}
+          {saveError && (
+            <p role="alert" className="mt-2 text-xs font-medium text-destructive">
+              Could not update your saved properties. Please try again.
+            </p>
+          )}
+          {added && <p className="mt-2 text-xs font-medium text-success">{added}</p>}
 
           <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
             <Link
               href={`/listing/${id}`}
-              className="flex h-9 items-center justify-center rounded-lg border border-border px-2 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/50 sm:text-sm"
+              className="flex h-11 items-center justify-center rounded-lg border border-border px-2 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/50 sm:text-sm"
             >
               Details
             </Link>
             <button
               type="button"
               onClick={handleViewingClick}
-              className="flex h-9 items-center justify-center gap-1 rounded-lg bg-primary px-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 sm:text-sm"
+              className="flex h-11 items-center justify-center gap-1 rounded-lg bg-primary px-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 sm:text-sm"
             >
               <Calendar size={14} />
               Viewing
