@@ -79,11 +79,11 @@ function publicId(p: PropertyLite): string | null {
 
 export function InspectionBadge({ inspected }: { inspected: boolean }) {
   return inspected ? (
-    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-900">
+    <span className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success-soft px-2.5 py-1 text-xs font-semibold text-success">
       <ShieldCheck size={13} aria-hidden /> Inspected by EboHomes
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
+    <span className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning-soft px-2.5 py-1 text-xs font-semibold text-warning">
       <Hourglass size={13} aria-hidden /> Not yet inspected
     </span>
   )
@@ -152,7 +152,7 @@ export function PropertySummary({
       <InspectionBadge inspected={inspected} />
       <span
         className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${
-          listed ? 'border-blue-300 bg-blue-50 text-blue-900' : 'border-slate-300 bg-slate-100 text-slate-800'
+          listed ? 'border-info/25 bg-info-soft text-info' : 'border-border bg-muted text-muted-foreground'
         }`}
       >
         <Clock size={13} aria-hidden /> {listed ? 'Currently listed' : 'Not currently listed'}
@@ -181,7 +181,7 @@ export function PropertySummary({
             ].filter(Boolean).join(' · ')}
           </p>
           {inspected && (
-            <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-800">
+            <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-success">
               <ShieldCheck size={12} aria-hidden /> Inspected by EboHomes
             </p>
           )}
