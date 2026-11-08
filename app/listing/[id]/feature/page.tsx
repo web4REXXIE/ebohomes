@@ -22,6 +22,8 @@ import { Button } from '@/components/ui/button'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { sizedPhoto } from '@/lib/image-url'
+import { SmartImage } from '@/components/ui/smart-image'
 
 const BENEFITS = [
   { icon: Home, title: 'Homepage Placement', desc: 'Appear on the homepage for maximum exposure' },
@@ -148,7 +150,7 @@ export default function FeatureYourPropertyPage() {
             </p>
             <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-sm">
               <div className="relative h-56">
-                <img src={property.image} alt={property.title} className="w-full h-full object-cover" />
+                <SmartImage src={sizedPhoto(property.image, 800)} alt={property.title} />
                 <span className="absolute top-4 right-4 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 text-xs font-bold px-3 py-1.5 rounded-full shadow">
                   Featured Preview
                 </span>
