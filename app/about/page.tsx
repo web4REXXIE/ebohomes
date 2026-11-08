@@ -1,137 +1,252 @@
+
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Home, ShieldCheck, Users, Star, ArrowRight, Phone, Mail, ShieldQuestion, Lightbulb, User, Award, Heart } from 'lucide-react'
+import {
+  ArrowRight,
+  Award,
+  ClipboardCheck,
+  FileCheck2,
+  Home,
+  Lightbulb,
+  Mail,
+  MessageCircle,
+  Search,
+  ShieldCheck,
+  ShieldQuestion,
+  User,
+  Users,
+} from 'lucide-react'
+import { EBOHOMES_EMAIL, EBOHOMES_WHATSAPP } from '@/lib/contact'
 
 export const metadata: Metadata = {
   title: 'About us',
   description:
-    'Learn about EboHomes, our story and values, and how we help tenants and landlords in Ebonyi State with reviewed listings and a clearer, safer rental process.',
+    'EboHomes is building a more trustworthy way to discover, understand and rent property in Nigeria, starting with reviewed listings in Ebonyi State.',
   alternates: { canonical: '/about' },
 }
+
+// Every statement here comes from how the platform works today or from EboHomes' stated mission.
+// No company history, awards, partners, office claims or statistics are invented.
+
+const PROBLEMS = [
+  {
+    icon: Search,
+    title: 'Genuine properties are hard to find',
+    text: 'Tenants often cannot tell which listings are real, current and available.',
+  },
+  {
+    icon: ShieldQuestion,
+    title: 'Property information is unreliable',
+    text: 'Photos, prices and descriptions are hard to trust when nobody has checked them.',
+  },
+  {
+    icon: Users,
+    title: 'Renting is stressful for everyone',
+    text: 'Landlords and tenants both lose time when the process is unclear and relies on informal middlemen.',
+  },
+]
+
+const APPROACH = [
+  {
+    icon: ShieldCheck,
+    title: 'Listings are reviewed before they go live',
+    text: 'A property only appears on EboHomes after our team has reviewed it.',
+  },
+  {
+    icon: FileCheck2,
+    title: 'Each check is shown separately',
+    text: 'A landlord identity check, a review of property documents and a physical inspection are different things. Each property page says which of them have been done, and which have not.',
+  },
+  {
+    icon: ClipboardCheck,
+    title: 'One place for the whole process',
+    text: 'Questions, applications and viewing requests go through EboHomes, and tenant contact details stay with EboHomes.',
+  },
+]
+
+const VALUES = [
+  { icon: ShieldQuestion, title: 'Integrity', desc: 'We operate with honesty and transparency.' },
+  { icon: Lightbulb, title: 'Innovation', desc: 'We embrace technology to build better solutions.' },
+  { icon: User, title: 'Customer First', desc: 'Your needs are at the heart of what we do.' },
+  { icon: Award, title: 'Excellence', desc: 'We hold ourselves to the highest standard.' },
+  { icon: Users, title: 'Community', desc: 'We are committed to stronger communities.' },
+]
+
+const btnPrimary =
+  'inline-flex min-h-12 items-center justify-center gap-2 rounded-button bg-featured px-6 text-label font-semibold text-featured-foreground transition hover:bg-featured/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
+const btnGhost =
+  'inline-flex min-h-12 items-center justify-center gap-2 rounded-button border border-white/30 px-6 text-label font-semibold text-forest-foreground transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
+const iconBubble = 'mb-3 inline-flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary'
 
 export default function AboutPage() {
   return (
     <div>
       {/* Hero */}
-      <section className="bg-accent/40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 grid md:grid-cols-2 gap-10 items-center">
-          <div>
-            <span className="inline-flex items-center gap-2 bg-accent text-accent-foreground text-xs font-semibold px-3 py-1.5 rounded-full mb-4">
-              <Users size={14} /> Building better homes. Empowering communities.
-            </span>
-            <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
-              About <span className="text-primary">EboHomes</span>
+      <section className="relative overflow-hidden bg-forest text-forest-foreground">
+        <div aria-hidden className="absolute inset-0 bg-cover bg-center opacity-20" style={{ backgroundImage: "url('/hero.jpg')" }} />
+        <div aria-hidden className="absolute inset-0 bg-linear-to-b from-forest/60 to-forest" />
+        <div className="container-wide relative z-10 py-16 sm:py-20 lg:py-24">
+          <div className="max-w-3xl">
+            <span aria-hidden className="mb-5 block h-0.5 w-12 rounded-full bg-featured" />
+            <p className="mb-3 text-label font-semibold uppercase tracking-wide text-featured">About EboHomes</p>
+            <h1 className="text-display font-bold leading-tight">
+              A more trustworthy way to discover, understand and rent property in Nigeria.
             </h1>
-            <p className="text-muted-foreground text-lg mb-8 leading-relaxed">
-              EboHomes is Ebonyi State&apos;s trusted direct rental platform, connecting
-              landlords and tenants without agents. We make renting simple,
-              transparent, and rewarding for everyone.
+            <p className="mt-5 max-w-2xl text-body-lg text-forest-foreground/80">
+              EboHomes is a direct rental platform that connects landlords and tenants without agents. We are starting
+              in Ebonyi State, with Real Estate You Can Trust as the standard we hold ourselves to.
             </p>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="flex items-start gap-2">
-                <span className="bg-accent p-2 rounded-lg text-primary shrink-0"><Home size={18} /></span>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Quality Homes</p>
-                  <p className="text-xs text-muted-foreground">Verified and reliable</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="bg-accent p-2 rounded-lg text-primary shrink-0"><ShieldCheck size={18} /></span>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Trust &amp; Security</p>
-                  <p className="text-xs text-muted-foreground">Your safety, our priority</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="bg-accent p-2 rounded-lg text-primary shrink-0"><Heart size={18} /></span>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Community</p>
-                  <p className="text-xs text-muted-foreground">Homes people are proud of</p>
-                </div>
-              </div>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/search" className={btnPrimary}>
+                Browse homes <ArrowRight size={16} aria-hidden />
+              </Link>
+              <Link href="/contact" className={btnGhost}>
+                Contact us
+              </Link>
             </div>
-          </div>
-          <div className="rounded-2xl overflow-hidden shadow-lg">
-            <img src="/hero.jpg" alt="EboHomes property" className="w-full h-full object-cover" />
           </div>
         </div>
       </section>
 
-      {/* Story + Impact */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 grid md:grid-cols-2 gap-12">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground mb-4 border-l-4 border-primary pl-3">Our Story</h2>
-          <p className="text-muted-foreground leading-relaxed mb-4">
-            EboHomes was born out of a simple mission: to transform the rental
-            experience in Ebonyi State through technology, transparency, and
-            trust — cutting out informal agents and letting landlords and
-            tenants deal directly.
-          </p>
-          <p className="text-muted-foreground leading-relaxed mb-6">
-            We understand the challenges of finding the right property or the
-            right tenant. That&apos;s why we built a platform that makes the
-            process seamless for everyone involved.
-          </p>
-          <Link href="/contact">
-            <button className="inline-flex items-center gap-2 bg-primary text-primary-foreground font-semibold px-5 py-3 rounded-xl hover:bg-primary/90 transition-colors">
-              Get in Touch <ArrowRight size={16} />
-            </button>
-          </Link>
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold text-foreground mb-4 border-l-4 border-primary pl-3">How EboHomes Works for You</h2>
-          <div className="grid grid-cols-2 gap-4">
-            {[
-              { icon: Home, value: '100%', label: 'Listings reviewed by EboHomes before going live' },
-              { icon: Users, value: 'Private', label: 'Tenant contact details stay with EboHomes' },
-             { icon: Heart, value: 'Ebonyi', label: 'State we serve' },
-              { icon: Star, value: 'Verified', label: 'Payments checked before a rental counts' },
-            ].map((s, i) => (
-              <div key={i} className="bg-card border border-border rounded-2xl p-5">
-                <span className="inline-flex bg-accent text-primary p-2.5 rounded-xl mb-3"><s.icon size={20} /></span>
-                <p className="text-2xl font-bold text-foreground">{s.value}</p>
-                <p className="text-sm text-muted-foreground">{s.label}</p>
-              </div>
-            ))}
+      {/* The problem */}
+      <section className="py-section">
+        <div className="container-wide">
+          <div className="max-w-2xl">
+            <h2 className="text-h1 font-bold text-foreground">Why EboHomes exists</h2>
+            <p className="mt-3 text-body-lg text-muted-foreground">
+              Finding a home should not mean guessing which listings are real. Too often it does.
+            </p>
           </div>
+          <ul className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+            {PROBLEMS.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="rounded-card border border-border bg-card p-card shadow-rest">
+                <span aria-hidden className={iconBubble}>
+                  <Icon size={20} />
+                </span>
+                <h3 className="text-h3 font-semibold text-foreground">{title}</h3>
+                <p className="mt-1.5 text-body text-muted-foreground">{text}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* The approach */}
+      <section className="bg-cream py-section text-cream-foreground">
+        <div className="container-wide">
+          <div className="max-w-2xl">
+            <h2 className="text-h1 font-bold">How we are building trust</h2>
+            <p className="mt-3 text-body-lg text-cream-foreground/80">
+              EboHomes was born out of a simple mission: to improve the rental experience in Ebonyi State through
+              technology, transparency and trust, so landlords and tenants can deal directly.
+            </p>
+          </div>
+          <ul className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+            {APPROACH.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="rounded-card border border-border bg-card p-card text-foreground shadow-rest">
+                <span aria-hidden className={iconBubble}>
+                  <Icon size={20} />
+                </span>
+                <h3 className="text-h3 font-semibold">{title}</h3>
+                <p className="mt-1.5 text-body text-muted-foreground">{text}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-6 max-w-3xl rounded-control border border-border bg-card px-4 py-3 text-body text-muted-foreground">
+            Checks help you decide, but they are not a guarantee. Always look at the property and the documents yourself,
+            and never pay outside EboHomes.
+          </p>
+        </div>
+      </section>
+
+      {/* For tenants and landlords */}
+      <section className="py-section">
+        <div className="container-wide grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="rounded-card border border-border bg-card p-card-lg shadow-rest">
+            <span aria-hidden className={iconBubble}>
+              <Home size={20} />
+            </span>
+            <h2 className="text-h2 font-bold text-foreground">For tenants</h2>
+            <p className="mt-2 text-body text-muted-foreground">
+              Search reviewed listings, see what has been checked on each one, and send questions, applications and
+              viewing requests in one place.
+            </p>
+            <Link href="/search" className="mt-4 inline-flex min-h-11 items-center gap-2 font-semibold text-primary hover:underline focus-ring">
+              Find a home <ArrowRight size={16} aria-hidden />
+            </Link>
+          </div>
+          <div className="rounded-card border border-border bg-card p-card-lg shadow-rest">
+            <span aria-hidden className={iconBubble}>
+              <ShieldCheck size={20} />
+            </span>
+            <h2 className="text-h2 font-bold text-foreground">For landlords</h2>
+            <p className="mt-2 text-body text-muted-foreground">
+              Submit your property for review, verify who you are, and reach tenants without relying on informal agents.
+            </p>
+            <Link
+              href="/login?mode=signup"
+              className="mt-4 inline-flex min-h-11 items-center gap-2 font-semibold text-primary hover:underline focus-ring"
+            >
+              Create a landlord account <ArrowRight size={16} aria-hidden />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Ambition */}
+      <section className="bg-forest py-section text-forest-foreground">
+        <div className="container-wide max-w-3xl text-center">
+          <span aria-hidden className="mx-auto mb-5 block h-0.5 w-12 rounded-full bg-featured" />
+          <h2 className="text-h1 font-bold">Where we are going</h2>
+          <p className="mt-4 text-body-lg text-forest-foreground/80">
+            Our long-term ambition is to build trust infrastructure for Nigerian real estate: a place where property
+            information is checked, transparent and easy to understand. We are at the beginning of that work, and we
+            would rather show you what we have actually checked than promise more than we can prove.
+          </p>
         </div>
       </section>
 
       {/* Values */}
-      <section className="bg-muted/40 py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl font-bold text-foreground mb-8">Our Values</h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
-            {[
-              { icon: ShieldQuestion, title: 'Integrity', desc: 'We operate with honesty and transparency.' },
-              { icon: Lightbulb, title: 'Innovation', desc: 'We embrace technology to build better solutions.' },
-              { icon: User, title: 'Customer First', desc: 'Your needs are at the heart of what we do.' },
-              { icon: Award, title: 'Excellence', desc: 'We hold ourselves to the highest standard.' },
-              { icon: Users, title: 'Community', desc: 'We are committed to stronger communities.' },
-            ].map((v, i) => (
-              <div key={i}>
-                <span className="inline-flex bg-accent text-primary p-2.5 rounded-xl mb-3"><v.icon size={18} /></span>
-                <p className="font-semibold text-foreground mb-1">{v.title}</p>
-                <p className="text-sm text-muted-foreground">{v.desc}</p>
-              </div>
+      <section className="py-section">
+        <div className="container-wide">
+          <h2 className="mb-8 text-h1 font-bold text-foreground">Our values</h2>
+          <ul className="grid grid-cols-2 gap-6 md:grid-cols-5">
+            {VALUES.map(({ icon: Icon, title, desc }) => (
+              <li key={title}>
+                <span aria-hidden className={iconBubble}>
+                  <Icon size={18} />
+                </span>
+                <h3 className="mb-1 text-body font-semibold text-foreground">{title}</h3>
+                <p className="text-body text-muted-foreground">{desc}</p>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
-      {/* CTA band */}
+      {/* Contact band: real details from lib/contact */}
       <section className="bg-primary text-primary-foreground">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="container-wide flex flex-col items-start justify-between gap-6 py-10 md:flex-row md:items-center">
           <div>
-            <p className="font-semibold text-lg">Have questions?</p>
-            <p className="text-primary-foreground/80 text-sm">We're here to help you find a home or grow your listings.</p>
+            <h2 className="text-h2 font-bold">Have questions?</h2>
+            <p className="mt-1 text-body text-primary-foreground/85">
+              We are here to help you find a home or list a property.
+            </p>
           </div>
-          <div className="flex gap-3">
-            <a href="tel:+2348001234567" className="flex items-center gap-2 border border-white/40 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors">
-              <Phone size={16} /> Call Us
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <a
+              href={`https://wa.me/${EBOHOMES_WHATSAPP}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-button border border-white/40 px-5 text-label font-semibold transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <MessageCircle size={16} aria-hidden /> WhatsApp us
             </a>
-            <a href="mailto:support@ebohomes.com" className="flex items-center gap-2 border border-white/40 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-white/10 transition-colors">
-              <Mail size={16} /> Email Us
+            <a
+              href={`mailto:${EBOHOMES_EMAIL}`}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-button border border-white/40 px-5 text-label font-semibold transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <Mail size={16} aria-hidden /> Email us
             </a>
           </div>
         </div>
