@@ -23,6 +23,8 @@ import { supabase } from '@/lib/supabase'
 import { EBOHOMES_WHATSAPP } from '@/lib/contact'
 import { getSiteUrl } from '@/lib/site-url'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
+import { sizedPhoto, photoSrcSet, PLACEHOLDER_PHOTO } from '@/lib/image-url'
+import { SmartImage } from '@/components/ui/smart-image'
 
 type ListingCardProps = {
   id: string
@@ -42,12 +44,7 @@ type ListingCardProps = {
   verified?: boolean // kept for future Phase 6 use — not displayed at property level today (no evidence backs it yet)
   featured?: boolean
   layout?: 'grid' | 'list' // 'list' = wide horizontal card on desktop (md and up)
-}
-
-// Cloudinary: auto format, auto quality, width-sized. Other URLs are left alone.
-function cardImage(url: string, width: number) {
-  if (!url || !url.includes('/upload/')) return url
-  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`)
+  priority?: boolean // true for the first card(s) on screen, so their photo loads first
 }
 
 function addedLabel(createdAt?: string) {
@@ -217,6 +214,7 @@ export function ListingCard({
   created_at,
   featured,
   layout = 'grid',
+  priority = false,
 }: ListingCardProps) {
   const [saved, setSaved] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
@@ -295,19 +293,20 @@ export function ListingCard({
         {/* Photo */}
         <div className={`relative ${isList ? 'md:w-72 md:shrink-0' : ''}`}>
           <Link href={`/listing/${id}`} className="block h-full" aria-label="View property">
-            <img
-              src={image ? cardImage(image, 600) : '/placeholder.jpg'}
-              alt={displayTitle}
-              loading="lazy"
-              decoding="async"
-              className={`w-full bg-secondary/40 object-cover ${
-                isList ? 'aspect-[4/3] md:aspect-auto md:h-full' : 'aspect-[4/3]'
+            <div
+              className={`relative w-full bg-secondary/40 ${
+                isList ? 'aspect-[4/3] md:aspect-auto md:h-full md:min-h-52' : 'aspect-[4/3]'
               }`}
-              onError={(e) => {
-                e.currentTarget.onerror = null
-                e.currentTarget.src = '/placeholder.jpg'
-              }}
-            />
+            >
+              <SmartImage
+                src={image ? sizedPhoto(image, 600) : PLACEHOLDER_PHOTO}
+                srcSet={image ? photoSrcSet(image, [320, 480, 640]) : undefined}
+                sizes={isList ? '(min-width: 768px) 288px, 100vw' : '(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw'}
+                alt={displayTitle}
+                fallbackSrc={PLACEHOLDER_PHOTO}
+                priority={priority}
+              />
+            </div>
           </Link>
 
           {featured && (
