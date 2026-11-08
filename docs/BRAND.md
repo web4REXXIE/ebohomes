@@ -105,3 +105,73 @@ Prices and key numbers: 600-700, tabular figures where aligned. Do not set body 
 - Mix both slogans, or invent new slogans.
 - Hardcode `emerald-*`, `amber-*` or hex values in new code.
 - Use the supporting phrase as the company's identity line.
+
+## 9. Stage 4 design tokens
+
+All tokens live in `app/globals.css` and have light and dark values. Use the utility, never the hex value.
+
+### Surfaces
+| Role | Utility | Light | Use |
+|---|---|---|---|
+| Page | `bg-background` | #FAFAF9 | Default page background |
+| Secondary | `bg-surface-secondary` (`bg-cream`) | #FAF7F2 | Alternate sections |
+| Card | `bg-card` | #FFFFFF | Cards, forms |
+| Elevated | `bg-surface-elevated` | #FFFFFF | Dropdowns, popovers, modals (pair with a shadow) |
+| Dark forest | `bg-surface-forest` (`bg-forest`) | #0A2E1A | Header, footer, hero, banners. Text: `text-foreground-inverse` |
+
+### Text and borders
+| Role | Utility | Notes |
+|---|---|---|
+| Primary text | `text-foreground` | 17:1 on white |
+| Secondary text | `text-foreground-secondary` | 10:1; sub-headings, supporting paragraphs |
+| Muted text | `text-muted-foreground` | 5:1; captions and meta. Never lighter |
+| Inverse text | `text-foreground-inverse` | On forest and dark surfaces |
+| Subtle border | `border-border-subtle` | Dividers inside a card |
+| Default border | `border-border` | Cards, tables |
+| Strong border | `border-border-strong` | Form controls (about 3:1 on white) |
+
+### Status (six, plus unverified)
+`success`, `warning`, `danger`, `info` (new, blue), `verified`, `pending`, `unverified`. Each has a `-soft` surface:
+`text-info bg-info-soft`. Pair with an icon or label.
+
+### Typography tokens
+| Use | Utility | Size (mobile / desktop / 1280+) |
+|---|---|---|
+| Hero | `text-display` | 36 / 56 / 60 |
+| Page heading | `text-h1` | 32 / 44 / 48 |
+| Section heading | `text-h2` | 26 / 32 |
+| Card heading | `text-h3` | 18 / 20 |
+| Property title | `text-property-title` | 16 / 17, weight 600 |
+| Body, large body | `text-body`, `text-body-lg` | 16, 16 / 18 |
+| Supporting text | `text-body-sm` | 14 |
+| Labels and buttons | `text-label` | 14, weight 500-600 |
+| Captions | `text-caption` | 12 |
+
+Below 360px wide, display, h1 and h2 step down one size. Display, h1 and h2 carry slightly tighter letter spacing.
+
+### Spacing
+| Role | Utility | Mobile / desktop |
+|---|---|---|
+| Section | `py-section`, `py-section-sm` | 48 / 80 (96 at 1280+), 32 / 56 (64) |
+| Page body | `py-page` | 24 / 40 (48) |
+| Page side padding | `container-*` (`--gutter`) | 16 (14 below 360) / 24 / 32 / 40 at 1536+ |
+| Card | `p-card`, `p-card-lg` | 16 / 24, 20 / 32 |
+| Form fields | `gap-form`, `space-y-form` | 16 / 20 |
+| Stacked components | `gap-stack` | 16 / 24 |
+| Card grids | `gap-grid` | 16 / 24 |
+
+### Radius, shadow, focus
+| Role | Radius | Shadow |
+|---|---|---|
+| Small controls (chips, tags) | `rounded-chip` | none |
+| Buttons | `rounded-button` | `shadow-rest` at most |
+| Inputs | `rounded-input` | `shadow-input` |
+| Cards | `rounded-card` | `shadow-rest`, hover `shadow-raised` |
+| Navigation | n/a | `shadow-nav` |
+| Dropdowns | `rounded-card` | `shadow-dropdown` |
+| Modals | `rounded-modal` | `shadow-modal` |
+| Large promotional sections | `rounded-promo` | none |
+
+Focus: every link, button and field shows a 2px `--ring` outline with a 2px offset on keyboard focus.
+Use `focus-ring` on custom controls. Text selection uses the supporting green.
+Links in running text use `link-inline` (brand colour, always underlined). Bare `<a>` tags are not restyled.
