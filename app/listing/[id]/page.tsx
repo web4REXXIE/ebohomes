@@ -30,6 +30,7 @@ import {
 } from '@/components/property-details'
 import { displayTitle } from '@/lib/property-display'
 import { cleanMediaUrls } from '@/lib/property-media'
+import { isValidListingId } from '@/lib/listing-id'
 import { PropertyVideo } from '@/components/property-video'
 import { PropertyTrust } from '@/components/property-trust'
 import { RemoteInspectionEntry } from '@/components/remote-inspection-entry'
@@ -100,6 +101,40 @@ async function checkSaved(
     return null
   }
   return !!data
+}
+
+// Reads when the listing was added and last updated. Kept as its own request so the page never
+// breaks if a column is missing. Returns null if neither date could be read.
+async function loadListingDates(
+  listingId: string
+): Promise<{ created_at: string | null; updated_at: string | null } | null> {
+  const both = await supabase
+    .from('listings')
+    .select('created_at, updated_at')
+    .eq('id', listingId)
+    .maybeSingle()
+
+  if (!both.error && both.data) {
+    return {
+      created_at: (both.data as any).created_at ?? null,
+      updated_at: (both.data as any).updated_at ?? null,
+    }
+  }
+
+  const createdOnly = await supabase
+    .from('listings')
+    .select('created_at')
+    .eq('id', listingId)
+    .maybeSingle()
+
+  if (!createdOnly.error && createdOnly.data) {
+    return {
+      created_at: (createdOnly.data as any).created_at ?? null,
+      updated_at: null,
+    }
+  }
+
+  return null
 }
 
 export default function ListingDetailPage() {
@@ -249,7 +284,9 @@ export default function ListingDetailPage() {
       setPageError('')
       setNotAvailable(false)
 
-      if (!id) {
+      // A mistyped or malformed link is "Listing not found", not a database error.
+      if (!id || !isValidListingId(id)) {
+        setListing(null)
         setLoading(false)
         return
       }
@@ -287,172 +324,133 @@ export default function ListingDetailPage() {
 
         setListing(data)
 
-        // Date added / updated. Separate query so the page never breaks
-        // if a column is missing.
-        {
-          const both = await supabase
-            .from('listings')
-            .select('created_at, updated_at')
-            .eq('id', data.id)
-            .maybeSingle()
+        const listingId: string = data.id
+        const landlordId: string | null = data.landlord_id ?? null
 
-          if (!cancelled) {
-            if (!both.error && both.data) {
-              setDates({
-                created_at: (both.data as any).created_at ?? null,
-                updated_at: (both.data as any).updated_at ?? null,
-              })
-            } else {
-              const createdOnly = await supabase
-                .from('listings')
-                .select('created_at')
-                .eq('id', data.id)
-                .maybeSingle()
-
-              if (!cancelled && !createdOnly.error && createdOnly.data) {
-                setDates({
-                  created_at: (createdOnly.data as any).created_at ?? null,
-                  updated_at: null,
-                })
-              }
-            }
-          }
-        }
-
-        if (data.landlord_id) {
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles_public')
-            .select('full_name, verified')
-            .eq('id', data.landlord_id)
-            .maybeSingle()
-
-          if (!cancelled) {
-            if (profileError) {
-              console.error(
-                'Failed to load public landlord profile:',
-                profileError.message
+        // Everything below only needs the listing id, the landlord id or the signed-in user,
+        // so these requests run at the same time instead of one after another.
+        const [datesResult, landlordResult, inspectionResult, trustResult, authorityResult, holdResult, authResult] =
+          await Promise.all([
+            loadListingDates(listingId),
+            landlordId
+              ? supabase
+                  .from('profiles_public')
+                  .select('full_name, verified')
+                  .eq('id', landlordId)
+                  .maybeSingle()
+              : Promise.resolve(null),
+            supabase
+              .from('public_listing_inspections')
+              .select(
+                'inspected_at, road_condition, road_matches, water_source, water_matches, electricity_notes, electricity_matches, network_notes, network_matches, security_notes, security_matches, neighborhood_type, nearby_landmarks, environment_notes, environment_matches, condition_notes, condition_matches, overall_notes'
               )
-            } else {
-              setLandlord(profile)
-            }
-          }
-        }
-
-        const { data: inspectionData, error: inspectionError } =
-          await supabase
-            .from('public_listing_inspections')
-            .select(
-              'inspected_at, road_condition, road_matches, water_source, water_matches, electricity_notes, electricity_matches, network_notes, network_matches, security_notes, security_matches, neighborhood_type, nearby_landmarks, environment_notes, environment_matches, condition_notes, condition_matches, overall_notes'
-            )
-            .eq('listing_id', data.id)
-            .order('inspected_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-
-        if (!cancelled) {
-          setInspectionFailed(Boolean(inspectionError))
-          if (inspectionError) {
-            console.error(
-              'Failed to load listing inspection:',
-              inspectionError.message
-            )
-          } else {
-            setInspection(inspectionData)
-          }
-        }
-
-        const { data: trustRows, error: trustError } = await supabase.rpc(
-          'listing_trust',
-          { p_listing: data.id }
-        )
-
-        if (!cancelled) {
-          setTrustFailed(Boolean(trustError))
-          if (trustError) {
-            console.error(
-              'Failed to load listing trust information:',
-              trustError.message
-            )
-          } else {
-            setTrust(
-              Array.isArray(trustRows) ? trustRows[0] ?? null : null
-            )
-          }
-        }
-
-        // Has EboHomes accepted the authority evidence for this property? A yes/no only.
-        const { data: authorityData, error: authorityError } = await supabase.rpc(
-          'listing_authority_reviewed',
-          { p_listing: data.id }
-        )
-        if (!cancelled) {
-          if (authorityError) {
-            console.error('Failed to load authority review:', authorityError.message)
-          } else {
-            setAuthorityReviewed(authorityData === true)
-          }
-        }
-
-        // Is the property on hold? New applications and viewings are blocked in the
-        // database while it is. This only lets the page explain it before the tenant types.
-        const { data: holdData, error: holdError } = await supabase.rpc(
-          'listing_on_hold',
-          { p_listing: data.id }
-        )
-
-        if (!cancelled) {
-          if (holdError) {
-            console.error('Failed to check property hold:', holdError.message)
-          } else {
-            setOnHold(holdData === true)
-          }
-        }
-
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser()
+              .eq('listing_id', listingId)
+              .order('inspected_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            supabase.rpc('listing_trust', { p_listing: listingId }),
+            // Has EboHomes accepted the authority evidence for this property? A yes/no only.
+            supabase.rpc('listing_authority_reviewed', { p_listing: listingId }),
+            // Is the property on hold? New applications and viewings are blocked in the
+            // database while it is. This only lets the page explain it before the tenant types.
+            supabase.rpc('listing_on_hold', { p_listing: listingId }),
+            supabase.auth.getUser(),
+          ])
 
         if (cancelled) return
 
-        if (authError) {
-          console.error('Failed to check current user:', authError.message)
+        // Date added / updated (null if it could not be read; the page still works)
+        if (datesResult) setDates(datesResult)
+
+        // Public landlord profile
+        if (landlordResult) {
+          if (landlordResult.error) {
+            console.error(
+              'Failed to load public landlord profile:',
+              landlordResult.error.message
+            )
+          } else {
+            setLandlord(landlordResult.data)
+          }
         }
 
-        const uid = user?.id ?? null
+        // Physical inspection
+        setInspectionFailed(Boolean(inspectionResult.error))
+        if (inspectionResult.error) {
+          console.error(
+            'Failed to load listing inspection:',
+            inspectionResult.error.message
+          )
+        } else {
+          setInspection(inspectionResult.data)
+        }
+
+        // Trust information
+        setTrustFailed(Boolean(trustResult.error))
+        if (trustResult.error) {
+          console.error(
+            'Failed to load listing trust information:',
+            trustResult.error.message
+          )
+        } else {
+          setTrust(
+            Array.isArray(trustResult.data) ? trustResult.data[0] ?? null : null
+          )
+        }
+
+        // Authority review (null = could not be loaded)
+        if (authorityResult.error) {
+          console.error('Failed to load authority review:', authorityResult.error.message)
+        } else {
+          setAuthorityReviewed(authorityResult.data === true)
+        }
+
+        // Hold
+        if (holdResult.error) {
+          console.error('Failed to check property hold:', holdResult.error.message)
+        } else {
+          setOnHold(holdResult.data === true)
+        }
+
+        // Signed-in user
+        if (authResult.error) {
+          console.error('Failed to check current user:', authResult.error.message)
+        }
+
+        const uid = authResult.data?.user?.id ?? null
         setUserId(uid)
 
-        if (uid && data.landlord_id !== uid) {
-          const savedState = await checkSaved(uid, data.id)
-
-          if (!cancelled) {
-            if (savedState === null) {
-              setSavedKnown(false)
-            } else {
-              setSavedKnown(true)
-              setSaved(savedState)
-            }
-          }
-
-          // The tenant's own open application and viewing for this listing.
-          // Only their own rows are read, so no other tenant's data is involved.
-          const { data: appRows, error: appError } = await supabase
-            .from('applications')
-            .select('id, status')
-            .eq('listing_id', data.id)
-            .eq('tenant_id', uid)
-            .in('status', [...APPLICATION_OPEN_STATUSES])
-            .order('created_at', { ascending: false })
-            .limit(1)
+        if (uid && landlordId !== uid) {
+          // The tenant's own saved state and open application. Only their own rows are read,
+          // so no other tenant's data is involved. The two checks do not depend on each other.
+          const [savedState, appResult] = await Promise.all([
+            checkSaved(uid, listingId),
+            supabase
+              .from('applications')
+              .select('id, status')
+              .eq('listing_id', listingId)
+              .eq('tenant_id', uid)
+              .in('status', [...APPLICATION_OPEN_STATUSES])
+              .order('created_at', { ascending: false })
+              .limit(1),
+          ])
 
           if (cancelled) return
 
-          if (appError) {
-            console.error('Failed to check your application:', appError.message)
-          } else if (appRows && appRows.length > 0) {
-            const app = appRows[0] as { id: string; status: string }
+          if (savedState === null) {
+            setSavedKnown(false)
+          } else {
+            setSavedKnown(true)
+            setSaved(savedState)
+          }
+
+          if (appResult.error) {
+            console.error('Failed to check your application:', appResult.error.message)
+          } else if (appResult.data && appResult.data.length > 0) {
+            const app = appResult.data[0] as { id: string; status: string }
             setMyApplication({ id: app.id, status: app.status })
 
+            // The viewing belongs to the application, so it has to wait for it.
             const { data: viewingRows, error: viewingError } = await supabase
               .from('viewings')
               .select('id, status')
@@ -1098,4 +1096,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-        }
+                  }
