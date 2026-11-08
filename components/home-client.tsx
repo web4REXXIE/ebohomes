@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Search, ShieldCheck, Home as HomeIcon, Tag, MapPin, ChevronDown, Building2, Home,
-  DoorOpen, Building, Bed, Briefcase, Store, MapPinned, Warehouse, CalendarClock, Users, SearchCheck,
-  Headphones, Crown, Loader2, Play, X, BadgeCheck, ArrowRight, Lock, Flag,
+  DoorOpen, Building, Bed, Briefcase, Store, MapPinned, Warehouse, CalendarClock, Users,
+  Crown, Loader2, Play, X, ArrowRight,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
@@ -14,6 +14,7 @@ import { InstallButton, InstallPromoSection } from '@/components/install-button'
 import { ListingCard } from '@/components/listing-card'
 import { SignedInHome } from '@/components/signed-in-home'
 import { HowItWorks, FounderSection, LandlordCta, FinalCta } from '@/components/home/home-sections'
+import { TrustStrip, VerificationExplainer } from '@/components/home/home-trust'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Section } from '@/components/ui/section'
 import { cn } from '@/lib/utils'
@@ -52,14 +53,6 @@ const BEDROOM_OPTIONS = ['1', '2', '3', '4+']
 const RECENT_KEY = 'ebo_recent_searches'
 
 
-const WHY_CHOOSE = [
-  { title: 'Landlord checks', desc: 'Landlords submit their details and documents for review before their listings go live.', icon: ShieldCheck },
-  { title: 'Reviewed listings', desc: 'EboHomes reviews every listing before it appears on the site.', icon: BadgeCheck },
-  { title: 'One channel', desc: 'Viewings, applications and payments are handled through EboHomes. Never pay anyone who contacts you outside it.', icon: Lock },
-  { title: 'Easy search', desc: 'Filters for area, type, bedrooms and budget help you find the right home fast.', icon: SearchCheck },
-  { title: 'Report anything wrong', desc: 'See a fake or misleading listing? Report it and our team will review it.', icon: Flag },
-  { title: 'Support when you need it', desc: 'Message the EboHomes team if you are unsure about anything.', icon: Headphones },
-]
 
 const FAQS = [
   { q: 'How do I find a property?', a: 'Use the search at the top of this page. Pick an area, a property type, the number of bedrooms and your budget, then open any listing to see its photos, price and details.' },
@@ -351,7 +344,7 @@ function FaqList() {
               <button
                 type="button" id={btnId} aria-expanded={isOpen} aria-controls={panelId}
                 onClick={() => setOpen(isOpen ? null : i)}
-                className="flex w-full items-center justify-between gap-4 rounded-2xl px-5 py-4 text-left text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:text-base"
+                className="flex w-full items-center justify-between gap-4 rounded-2xl px-5 py-4 text-left text-base font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
               >
                 {f.q}
                 <ChevronDown size={18} aria-hidden="true" className={`shrink-0 text-muted-foreground transition-transform duration-300 ${isOpen ? 'rotate-180 text-primary' : ''}`} />
@@ -359,7 +352,7 @@ function FaqList() {
             </h3>
             <div id={panelId} role="region" aria-labelledby={btnId} inert={!isOpen} className={`grid transition-[grid-template-rows] duration-300 ease-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
               <div className="overflow-hidden">
-                <p className="px-5 pb-5 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
+                <p className="px-5 pb-5 text-body leading-relaxed text-muted-foreground">{f.a}</p>
               </div>
             </div>
           </div>
@@ -511,13 +504,6 @@ export default function HomeClient() {
     ...activeCats.slice(0, 4).map((c) => ({ label: c.label, href: '/search?type=' + encodeURIComponent(c.value) })),
   ]
 
-  const trustItems = [
-    total > 0 ? <><CountUp to={total} /> live {total === 1 ? 'listing' : 'listings'}</> : null,
-    verifiedLandlords > 0 ? <><CountUp to={verifiedLandlords} /> verified {verifiedLandlords === 1 ? 'landlord' : 'landlords'}</> : null,
-    <>Every listing reviewed</>,
-    <>Pay only through EboHomes</>,
-  ].filter(Boolean) as React.ReactNode[]
-
   const hasListings = total > 0
   const showEmpty = !loading && !loadError && !hasListings
   return (
@@ -548,7 +534,7 @@ export default function HomeClient() {
                 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
                 className="mx-auto mt-4 max-w-xl text-pretty text-body-lg text-white/85"
               >
-                Discover reviewed rental homes across Ebonyi State with a simpler, more transparent way to find your next home.
+                Find Homes. Skip the Stress. Browse reviewed rental homes across Ebonyi State, request a viewing and apply online, all in one place.
               </motion.p>
               <motion.div
                 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
@@ -650,17 +636,11 @@ export default function HomeClient() {
           </div>
         </section>
 
-        {/* 2. TRUST BAR */}
-        <div className="mt-8 border-y border-border bg-card">
-          <div className="container-wide grid grid-cols-2 gap-x-6 gap-y-3 py-4 md:flex md:items-center md:justify-between">
-            {trustItems.map((node, i) => (
-              <p key={i} className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                <span>{node}</span>
-              </p>
-            ))}
-          </div>
-        </div>
+        {/* 2. TRUST STRIP */}
+        <TrustStrip
+          listingStat={total > 0 ? <><CountUp to={total} /> live {total === 1 ? 'listing' : 'listings'}</> : undefined}
+          landlordStat={verifiedLandlords > 0 ? <><CountUp to={verifiedLandlords} /> verified {verifiedLandlords === 1 ? 'landlord' : 'landlords'}</> : undefined}
+        />
 
         {loadError && (
           <div className="container-wide mt-6">
@@ -677,7 +657,7 @@ export default function HomeClient() {
         {/* 3b. EMPTY INVENTORY */}
         {showEmpty && <EmptyInventory />}
 
-        {/* 4. FEATURED (only when featured listings exist) */}
+        {/* 3. FEATURED (only when featured listings exist) */}
         {loading ? (
           <Section width="wide" spacing="sm" aria-busy="true" aria-label="Loading properties">
             <div className="grid grid-cols-2 gap-grid lg:grid-cols-4">
@@ -694,7 +674,7 @@ export default function HomeClient() {
           </Section>
         ) : null}
 
-        {/* 5. BROWSE BY TYPE (only types with listings) */}
+        {/* 3b. BROWSE BY TYPE (only types with listings) */}
         {activeCats.length > 0 && (
           <Section width="wide" spacing="sm">
             <SectionHead title="Browse by property type" sub="Most listings first." href="/search" cta="View all" />
@@ -728,7 +708,7 @@ export default function HomeClient() {
           </Section>
         )}
 
-        {/* 6. RECENTLY ADDED */}
+        {/* 3c. RECENTLY ADDED */}
         {!loading && recent.length > 0 && (
           <Section width="wide" spacing="sm">
             <div className="rounded-panel bg-forest py-6 text-forest-foreground shadow-raised dark:border dark:border-border md:py-9">
@@ -742,7 +722,10 @@ export default function HomeClient() {
           </Section>
         )}
 
-        {/* 7. EXPLORE BY AREA */}
+        {/* 4. HOW IT WORKS */}
+        <HowItWorks />
+
+        {/* 5. EXPLORE BY AREA */}
         {(areas.length > 0 || !showEmpty) && (
           <Section width="wide" spacing="sm">
             <SectionHead title="Explore by area" sub={areas.length > 0 ? 'Real listing counts. Tap an area to see its properties.' : 'Search the areas around Ebonyi State.'} href="/search" cta="All areas" />
@@ -775,7 +758,10 @@ export default function HomeClient() {
           </Section>
         )}
 
-        {/* 8. VIDEO TOURS (only when real videos exist) */}
+        {/* 6. TRUST AND VERIFICATION */}
+        <VerificationExplainer />
+
+        {/* 7. VIDEO TOURS (only when real videos exist) */}
         {videos.length > 0 && (
           <Section width="wide" spacing="sm">
             <SectionHead title="Video tours" sub="Walk through the real property before you request a viewing." />
@@ -783,7 +769,7 @@ export default function HomeClient() {
               {videos.map((l) => (
                 <Link key={l.id} href={`/listing/${l.id}`} className="group w-[72%] shrink-0 snap-start overflow-hidden rounded-card border border-border bg-card shadow-rest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:w-[46%] md:w-[31%]">
                   <div className="relative overflow-hidden bg-black">
-                    <video src={`${l.video_url}#t=0.5`} preload="none" muted playsInline className="aspect-video w-full object-cover transition duration-500 group-hover:scale-105" />
+                    <video src={`${l.video_url}#t=0.5`} poster={l.photos?.[0] ? img(l.photos[0], 640) : undefined} preload="none" muted playsInline className="aspect-video w-full object-cover transition duration-500 group-hover:scale-105" />
                     <span className="absolute inset-0 flex items-center justify-center bg-black/10">
                       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/95 text-black shadow-lg"><Play size={22} aria-hidden="true" className="ml-0.5 fill-current" /></span>
                     </span>
@@ -799,69 +785,41 @@ export default function HomeClient() {
           </Section>
         )}
 
-        {/* 9. HOW IT WORKS */}
-        <HowItWorks />
+        {/* 8. LANDLORDS */}
+        <LandlordCta />
 
-        {/* 10. FOUNDER */}
+        {/* 9. FOUNDER */}
         <FounderSection />
 
-        {/* 11. WHY TRUST */}
-        <Section tone="cream" aria-labelledby="why-trust-heading">
-          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
-            <Reveal>
-              <div className="relative h-60 w-full overflow-hidden rounded-card bg-secondary md:h-[420px]">
-                <SmartImage src="/hero.jpg" alt="A home in Ebonyi State" />
-              </div>
-            </Reveal>
-            <div>
-              <Reveal>
-                <p className="text-caption font-semibold uppercase tracking-wide text-primary">Our promise</p>
-                <h2 id="why-trust-heading" className="mb-3 mt-2 text-h2 font-bold text-foreground">Why trust EboHomes?</h2>
-                <p className="mb-8 max-w-md text-body text-muted-foreground">Finding a home in Ebonyi State shouldn&apos;t mean risking a scam. Here is what we do about it.</p>
-              </Reveal>
-              <ul className="grid gap-5 sm:grid-cols-2">
-                {WHY_CHOOSE.map((item, i) => (
-                  <li key={item.title}>
-                    <Reveal delay={i * 0.05} className="flex gap-3">
-                      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-primary"><item.icon size={18} aria-hidden="true" /></span>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{item.title}</p>
-                        <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{item.desc}</p>
-                      </div>
-                    </Reveal>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </Section>
-
-        {/* 12. INSTITUTIONS */}
+        {/* 9b. INSTITUTIONS */}
         <Section spacing="sm">
           <Reveal><InstitutionsStrip /></Reveal>
         </Section>
 
-        {/* 13. FAQ */}
-        <Section id="faq" width="reading" className="scroll-mt-24" aria-labelledby="faq-heading">
-          <div className="mb-6 md:mb-8">
-            <h2 id="faq-heading" className="text-h2 font-bold text-foreground">Frequently asked questions</h2>
+        {/* 10. FAQ */}
+        <Section id="faq" className="scroll-mt-24" aria-labelledby="faq-heading">
+          <div className="grid gap-8 lg:grid-cols-[2fr_3fr] lg:gap-14">
+            <div className="lg:sticky lg:top-28 lg:self-start">
+              <p className="text-caption font-semibold uppercase tracking-wide text-primary">FAQ</p>
+              <h2 id="faq-heading" className="mt-2 text-h2 font-bold text-foreground">Frequently asked questions</h2>
+              <p className="mt-3 max-w-sm text-body text-muted-foreground">
+                Straight answers about searching, viewings, applications and payments.
+              </p>
+              <Link href="/contact" className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), 'mt-6 w-full sm:w-auto')}>
+                Contact EboHomes support
+              </Link>
+            </div>
+            <FaqList />
           </div>
-          <FaqList />
-          <p className="mt-5 text-center text-sm text-muted-foreground">
-            Still stuck? <Link href="/contact" className="font-semibold text-primary hover:underline">Contact EboHomes support</Link>
-          </p>
         </Section>
 
-        {/* 14. AI */}
+        {/* 10b. AI */}
         <AiComingSoon />
 
-        {/* 15. APP INSTALL */}
+        {/* 11. APP INSTALL */}
         <InstallPromoSection />
 
-        {/* 16. LANDLORDS */}
-        <LandlordCta />
-
-        {/* 17. FINAL CTA */}
+        {/* 12. FINAL CTA */}
         <FinalCta />
       </main>
       <Footer />
