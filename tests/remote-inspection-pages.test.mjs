@@ -118,10 +118,15 @@ assert.match(req, /does not apply for the property/i)
 assert.match(req, /Inspected badge/)
 
 // ---- listing page: the card is added and the old buttons are untouched
-for (const f of ['app/listing/[id]/page.tsx', 'app/listing/[id]/layout.tsx']) {
+{
+  const f = 'app/listing/[id]/page.tsx'
   const src = readFileSync(f, 'utf8')
   assert.equal((src.match(/<RemoteInspectionEntry/g) || []).length, 1, f)
   assert.match(src, /PropertyActionsSidebar/, f)
+  // layout.tsx is a pass-through that renders children; it must not hold a second copy of the page
+  const layout = readFileSync('app/listing/[id]/layout.tsx', 'utf8')
+  assert.match(layout, /\{children\}/)
+  assert.equal((layout.match(/<RemoteInspectionEntry/g) || []).length, 0)
 }
 
 // ---- navigation
