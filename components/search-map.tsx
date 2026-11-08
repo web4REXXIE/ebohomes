@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
 import { Building2, MapPin, BedDouble, Bath, X, Loader2 } from 'lucide-react'
+import { sizedPhoto } from '@/lib/image-url'
+import { SmartImage } from '@/components/ui/smart-image'
 
 type MapListing = {
   id: string | number
@@ -28,11 +30,6 @@ function shortPrice(value: unknown) {
 }
 
 const naira = (value: unknown) => `₦${(Number(value) || 0).toLocaleString('en-NG')}`
-
-function cardImage(url: string, width: number) {
-  if (!url || !url.includes('/upload/')) return url
-  return url.replace('/upload/', `/upload/f_auto,q_auto,w_${width}/`)
-}
 
 export function SearchMap({
   listings,
@@ -186,11 +183,13 @@ export function SearchMap({
               aria-label="View property"
             >
               {photo ? (
-                <img
-                  src={cardImage(photo, 300)}
-                  alt={selected.title || selected.property_type || 'Property photo'}
-                  className="h-full w-full object-cover"
-                />
+                <span className="relative block h-full min-h-[96px] w-full bg-secondary/40">
+                  <SmartImage
+                    src={sizedPhoto(photo, 300)}
+                    alt={selected.title || selected.property_type || 'Property photo'}
+                    compact
+                  />
+                </span>
               ) : (
                 <div className="flex h-full min-h-[96px] w-full items-center justify-center bg-secondary text-muted-foreground">
                   <Building2 size={24} />
