@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { MessageCircle, ShieldCheck, ChevronDown, Phone, Mail } from 'lucide-react'
 import { EBOHOMES_WHATSAPP, EBOHOMES_EMAIL, EBOHOMES_PHONE_DISPLAY } from '@/lib/contact'
+import { BRAND_LOGOS } from '@/lib/brand'
 import { InstallButton } from '@/components/install-button'
 
 // Stage 5: refined footer. Every link below already existed in the previous footer, plus /about,
@@ -130,7 +131,7 @@ export function Footer() {
         <div className="md:grid md:grid-cols-2 md:gap-x-10 md:gap-y-12 lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr]">
           <div className="md:col-span-2 lg:col-span-1">
             <Link href="/" aria-label="EboHomes home" className="mb-5 inline-block">
-              <img src="/logo-white.png" alt="EboHomes" className="h-11 w-auto md:h-12" />
+              <img src={BRAND_LOGOS.onDark} alt="EboHomes" className="h-11 w-auto md:h-12" />
             </Link>
             <p className="mb-2 text-xl font-semibold leading-snug">
               Real Estate <span className="text-featured">You Can Trust.</span>
