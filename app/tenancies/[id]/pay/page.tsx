@@ -10,6 +10,8 @@ import { classifyTenancyLoad, TENANCY_LOAD_ERROR_TEXT, TENANCY_NOT_FOUND_TEXT } 
 import { PaymentSubmissionForm, SubmissionList, type Sub } from '@/components/payment-submission-form'
 import { fmtDate } from '@/lib/case-status'
 import { canPay, summarisePayments, CHARGE_LABEL } from '@/lib/payment-complete'
+import { sizedPhoto } from '@/lib/image-url'
+import { SmartImage } from '@/components/ui/smart-image'
 
 const naira = (n: number) => '₦' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 })
 
@@ -93,7 +95,7 @@ export default function PaySubmissionPage() {
       <h1 className="text-xl font-bold text-foreground">Confirm you have paid</h1>
 
       <section className="overflow-hidden rounded-xl border border-border bg-card">
-        {photo && <img src={photo} alt="" loading="lazy" className="h-40 w-full object-cover" />}
+        {photo && <div className="relative h-40 w-full bg-secondary"><SmartImage src={sizedPhoto(photo, 800)} alt="" /></div>}
         <div className="space-y-1 p-4 text-sm">
           <p className="text-base font-bold text-foreground">{t.title ?? 'Your property'}</p>
           {t.location_text && <p className="flex items-center gap-1 text-muted-foreground"><MapPin size={14} aria-hidden /> {t.location_text}</p>}
