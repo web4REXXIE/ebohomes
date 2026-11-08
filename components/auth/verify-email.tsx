@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -18,6 +19,8 @@ interface VerifyEmailProps {
   onContinue: () => void
   onBack: () => void
   continueLabel?: string
+  /** Optional line shown after verification, explaining what comes next (for example landlord ID review). */
+  nextStep?: string
 }
 
 export function VerifyEmail({
@@ -27,6 +30,7 @@ export function VerifyEmail({
   onContinue,
   onBack,
   continueLabel = 'Continue to EboHomes',
+  nextStep,
 }: VerifyEmailProps) {
   const [code, setCode] = useState('')
   const [stage, setStage] = useState<'code' | 'success'>('code')
@@ -93,15 +97,15 @@ export function VerifyEmail({
 
   if (stage === 'success') {
     return (
-      <div className="text-center py-4">
-        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-5">
-          <CheckCircle2 size={44} className="text-primary" />
+      <div className="py-2 text-center">
+        <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-success-soft">
+          <CheckCircle2 size={44} className="text-success" aria-hidden />
         </div>
-        <h2 className="text-2xl font-bold text-foreground mb-2">Email verified successfully</h2>
-        <p className="text-sm text-muted-foreground mb-8">
-          Your account is ready. Welcome to EboHomes.
-        </p>
-        <Button onClick={onContinue} className="w-full py-2.5 font-semibold">
+        <h1 className="mb-2 text-h2 font-bold text-foreground">Email verified</h1>
+        <p className="mb-2 text-body text-muted-foreground">Your account is ready. Welcome to EboHomes.</p>
+        {nextStep && <p className="mb-6 rounded-control bg-cream px-3 py-2.5 text-caption text-cream-foreground">{nextStep}</p>}
+        {!nextStep && <div className="mb-6" />}
+        <Button onClick={onContinue} size="lg" className="w-full">
           {continueLabel}
         </Button>
       </div>
@@ -110,34 +114,35 @@ export function VerifyEmail({
 
   return (
     <div className="text-center">
-      <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-5">
+      <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
         {justCreated ? (
-          <CheckCircle2 size={44} className="text-primary" />
+          <CheckCircle2 size={36} className="text-primary" aria-hidden />
         ) : (
-          <Mail size={36} className="text-primary" />
+          <Mail size={30} className="text-primary" aria-hidden />
         )}
       </div>
-      <h2 className="text-2xl font-bold text-foreground mb-2">
-        {justCreated ? 'Account created successfully' : 'Verify your email'}
-      </h2>
-      <p className="text-sm text-muted-foreground mb-1">
+      <h1 className="mb-2 text-h2 font-bold text-foreground">
+        {justCreated ? 'Account created. Check your email' : 'Verify your email'}
+      </h1>
+      <p className="mb-1 text-body text-muted-foreground">
         {justCreated
           ? "We've sent a 6-digit verification code to"
           : 'Your email is not verified yet. Enter the 6-digit code we sent to'}
       </p>
-      <p className="text-sm font-medium text-foreground mb-6 break-all">{email}</p>
+      <p className="mb-6 break-all text-body font-semibold text-foreground">{email}</p>
 
       <OtpInput value={code} onChange={setCode} disabled={verifying} error={!!error} autoFocus />
 
       <div className="min-h-[44px] mt-3" aria-live="polite">
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        {!error && info && <p className="text-sm text-primary">{info}</p>}
+        {error && <p role="alert" className="text-body text-destructive">{error}</p>}
+        {!error && info && <p className="text-body text-primary">{info}</p>}
       </div>
 
       <Button
         onClick={verify}
         disabled={code.length !== 6 || verifying}
-        className="w-full py-2.5 font-semibold mt-2"
+        size="lg"
+        className="mt-2 w-full"
       >
         {verifying ? (
           <>
@@ -148,8 +153,8 @@ export function VerifyEmail({
         )}
       </Button>
 
-      <p className="text-sm text-muted-foreground mt-5">
-        Didn&apos;t get the code?{' '}
+      <p className="mt-5 text-body text-muted-foreground">
+        Didn&apos;t get the code? Check your spam folder.{' '}
         {seconds > 0 ? (
           <span>Resend in {seconds}s</span>
         ) : (
@@ -157,7 +162,7 @@ export function VerifyEmail({
             type="button"
             onClick={() => sendCode()}
             disabled={resending}
-            className="text-primary font-semibold hover:underline disabled:opacity-60"
+            className="inline-flex min-h-11 items-center font-semibold text-primary hover:underline focus-ring disabled:opacity-60"
           >
             {resending ? 'Sending...' : 'Resend code'}
           </button>
@@ -166,7 +171,7 @@ export function VerifyEmail({
       <button
         type="button"
         onClick={onBack}
-        className="text-xs text-muted-foreground hover:text-foreground mt-3"
+        className="mt-1 inline-flex min-h-11 items-center text-body text-muted-foreground hover:text-foreground focus-ring"
       >
         Use a different email
       </button>
