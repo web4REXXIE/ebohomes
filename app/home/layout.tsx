@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -10,9 +10,11 @@ import {
   MessageCircle,
   FileText,
   CalendarClock,
+  ClipboardCheck,
+  KeyRound,
+  Key,
   User,
   Bell,
-  Settings,
   LogOut,
   Menu,
   X,
@@ -20,18 +22,31 @@ import {
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
 import { useNotifications } from '@/components/notification-provider'
+import { BRAND_LOGOS } from '@/lib/brand'
 
+// Stage 15: the tenant dashboard frame.
+// - The links match the tenant links in lib/dashboard-links.ts (same labels and routes), plus Search, Saved and Profile.
+// - The second bottom bar this layout used to draw is gone. The app already has one bottom bar (components/bottom-nav.tsx),
+//   and two stacked bars covered the page and each other on phones.
+// - Access check, unread counters, live updates and logout are unchanged.
 const NAV = [
   { label: 'Dashboard', href: '/home', icon: LayoutDashboard },
   { label: 'Search Homes', href: '/search', icon: Search },
   { label: 'Saved Homes', href: '/saved', icon: Heart },
-  { label: 'Messages', href: '/messages', icon: MessageCircle, badgeKey: 'messages' },
-  { label: 'My Viewings', href: '/viewings', icon: CalendarClock },
+  { label: 'My Rental Journey', href: '/journey', icon: KeyRound },
   { label: 'My Applications', href: '/applications', icon: FileText },
-  { label: 'My Tenancy & Payments', href: '/tenancies', icon: FileText },
+  { label: 'Tenancy & Payments', href: '/tenancies', icon: Key },
+  { label: 'My Viewings', href: '/viewings', icon: CalendarClock },
+  { label: 'My Inspections', href: '/inspections', icon: ClipboardCheck },
+  { label: 'Messages', href: '/messages', icon: MessageCircle, badgeKey: 'messages' },
   { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
-  { label: 'Settings', href: '/settings', icon: Settings },
-]
+  { label: 'My Profile', href: '/profile', icon: User },
+] as const
+
+const isActive = (pathname: string, href: string) =>
+  href === '/home' ? pathname === '/home' : pathname === href || pathname.startsWith(href + '/')
+
+const countText = (n: number) => (n > 99 ? '99+' : String(n))
 
 export default function HomeLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -41,6 +56,8 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
   const [unreadMessages, setUnreadMessages] = useState(0)
   const { unreadCount: unreadNotifs } = useNotifications()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const checkAccess = async () => {
@@ -94,6 +111,21 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
     return () => { supabase.removeChannel(channel) }
   }, [profile?.id])
 
+  // The menu closes when the page changes, on Escape, and focus goes back to the button that opened it.
+  useEffect(() => { setMobileNavOpen(false) }, [pathname])
+  useEffect(() => {
+    if (!mobileNavOpen) return
+    closeButtonRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileNavOpen(false)
+        menuButtonRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mobileNavOpen])
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/')
@@ -101,97 +133,129 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="flex min-h-screen items-center justify-center bg-background" role="status" aria-label="Loading your dashboard">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     )
   }
 
+  const badgeFor = (key?: string) => (key === 'messages' ? unreadMessages : key === 'notifications' ? unreadNotifs : 0)
+  const firstName = ((profile?.full_name ?? '') as string).trim().split(/\s+/)[0]
+
+  const navItems = (onNavigate?: () => void) =>
+    NAV.map((item) => {
+      const active = isActive(pathname, item.href)
+      const badge = badgeFor('badgeKey' in item ? item.badgeKey : undefined)
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          onClick={onNavigate}
+          aria-current={active ? 'page' : undefined}
+          className={`focus-ring flex min-h-11 items-center justify-between gap-3 rounded-button px-3 text-sm font-medium transition-colors ${
+            active ? 'bg-primary text-primary-foreground' : 'text-foreground-secondary hover:bg-muted hover:text-foreground'
+          }`}
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <item.icon size={18} aria-hidden />
+            <span className="truncate">{item.label}</span>
+          </span>
+          {badge > 0 && (
+            <span
+              className={`flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-bold ${
+                active ? 'bg-primary-foreground text-primary' : 'bg-primary text-primary-foreground'
+              }`}
+            >
+              <span aria-hidden>{countText(badge)}</span>
+              <span className="sr-only">{badge} unread</span>
+            </span>
+          )}
+        </Link>
+      )
+    })
+
   return (
-    <div className="min-h-screen flex bg-background">
-      {/* Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 border-r border-border bg-card shrink-0 h-screen sticky top-0">
-        <div className="p-5 border-b border-border">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
-              <LayoutDashboard size={18} className="text-primary-foreground" />
-            </div>
-            <div>
-              <p className="font-extrabold text-foreground text-sm leading-none">EboHomes</p>
-              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">Find Homes. Skip the Stress.</p>
-            </div>
+    <div className="flex min-h-screen bg-background">
+      {/* Sidebar (large screens) */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-card lg:flex">
+        <div className="border-b border-border p-5">
+          <Link href="/" aria-label="EboHomes home" className="focus-ring block rounded-chip">
+            <img src={BRAND_LOGOS.onLight} alt="" width={1280} height={392} className="h-8 w-auto dark:hidden" />
+            <img src={BRAND_LOGOS.onDark} alt="" aria-hidden="true" width={799} height={210} className="hidden h-8 w-auto dark:block" />
           </Link>
+          <p className="mt-2 text-xs text-muted-foreground">Find Homes. Skip the Stress.</p>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {NAV.map((item) => {
-            const active = pathname === item.href
-            const badge = item.badgeKey === 'messages' ? unreadMessages : item.badgeKey === 'notifications' ? unreadNotifs : 0
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
-                }`}
-              >
-                <span className="flex items-center gap-3">
-                  <item.icon size={17} />
-                  {item.label}
-                </span>
-                {badge > 0 && (
-                  <span className="bg-primary text-primary-foreground text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                    {badge}
-                  </span>
-                )}
-              </Link>
-            )
-          })}
+        <nav aria-label="Tenant dashboard" className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+          {navItems()}
           <button
+            type="button"
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+            className="focus-ring flex min-h-11 w-full items-center gap-3 rounded-button px-3 text-sm font-medium text-foreground-secondary hover:bg-muted hover:text-foreground"
           >
-            <LogOut size={17} />
+            <LogOut size={18} aria-hidden />
             Logout
           </button>
         </nav>
 
-        <div className="p-4 m-3 rounded-2xl bg-gradient-to-br from-emerald-950 to-primary text-white">
-          <p className="font-bold text-sm mb-1">List Your Property</p>
-          <p className="text-xs text-white/70 mb-3 leading-relaxed">
-            Reach thousands of verified tenants.
+        <div className="m-3 rounded-card bg-forest p-4 text-white">
+          <p className="mb-1 text-sm font-bold">Own a property?</p>
+          <p className="mb-3 text-xs leading-relaxed text-white/80">
+            Landlords can list a property on EboHomes for review.
           </p>
           <Link
             href="/list-property"
-            className="block text-center bg-white text-foreground text-xs font-bold rounded-full py-2"
+            className="focus-ring flex min-h-11 items-center justify-center rounded-button bg-white text-xs font-bold text-forest"
           >
-            Get Started
+            List a property
           </Link>
         </div>
 
-        <div className="p-4 border-t border-border flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-            {profile?.full_name?.[0]?.toUpperCase() ?? 'T'}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground truncate">{profile?.full_name ?? 'Tenant'}</p>
-            <p className="text-xs text-muted-foreground">Tenant</p>
-          </div>
-        </div>
+        <Link
+          href="/profile"
+          className="focus-ring flex items-center gap-3 border-t border-border p-4 hover:bg-muted"
+        >
+          {profile?.avatar_url ? (
+            <img src={profile.avatar_url} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+          ) : (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary" aria-hidden>
+              {profile?.full_name?.[0]?.toUpperCase() ?? 'T'}
+            </span>
+          )}
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-foreground">{profile?.full_name ?? 'Tenant'}</span>
+            <span className="block text-xs text-muted-foreground">Tenant · View profile</span>
+          </span>
+        </Link>
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-card border-b border-border px-4 sm:px-6 py-3 flex items-center justify-between lg:hidden">
-          <button onClick={() => setMobileNavOpen(true)} className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center">
-            <Menu size={18} />
+      <div className="min-w-0 flex-1">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-card px-4 py-2 sm:px-6 lg:hidden">
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="Open dashboard menu"
+            aria-expanded={mobileNavOpen}
+            aria-controls="tenant-mobile-menu"
+            className="focus-ring flex h-11 w-11 items-center justify-center rounded-full bg-secondary"
+          >
+            <Menu size={20} aria-hidden />
           </button>
-          <span className="font-extrabold text-primary">EboHomes</span>
-          <Link href="/notifications" className="relative w-9 h-9 rounded-full bg-secondary flex items-center justify-center">
-            <Bell size={16} />
+          <Link href="/" aria-label="EboHomes home" className="focus-ring rounded-chip">
+            <img src={BRAND_LOGOS.onLight} alt="" width={1280} height={392} className="h-7 w-auto dark:hidden" />
+            <img src={BRAND_LOGOS.onDark} alt="" aria-hidden="true" width={799} height={210} className="hidden h-7 w-auto dark:block" />
+          </Link>
+          <Link
+            href="/notifications"
+            aria-label={unreadNotifs > 0 ? `Notifications, ${unreadNotifs} unread` : 'Notifications'}
+            className="focus-ring relative flex h-11 w-11 items-center justify-center rounded-full bg-secondary"
+          >
+            <Bell size={18} aria-hidden />
             {unreadNotifs > 0 && (
-              <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                {unreadNotifs}
+              <span aria-hidden className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-bold text-primary-foreground">
+                {countText(unreadNotifs)}
               </span>
             )}
           </Link>
@@ -199,35 +263,38 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
 
         {mobileNavOpen && (
           <div className="fixed inset-0 z-50 lg:hidden">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setMobileNavOpen(false)} />
-            <div className="absolute left-0 top-0 h-full w-72 bg-card shadow-xl flex flex-col">
-              <div className="p-5 border-b border-border flex items-center justify-between">
-                <span className="font-extrabold text-primary">EboHomes</span>
-                <button onClick={() => setMobileNavOpen(false)}><X size={20} /></button>
-              </div>
-              <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                {NAV.map((item) => {
-                  const active = pathname === item.href
-                  const badge = item.badgeKey === 'messages' ? unreadMessages : item.badgeKey === 'notifications' ? unreadNotifs : 0
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileNavOpen(false)}
-                      className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-sm font-medium ${
-                        active ? 'bg-primary/10 text-primary' : 'text-muted-foreground'
-                      }`}
-                    >
-                      <span className="flex items-center gap-3"><item.icon size={17} />{item.label}</span>
-                      {badge > 0 && <span className="bg-primary text-primary-foreground text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{badge}</span>}
-                    </Link>
-                  )
-                })}
+            <div className="absolute inset-0 bg-forest/60" onClick={() => setMobileNavOpen(false)} aria-hidden />
+            <div
+              id="tenant-mobile-menu"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Dashboard menu"
+              className="absolute left-0 top-0 flex h-full w-[min(20rem,88vw)] flex-col bg-card shadow-overlay"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+            >
+              <div className="flex items-center justify-between border-b border-border p-4">
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Signed in as</p>
+                  <p className="truncate text-sm font-semibold text-foreground">{firstName || 'Tenant'}</p>
+                </div>
                 <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground"
+                  ref={closeButtonRef}
+                  type="button"
+                  onClick={() => { setMobileNavOpen(false); menuButtonRef.current?.focus() }}
+                  aria-label="Close menu"
+                  className="focus-ring flex h-11 w-11 items-center justify-center rounded-full hover:bg-muted"
                 >
-                  <LogOut size={17} />
+                  <X size={20} aria-hidden />
+                </button>
+              </div>
+              <nav aria-label="Tenant dashboard" className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+                {navItems(() => setMobileNavOpen(false))}
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="focus-ring flex min-h-11 w-full items-center gap-3 rounded-button px-3 text-sm font-medium text-foreground-secondary hover:bg-muted"
+                >
+                  <LogOut size={18} aria-hidden />
                   Logout
                 </button>
               </nav>
@@ -235,32 +302,9 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
           </div>
         )}
 
-        {/* Mobile bottom nav */}
-        <nav className="fixed bottom-0 left-0 right-0 z-30 bg-card border-t border-border flex items-center justify-around py-2 lg:hidden">
-          {[
-            { label: 'Home', href: '/home', icon: LayoutDashboard },
-            { label: 'Search', href: '/search', icon: Search },
-            { label: 'Saved', href: '/saved', icon: Heart },
-            { label: 'Messages', href: '/messages', icon: MessageCircle, badge: unreadMessages },
-            { label: 'Profile', href: '/profile', icon: User },
-          ].map((item) => {
-            const active = pathname === item.href
-            return (
-              <Link key={item.href} href={item.href} className="flex flex-col items-center gap-0.5 relative px-2">
-                <item.icon size={19} className={active ? 'text-primary' : 'text-muted-foreground'} />
-                <span className={`text-[10px] ${active ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>{item.label}</span>
-                {!!item.badge && item.badge > 0 && (
-                  <span className="absolute -top-0.5 right-0 bg-primary text-primary-foreground text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
-                    {item.badge}
-                  </span>
-                )}
-              </Link>
-            )
-          })}
-        </nav>
-
-        <div className="pb-16 lg:pb-0">{children}</div>
+        {/* The app-wide bottom bar (components/bottom-nav.tsx) and the root layout's bottom spacing already cover phones. */}
+        <div>{children}</div>
       </div>
     </div>
   )
-}
+        }
