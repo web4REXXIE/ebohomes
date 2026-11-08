@@ -20,10 +20,10 @@ export function InstallButton({ variant = 'hero', className = '' }: { variant?: 
       <button
         type="button"
         onClick={onClick}
-        className={`mb-5 flex w-full items-center gap-3 rounded-xl border border-amber-400/50 bg-[#0A2E1A] p-3 text-left text-white ${className}`}
+        className={`mb-5 flex w-full items-center gap-3 rounded-card border border-featured/50 bg-forest p-3 text-left text-forest-foreground focus-ring ${className}`}
       >
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/10">
-          <Smartphone size={20} className="text-amber-300" />
+          <Smartphone size={20} className="text-featured" />
         </span>
         <span className="min-w-0">
           <span className="block text-sm font-bold">Get the EboHomes App</span>
@@ -36,7 +36,7 @@ export function InstallButton({ variant = 'hero', className = '' }: { variant?: 
   const looks: Record<Exclude<Variant, 'drawer'>, string> = {
     hero: 'mt-6 inline-flex h-11 gap-2 rounded-full border border-amber-300/60 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20',
     header:
-      'hidden h-9 gap-1.5 rounded-full border border-amber-400/60 px-3.5 text-sm font-semibold text-primary hover:bg-amber-50 lg:inline-flex',
+      'hidden h-9 gap-1.5 rounded-button border border-border-strong px-3.5 text-label font-semibold text-foreground hover:bg-muted focus-ring lg:inline-flex',
     footer:
       'inline-flex h-10 gap-2 rounded-full border border-amber-400/60 px-4 text-sm font-medium text-amber-400 hover:bg-amber-400/10',
   }
