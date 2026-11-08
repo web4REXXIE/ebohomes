@@ -65,16 +65,16 @@ export function ListingLocationPublic({ listingId, title, address }: { listingId
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(map)
       if (exLat != null && exLng != null) {
         map.setView([exLat, exLng], 16)
-        L.circle([exLat, exLng], { radius: 60, color: '#2D6A4F', weight: 1, fillColor: '#2D6A4F', fillOpacity: 0.12 }).addTo(map)
+        L.circle([exLat, exLng], { radius: 60, color: '#0A7A3B', weight: 1, fillColor: '#0A7A3B', fillOpacity: 0.12 }).addTo(map)
         const icon = L.divIcon({
           className: '',
-          html: '<div style="width:36px;height:36px;background:#2D6A4F;border:3px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 3px 10px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><div style="width:10px;height:10px;background:white;border-radius:50%;"></div></div>',
+          html: '<div style="width:36px;height:36px;background:#0A7A3B;border:3px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 3px 10px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><div style="width:10px;height:10px;background:white;border-radius:50%;"></div></div>',
           iconSize: [36, 36], iconAnchor: [18, 36],
         })
         L.marker([exLat, exLng], { icon, title }).addTo(map)
       } else {
         // Approximate area only: a circle that covers the whole 1 km grid square. No marker, because the centre is not the property.
-        const circle = L.circle([areaLat, areaLng], { radius: 800, color: '#2D6A4F', weight: 2, dashArray: '6 6', fillColor: '#2D6A4F', fillOpacity: 0.1 }).addTo(map)
+        const circle = L.circle([areaLat, areaLng], { radius: 800, color: '#0A7A3B', weight: 2, dashArray: '6 6', fillColor: '#0A7A3B', fillOpacity: 0.1 }).addTo(map)
         map.fitBounds(circle.getBounds(), { padding: [20, 20] })
       }
       mapInstance.current = map
@@ -97,44 +97,49 @@ export function ListingLocationPublic({ listingId, title, address }: { listingId
   ].filter((g) => g.items.length > 0)
 
   return (
-    <div className="mb-6 rounded-xl border border-border bg-card p-4 sm:p-5">
-      <h3 className="mb-1 text-lg font-bold text-foreground">Location</h3>
+    <section aria-labelledby="location-heading" className="mb-6 rounded-card border border-border bg-card p-card shadow-rest">
+      <h2 id="location-heading" className="mb-1 text-h3 font-semibold text-foreground">Location</h2>
       {address && (
-        <p className="mb-3 flex items-start gap-1.5 text-sm text-muted-foreground">
+        <p className="mb-3 flex items-start gap-1.5 text-body text-muted-foreground">
           <MapPin size={16} className="mt-0.5 shrink-0 text-primary" /> {address}
         </p>
       )}
 
       {!loaded ? (
-        <p className="text-sm text-muted-foreground">Loading location…</p>
+        <p role="status" className="text-body text-muted-foreground">Loading location…</p>
       ) : !hasPin ? (
-        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-          <Info size={14} className="mt-0.5 shrink-0" /> A map pin has not been added for this property yet.
+        <p className="flex items-start gap-1.5 text-caption text-muted-foreground">
+          <Info size={14} className="mt-0.5 shrink-0" aria-hidden /> A map pin has not been added for this property yet.
         </p>
       ) : (
         <>
-          <div ref={mapRef} className="relative z-0 h-72 w-full overflow-hidden rounded-lg border border-border sm:h-[26rem]" />
+          <div
+            ref={mapRef}
+            role="region"
+            aria-label={exact ? 'Map showing the property pin' : 'Map showing the approximate area of the property'}
+            className="relative z-0 h-72 w-full overflow-hidden rounded-control border border-border sm:h-[26rem]"
+          />
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {directionsUrl && (
               <a href={directionsUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
-                <Navigation size={16} /> Get directions
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-body font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                <Navigation size={16} aria-hidden /> Get directions
               </a>
             )}
             {openUrl && (
               <a href={openUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-semibold text-foreground hover:bg-secondary">
-                <MapIcon size={16} /> {exact ? 'Open in Google Maps' : 'Open this area in Google Maps'}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-body font-semibold text-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                <MapIcon size={16} aria-hidden /> {exact ? 'Open in Google Maps' : 'Open this area in Google Maps'}
               </a>
             )}
           </div>
-          <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
-            <Info size={14} className="mt-0.5 shrink-0" />
+          <p className="mt-3 flex items-start gap-1.5 text-caption text-muted-foreground">
+            <Info size={14} className="mt-0.5 shrink-0" aria-hidden />
             {exact
               ? `${REASON_TEXT[exact.reason] ?? ''} The pin is a guide and may not mark the exact spot.`
               : 'This shows the approximate area only. The property is somewhere inside the circle. The exact pin is shared with people who have a booked viewing or an approved application.'}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-caption text-muted-foreground">
             {pin?.pin_label === 'admin_reviewed'
               ? `Pin reviewed by an EboHomes administrator${pin.pin_reviewed_at ? ' on ' + day(pin.pin_reviewed_at) : ''}.`
               : 'Pin provided by the landlord. It has not been reviewed by EboHomes yet.'}
@@ -145,31 +150,31 @@ export function ListingLocationPublic({ listingId, title, address }: { listingId
       {loaded && groups.length > 0 && (
         <div className="mt-5 space-y-4 border-t border-border pt-4">
           <div>
-            <h4 className="text-base font-bold text-foreground">Surroundings</h4>
-            <p className="text-xs text-muted-foreground">
+            <h3 className="text-body-lg font-semibold text-foreground">Surroundings</h3>
+            <p className="text-caption text-muted-foreground">
               What was seen on the date shown, checked by an EboHomes administrator before it was published. These are observations, not guarantees. Distances are straight lines, not road distances.
             </p>
           </div>
           {groups.map((g) => (
             <div key={g.title}>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{g.title}</p>
+              <h4 className="mb-1 text-caption font-semibold uppercase tracking-wide text-muted-foreground">{g.title}</h4>
               <ul className="space-y-2">
                 {g.items.map((f) => {
                   const fac = isFacilityCategory(f.category)
                   const dist = f.distance_method === 'straight_line' ? formatStraightLine(Number(f.distance_m_rounded)) : null
                   return (
-                    <li key={f.id} className="rounded-lg border border-border p-3 text-sm">
+                    <li key={f.id} className="rounded-control border border-border p-3 text-body">
                       <p className="font-semibold text-foreground">
                         {categoryLabel(f.category)}: <span className="font-normal">{fac ? f.name : answerLabel(f.category, f.answer)}</span>
                       </p>
-                      {dist && <p className="text-xs text-foreground">{dist}</p>}
-                      {f.note && <p className="text-xs text-muted-foreground">{f.note}</p>}
-                      <p className="mt-1 text-[11px] text-muted-foreground">
+                      {dist && <p className="text-caption text-foreground">{dist}</p>}
+                      {f.note && <p className="text-caption text-muted-foreground">{f.note}</p>}
+                      <p className="mt-1 text-caption text-muted-foreground">
                         {factProvenance(f.source, 'published', f.reviewed_at)} · seen {day(f.observed_at)}{f.context ? ` · ${f.context}` : ''}
                       </p>
                       {f.is_stale && (
-                        <p className="mt-1 flex items-start gap-1 text-[11px] font-semibold text-orange-800">
-                          <AlertTriangle size={12} className="mt-0.5 shrink-0" /> Old information. It may have changed since.
+                        <p className="mt-1 flex items-start gap-1 text-caption font-semibold text-warning">
+                          <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden /> Old information. It may have changed since.
                         </p>
                       )}
                     </li>
@@ -180,6 +185,6 @@ export function ListingLocationPublic({ listingId, title, address }: { listingId
           ))}
         </div>
       )}
-    </div>
+    </section>
   )
 }
