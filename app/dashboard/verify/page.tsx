@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ShieldCheck, Clock, XCircle, FileText, Check, Landmark, Circle } from 'lucide-react'
+import { ShieldCheck, Clock, XCircle, FileText, Check, Landmark, Circle, HelpCircle, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   OWNERSHIP_BUCKET,
@@ -13,7 +13,13 @@ import {
   isValidOwnershipPath,
   getOwnershipSignedUrl,
 } from '@/lib/ownership-docs'
-import { isSubmissionComplete } from '@/lib/landlord-verification'
+import { isSubmissionComplete, landlordVerificationDisplay, missingItems } from '@/lib/landlord-verification'
+import { ToneChip } from '@/components/dashboard-ui'
+
+// Stage 16 Part 2: presentation changes only.
+// Upload, submit, cleanup and storage logic are the same as before.
+// What the landlord is TOLD about their status now comes from landlordVerificationDisplay(),
+// which never treats the `verified` flag on its own as proof of anything.
 
 type FormData = {
   business_name: string
@@ -29,6 +35,7 @@ type FormData = {
 }
 
 type PayoutState = 'loading' | 'none' | 'pending' | 'active' | 'unknown'
+type UploadKey = 'id' | 'selfie' | 'doc'
 
 const ID_LABELS: Record<string, string> = {
   nin: 'NIN slip / card',
@@ -36,6 +43,9 @@ const ID_LABELS: Record<string, string> = {
   voters_card: "Voter's card",
   intl_passport: 'International passport',
 }
+
+const INPUT =
+  'min-h-11 w-full rounded-lg border border-border bg-input px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
 // One shared definition of "submitted" (verification_status defaults to 'pending' in the database).
 const hasAllDetails = (d: FormData) => isSubmissionComplete(d)
@@ -50,9 +60,99 @@ function ChecklistRow({ done, label, value }: { done: boolean; label: string; va
       )}
       <div className="min-w-0 flex-1">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className="break-words text-sm font-medium text-foreground">{value}</p>
+        <p className="break-words text-sm font-medium text-foreground">
+          {value}
+          <span className="sr-only">{done ? ' (done)' : ' (not done)'}</span>
+        </p>
       </div>
     </li>
+  )
+}
+
+// A file upload box that keyboard users can reach: the real input is visually hidden, not display:none,
+// and the label shows a focus ring when the input has focus.
+function UploadField({
+  id,
+  title,
+  hint,
+  uploaded,
+  fileName,
+  fallbackName,
+  uploading,
+  uploadingText,
+  idleText,
+  accept,
+  capture,
+  error,
+  href,
+  onPick,
+  onRemove,
+}: {
+  id: string
+  title: string
+  hint: string
+  uploaded: boolean
+  fileName: string
+  fallbackName: string
+  uploading: boolean
+  uploadingText: string
+  idleText: string
+  accept: string
+  capture?: 'user'
+  error?: string
+  href?: string
+  onPick: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="border-t border-border pt-4">
+      <p id={`${id}-title`} className="mb-1 text-sm font-semibold text-foreground">{title}</p>
+      <p id={`${id}-hint`} className="mb-3 text-sm text-muted-foreground">{hint}</p>
+      {uploaded ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-success/30 bg-success-soft p-3">
+          {href ? (
+            <a href={href} target="_blank" rel="noreferrer" className="focus-ring flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
+              <Check size={16} className="shrink-0 text-success" aria-hidden />
+              <span className="truncate">{fileName || fallbackName}</span>
+            </a>
+          ) : (
+            <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
+              <Check size={16} className="shrink-0 text-success" aria-hidden />
+              <span className="truncate">{fileName || fallbackName}</span>
+            </span>
+          )}
+          <button type="button" onClick={onRemove} className="focus-ring min-h-11 shrink-0 px-3 text-sm font-semibold text-destructive">
+            Remove<span className="sr-only"> {title}</span>
+          </button>
+        </div>
+      ) : (
+        <label
+          htmlFor={id}
+          className="flex min-h-14 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border p-4 text-center text-sm transition-colors hover:bg-secondary focus-within:ring-2 focus-within:ring-primary"
+        >
+          {uploading ? (
+            <span className="flex items-center gap-2 font-medium text-primary" role="status">
+              <Loader2 size={16} className="animate-spin" aria-hidden /> {uploadingText}
+            </span>
+          ) : (
+            <span className="flex items-center justify-center gap-2 font-semibold text-foreground">
+              <FileText size={16} aria-hidden /> {idleText}
+            </span>
+          )}
+          <input
+            id={id}
+            type="file"
+            accept={accept}
+            capture={capture}
+            onChange={onPick}
+            disabled={uploading}
+            aria-describedby={`${id}-hint`}
+            className="sr-only"
+          />
+        </label>
+      )}
+      {error && <p role="alert" className="mt-2 text-sm font-medium text-destructive">{error}</p>}
+    </div>
   )
 }
 
@@ -76,7 +176,9 @@ export default function GetVerifiedPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
-  const [status, setStatus] = useState<string | null>(null)
+  // The two raw database fields. They are never shown directly: landlordVerificationDisplay() decides the wording.
+  const [dbStatus, setDbStatus] = useState<string | null>(null)
+  const [dbVerified, setDbVerified] = useState<boolean | null>(null)
   const [rejectionReason, setRejectionReason] = useState<string | null>(null)
 
   const [docUploading, setDocUploading] = useState(false)
@@ -88,6 +190,9 @@ export default function GetVerifiedPage() {
   const [payout, setPayout] = useState<PayoutState>('loading')
   const [consent, setConsent] = useState(false)
   const [verifiedAt, setVerifiedAt] = useState<string | null>(null)
+  const [uploadErrors, setUploadErrors] = useState<Partial<Record<UploadKey, string>>>({})
+
+  const setUploadError = (key: UploadKey, text: string) => setUploadErrors((p) => ({ ...p, [key]: text }))
 
   const [formData, setFormData] = useState<FormData>({
     business_name: '',
@@ -130,7 +235,8 @@ export default function GetVerifiedPage() {
           id_document_url: data.id_document_url || '',
           selfie_url: data.selfie_url || '',
         })
-        setStatus(data.verified ? 'verified' : (data.verification_status || null))
+        setDbStatus(data.verification_status ?? null)
+        setDbVerified(typeof data.verified === 'boolean' ? data.verified : null)
         setRejectionReason(data.rejection_reason || null)
         setVerifiedAt(data.verification_reviewed_at || null)
 
@@ -153,6 +259,10 @@ export default function GetVerifiedPage() {
     loadProfile()
   }, [])
 
+  // What we may tell the landlord. This is the only place the wording for a status is decided.
+  const display = landlordVerificationDisplay({ ...formData, verification_status: dbStatus, verified: dbVerified })
+  const submitted = display.state === 'submitted'
+
   // Payout account status comes from the existing /api/payout-account route.
   const loadPayout = useCallback(async () => {
     try {
@@ -172,20 +282,19 @@ export default function GetVerifiedPage() {
     }
   }, [])
 
-  const underReview = status === 'pending' && hasAllDetails(formData)
-
   useEffect(() => {
-    if (underReview) loadPayout()
-  }, [underReview, loadPayout])
+    if (submitted) loadPayout()
+  }, [submitted, loadPayout])
 
   const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target
     const file = input.files?.[0]
     if (!file) return
+    setUploadError('doc', '')
 
     const err = validateOwnershipFile(file)
     if (err) {
-      alert(err)
+      setUploadError('doc', err)
       input.value = ''
       return
     }
@@ -194,7 +303,7 @@ export default function GetVerifiedPage() {
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
     if (!user) {
-      alert('You must be logged in.')
+      setMessage('You must be logged in.')
       setDocUploading(false)
       router.replace('/login')
       return
@@ -206,7 +315,7 @@ export default function GetVerifiedPage() {
       .upload(filePath, file, { contentType: file.type, upsert: false })
 
     if (uploadError) {
-      alert('Failed to upload document: ' + uploadError.message)
+      setUploadError('doc', 'Failed to upload document: ' + uploadError.message)
       setDocUploading(false)
       input.value = ''
       return
@@ -234,16 +343,17 @@ export default function GetVerifiedPage() {
     const input = e.target
     const file = input.files?.[0]
     if (!file) return
+    setUploadError(kind, '')
     const validationError = validateOwnershipFile(file)
     if (validationError) {
-      alert(validationError)
+      setUploadError(kind, validationError)
       input.value = ''
       return
     }
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
     if (!user) {
-      alert('You must be logged in.')
+      setMessage('You must be logged in.')
       return
     }
     setIdUploading(kind)
@@ -252,7 +362,7 @@ export default function GetVerifiedPage() {
       .from(OWNERSHIP_BUCKET)
       .upload(filePath, file, { contentType: file.type, upsert: false })
     if (uploadError) {
-      alert('Upload failed: ' + uploadError.message)
+      setUploadError(kind, 'Upload failed: ' + uploadError.message)
       setIdUploading('')
       input.value = ''
       return
@@ -317,59 +427,94 @@ export default function GetVerifiedPage() {
     }
 
     setRejectionReason(null)
-    setStatus('pending')
+    setDbStatus('pending')
+    setDbVerified(false)
     cleanupOldFiles()
     window.scrollTo({ top: 0 })
   }
 
   if (loading) {
-    return <div className="max-w-2xl mx-auto px-4 py-10 text-center text-muted-foreground">Loading...</div>
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-8" aria-busy="true" aria-label="Loading verification">
+        <div className="mb-4 h-8 w-48 animate-pulse rounded bg-secondary" />
+        <div className="h-64 animate-pulse rounded-card border border-border bg-secondary" />
+      </div>
+    )
   }
 
-  if (status === 'verified') {
-    const company = formData.account_type === 'company'
+  // Shown on every state: what the landlord's own records say, in words we can stand behind.
+  const company = formData.account_type === 'company'
+
+  // ---- Verified: both database fields agree on an explicit administrator outcome. ----
+  if (display.state === 'verified') {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
-        <div className="bg-card border border-success/30 rounded-card p-6 text-center">
-          <ShieldCheck size={40} className="mx-auto text-success mb-3" />
-          <h1 className="text-xl font-bold text-foreground mb-1">You&apos;re Verified</h1>
+      <div className="mx-auto max-w-2xl space-y-4 px-4 py-8">
+        <div className="rounded-card border border-success/30 bg-card p-6 text-center">
+          <ShieldCheck size={40} className="mx-auto mb-3 text-success" aria-hidden />
+          <ToneChip tone="green">Verified</ToneChip>
+          <h1 className="mb-1 mt-3 text-xl font-bold text-foreground">Your landlord account is verified</h1>
           <p className="text-sm text-muted-foreground">
-            Your landlord account has been verified on EboHomes
-            {verifiedAt ? ` on ${new Date(verifiedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}.
+            {display.detail}
+            {verifiedAt ? ` Decision recorded on ${new Date(verifiedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })}.` : ''}
           </p>
         </div>
 
-        <section className="bg-card border border-border rounded-card shadow-rest p-4" aria-label="What EboHomes checked">
-          <h2 className="font-bold text-foreground mb-1">What EboHomes reviewed</h2>
+        <section className="rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Details on file">
+          <h2 className="mb-1 font-bold text-foreground">Details on file</h2>
           <ul className="divide-y divide-border">
             <ChecklistRow done label="Business" value={`${formData.business_name || '—'}${company ? ' (company)' : ''}`} />
-            <ChecklistRow done label="Government ID and selfie" value="Reviewed" />
-            <ChecklistRow done={!!formData.ownership_doc_url} label="Ownership document (optional)" value={formData.ownership_doc_url ? 'Reviewed' : 'Not provided'} />
+            <ChecklistRow done={!!formData.id_document_url} label="Government ID" value={formData.id_document_url ? 'On file' : 'Not on file'} />
+            <ChecklistRow done={!!formData.selfie_url} label="Selfie holding your ID" value={formData.selfie_url ? 'On file' : 'Not on file'} />
+            <ChecklistRow done={!!formData.ownership_doc_url} label="Ownership document (optional)" value={formData.ownership_doc_url ? 'On file' : 'Not provided'} />
           </ul>
-          <p className="text-xs text-muted-foreground pt-2 border-t border-border">
-            Verification confirms who you are and the documents you sent. It does not by itself prove you own a particular property.
+          <p className="border-t border-border pt-2 text-xs text-muted-foreground">
+            Verification is about your landlord account. It does not by itself prove you own a particular property. EboHomes checks each property separately.
           </p>
         </section>
 
-        <section className="bg-warning-soft border border-warning/25 rounded-card p-4 text-sm text-warning" aria-label="If your details change">
-          <p className="font-semibold mb-1">If your details change</p>
+        <section className="rounded-card border border-warning/25 bg-warning-soft p-4 text-sm text-foreground" aria-label="If your details change">
+          <p className="mb-1 font-semibold">If your details change</p>
           <p>
             Changing your name, business name, business address, CAC number, ID, selfie, documents or payout account sends your
             account back to review until EboHomes checks it again. Update them on your{' '}
-            <Link href="/dashboard/profile" className="font-semibold underline">profile</Link>.
+            <Link href="/dashboard/profile" className="focus-ring font-semibold underline">profile</Link>.
           </p>
         </section>
 
-        <Link href="/dashboard/payout-account" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
-          <Landmark size={16} /> Manage your payout account
+        <Link href="/dashboard/payout-account" className="focus-ring inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+          <Landmark size={16} aria-hidden /> Manage your payout account
         </Link>
       </div>
     )
   }
 
-  // Submitted: show everything EboHomes is reviewing, plus the payout account step.
-  if (underReview) {
-    const company = formData.account_type === 'company'
+  // ---- Neutral: the records do not give a clear result. We say so and do not guess. ----
+  if (display.state === 'unknown') {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4 px-4 py-8">
+        <div className="rounded-card border border-border bg-card p-6 text-center">
+          <HelpCircle size={36} className="mx-auto mb-3 text-muted-foreground" aria-hidden />
+          <ToneChip tone="grey">{display.label}</ToneChip>
+          <h1 className="mb-1 mt-3 text-xl font-bold text-foreground">We cannot show a clear result</h1>
+          <p className="text-sm text-muted-foreground">{display.detail}</p>
+        </div>
+        <section className="rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Details on file">
+          <h2 className="mb-1 font-bold text-foreground">Details on file</h2>
+          <ul className="divide-y divide-border">
+            <ChecklistRow done={!!formData.business_name} label="Business name" value={formData.business_name || 'Not provided'} />
+            <ChecklistRow done={!!formData.id_document_url} label="Government ID" value={formData.id_document_url ? 'On file' : 'Not on file'} />
+            <ChecklistRow done={!!formData.selfie_url} label="Selfie holding your ID" value={formData.selfie_url ? 'On file' : 'Not on file'} />
+          </ul>
+        </section>
+        <Link href="/contact" className="focus-ring inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+          Contact EboHomes
+        </Link>
+      </div>
+    )
+  }
+
+  // ---- Submitted: everything is on file and EboHomes has not recorded a decision. ----
+  if (submitted) {
     const payoutValue =
       payout === 'active'
         ? 'Approved and active'
@@ -383,17 +528,16 @@ export default function GetVerifiedPage() {
     const payoutDone = payout === 'active' || payout === 'pending'
 
     return (
-      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
-        <div className="bg-card border border-warning/30 rounded-card p-6 text-center">
-          <Clock size={36} className="mx-auto text-warning mb-3" />
-          <h1 className="text-xl font-bold text-foreground mb-1">Verification under review</h1>
-          <p className="text-sm text-muted-foreground">
-            We&apos;ve received your details. EboHomes will review them and notify you of the result.
-          </p>
+      <div className="mx-auto max-w-2xl space-y-4 px-4 py-8">
+        <div className="rounded-card border border-warning/30 bg-card p-6 text-center">
+          <Clock size={36} className="mx-auto mb-3 text-warning" aria-hidden />
+          <ToneChip tone="amber">{display.label}</ToneChip>
+          <h1 className="mb-1 mt-3 text-xl font-bold text-foreground">We have your details</h1>
+          <p className="text-sm text-muted-foreground">{display.detail}</p>
         </div>
 
-        <section className="bg-card border border-border rounded-card shadow-rest p-4" aria-label="Details submitted for verification">
-          <h2 className="font-bold text-foreground mb-1">What you submitted</h2>
+        <section className="rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Details submitted for verification">
+          <h2 className="mb-1 font-bold text-foreground">What you submitted</h2>
           <ul className="divide-y divide-border">
             <ChecklistRow done label="Registered as" value={company ? 'A company' : 'An individual'} />
             <ChecklistRow done label="Business name" value={formData.business_name} />
@@ -410,30 +554,26 @@ export default function GetVerifiedPage() {
                 value={`${formData.representative_name} (${formData.representative_role})`}
               />
             )}
-            <ChecklistRow
-              done
-              label="Government ID"
-              value={`${ID_LABELS[formData.id_document_type] || 'ID'} uploaded`}
-            />
+            <ChecklistRow done label="Government ID" value={`${ID_LABELS[formData.id_document_type] || 'ID'} uploaded`} />
             <ChecklistRow done label="Selfie holding your ID" value="Uploaded" />
             <ChecklistRow done={!!formData.ownership_doc_url} label="Ownership document (optional)" value={formData.ownership_doc_url ? 'Uploaded' : 'Not provided'} />
           </ul>
         </section>
 
-        <section className="bg-card border border-border rounded-card shadow-rest p-4" aria-label="Payout account">
-          <h2 className="font-bold text-foreground mb-1">Payout account</h2>
+        <section className="rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Payout account">
+          <h2 className="mb-1 font-bold text-foreground">Payout account</h2>
           <ul>
             <ChecklistRow done={payoutDone} label="Bank account for your rent" value={payoutValue} />
           </ul>
-          <p className="text-xs text-muted-foreground mb-3">
-            EboHomes checks that the account name matches your verified identity, so add it now to avoid delays when your first rent is ready.
+          <p className="mb-3 text-xs text-muted-foreground">
+            EboHomes checks that the account name matches your identity, so add it now to avoid delays when your first rent is ready.
           </p>
           {payout !== 'active' && (
             <Link
               href="/dashboard/payout-account"
-              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground"
+              className="focus-ring inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground"
             >
-              <Landmark size={16} /> {payout === 'pending' ? 'View payout request' : 'Add payout account'}
+              <Landmark size={16} aria-hidden /> {payout === 'pending' ? 'View payout request' : 'Add payout account'}
             </Link>
           )}
         </section>
@@ -441,111 +581,144 @@ export default function GetVerifiedPage() {
     )
   }
 
-  // Never submitted (or rejected): show the full form.
+  // ---- Not submitted, or rejected: show the form. ----
+  const missing = missingItems(formData)
+  const total = company ? 8 : 5
+  const done = Math.max(0, total - missing.length)
+  const percent = Math.round((done / total) * 100)
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground mb-1">Get Verified</h1>
+    <div className="mx-auto max-w-2xl px-4 py-8">
+      <div className="mb-5">
+        <h1 className="mb-1 text-2xl font-bold text-foreground">Get Verified</h1>
         <p className="text-sm text-muted-foreground">
-          Verified landlords get a trust badge. Provide accurate details — this is reviewed by our team.
+          Verified landlords get a trust badge. Give accurate details. Our team reviews them.
         </p>
       </div>
 
-      {status === 'rejected' && (
-        <div className="bg-destructive/10 border border-destructive/30 rounded-card p-4 mb-6 flex items-start gap-3">
-          <XCircle size={18} className="text-destructive shrink-0 mt-0.5" />
-          <div className="text-sm text-destructive">
-            <p className="font-semibold mb-1">Your previous submission was not approved.</p>
+      {display.state === 'rejected' && (
+        <div className="mb-5 flex items-start gap-3 rounded-card border border-danger/30 bg-danger-soft p-4">
+          <XCircle size={18} className="mt-0.5 shrink-0 text-danger" aria-hidden />
+          <div className="text-sm text-foreground">
+            <p className="mb-1 font-semibold">{display.label}</p>
             {rejectionReason ? (
               <p><span className="font-semibold">Reason:</span> {rejectionReason}</p>
             ) : (
-              <p>Please review your details and resubmit.</p>
+              <p>{display.detail}</p>
             )}
           </div>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="bg-card border border-border rounded-card shadow-rest p-5 sm:p-6 space-y-4">
+      {/* Progress comes straight from the fields below. Nothing here is a new requirement. */}
+      <section className="mb-5 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Your progress">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-foreground">Your progress</h2>
+          <span className="text-sm font-semibold text-foreground">{done} of {total} required</span>
+        </div>
+        <div
+          role="progressbar"
+          aria-label="Required details completed"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={done}
+          className="h-2 overflow-hidden rounded-full bg-secondary"
+        >
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percent}%` }} />
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {missing.length === 0 ? 'Everything required is filled in. Tick the confirmation and submit.' : `Still needed: ${missing.join(', ')}.`}
+        </p>
+      </section>
+
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-card border border-border bg-card p-5 shadow-rest sm:p-6">
         <div>
-          <label className="block text-sm font-semibold text-foreground mb-2">Registering as *</label>
+          <label htmlFor="v-account-type" className="mb-2 block text-sm font-semibold text-foreground">Registering as *</label>
           <select
+            id="v-account-type"
             value={formData.account_type}
             onChange={(e) => setFormData((p) => ({ ...p, account_type: e.target.value }))}
-            className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            className={INPUT}
           >
             <option value="individual">An individual</option>
             <option value="company">A company</option>
           </select>
         </div>
 
-        {formData.account_type === 'company' && (
+        {company && (
           <div className="space-y-4 rounded-lg border border-border p-4">
             <p className="text-sm text-muted-foreground">
               A CAC number shows the company exists. It does not prove the company owns this property, so upload the property document below as well.
             </p>
             <div>
-              <label className="block text-sm font-semibold text-foreground mb-2">Authorised representative&apos;s full name *</label>
+              <label htmlFor="v-rep-name" className="mb-2 block text-sm font-semibold text-foreground">Authorised representative&apos;s full name *</label>
               <input
+                id="v-rep-name"
                 value={formData.representative_name}
                 onChange={(e) => setFormData((p) => ({ ...p, representative_name: e.target.value }))}
-                className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className={INPUT}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-foreground mb-2">Their role in the company *</label>
+              <label htmlFor="v-rep-role" className="mb-2 block text-sm font-semibold text-foreground">Their role in the company *</label>
               <input
+                id="v-rep-role"
                 value={formData.representative_role}
                 onChange={(e) => setFormData((p) => ({ ...p, representative_role: e.target.value }))}
                 placeholder="e.g. Director"
-                className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className={INPUT}
               />
             </div>
           </div>
         )}
 
         <div>
-          <label className="block text-sm font-semibold text-foreground mb-2">Business Name *</label>
+          <label htmlFor="v-business-name" className="mb-2 block text-sm font-semibold text-foreground">Business Name *</label>
           <input
+            id="v-business-name"
             required
             value={formData.business_name}
             onChange={(e) => setFormData((p) => ({ ...p, business_name: e.target.value }))}
             placeholder="e.g. Onyeka Properties Ltd"
-            className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            className={INPUT}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-foreground mb-2">Business Address *</label>
+          <label htmlFor="v-business-address" className="mb-2 block text-sm font-semibold text-foreground">Business Address *</label>
           <input
+            id="v-business-address"
             required
             value={formData.business_address}
             onChange={(e) => setFormData((p) => ({ ...p, business_address: e.target.value }))}
             placeholder="e.g. 12 Ogoja Road, Abakaliki"
-            className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            className={INPUT}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-foreground mb-2">
-            CAC Number {formData.account_type === 'company' ? '*' : '(optional)'}
+          <label htmlFor="v-cac" className="mb-2 block text-sm font-semibold text-foreground">
+            CAC Number {company ? '*' : '(optional)'}
           </label>
           <input
+            id="v-cac"
             value={formData.cac_number}
             onChange={(e) => setFormData((p) => ({ ...p, cac_number: e.target.value }))}
             placeholder="e.g. RC1234567"
-            className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            className={INPUT}
           />
         </div>
 
         <div className="border-t border-border pt-4">
-          <label className="block text-sm font-semibold text-foreground mb-2">Government ID *</label>
-          <p className="text-xs text-muted-foreground mb-3">
-            Upload a clear photo of your NIN slip, driver&apos;s licence, voter&apos;s card or international passport.
+          <label htmlFor="v-id-type" className="mb-1 block text-sm font-semibold text-foreground">Government ID type *</label>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Choose the ID you will photograph: NIN slip, driver&apos;s licence, voter&apos;s card or international passport.
           </p>
           <select
+            id="v-id-type"
             value={formData.id_document_type}
             onChange={(e) => setFormData((p) => ({ ...p, id_document_type: e.target.value }))}
-            className="w-full bg-input border border-border rounded-lg px-4 py-3 text-foreground mb-3 focus:outline-none focus:ring-2 focus:ring-primary"
+            className={INPUT}
           >
             <option value="">Select ID type</option>
             <option value="nin">NIN slip / card</option>
@@ -553,96 +726,61 @@ export default function GetVerifiedPage() {
             <option value="voters_card">Voter&apos;s card</option>
             <option value="intl_passport">International passport</option>
           </select>
-          {formData.id_document_url ? (
-            <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
-              <span className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
-                <Check size={14} className="text-primary" /> {idDocName || 'ID uploaded'}
-              </span>
-              <button
-                type="button"
-                onClick={() => { setFormData((p) => ({ ...p, id_document_url: '' })); setIdDocName('') }}
-                className="text-destructive text-sm font-semibold min-h-11 px-3"
-              >
-                Remove
-              </button>
-            </div>
-          ) : (
-            <label className="block min-h-14 border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm focus-within:outline-2 focus-within:outline-primary">
-              {idUploading === 'id' ? (
-                <span className="text-primary">Uploading ID...</span>
-              ) : (
-                <span className="font-semibold text-foreground flex items-center justify-center gap-2">
-                  <FileText size={16} /> Click to upload your ID
-                </span>
-              )}
-              <input type="file" accept={OWNERSHIP_ACCEPT} onChange={(e) => handleIdUpload(e, 'id')} className="hidden" />
-            </label>
-          )}
         </div>
 
-        <div className="border-t border-border pt-4">
-          <label className="block text-sm font-semibold text-foreground mb-2">Selfie holding your ID *</label>
-          <p className="text-xs text-muted-foreground mb-3">
-            Take a clear photo of your face, holding the same ID next to it.
-          </p>
-          {formData.selfie_url ? (
-            <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
-              <span className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
-                <Check size={14} className="text-primary" /> {selfieName || 'Selfie uploaded'}
-              </span>
-              <button
-                type="button"
-                onClick={() => { setFormData((p) => ({ ...p, selfie_url: '' })); setSelfieName('') }}
-                className="text-destructive text-sm font-semibold min-h-11 px-3"
-              >
-                Remove
-              </button>
-            </div>
-          ) : (
-            <label className="block min-h-14 border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm focus-within:outline-2 focus-within:outline-primary">
-              {idUploading === 'selfie' ? (
-                <span className="text-primary">Uploading selfie...</span>
-              ) : (
-                <span className="font-semibold text-foreground flex items-center justify-center gap-2">
-                  <FileText size={16} /> Click to take or upload a selfie
-                </span>
-              )}
-              <input type="file" accept="image/jpeg,image/png,image/webp" capture="user" onChange={(e) => handleIdUpload(e, 'selfie')} className="hidden" />
-            </label>
-          )}
-        </div>
+        <UploadField
+          id="v-id-photo"
+          title="Government ID photo *"
+          hint="Upload a clear photo of the ID. All four corners and the text must be readable."
+          uploaded={!!formData.id_document_url}
+          fileName={idDocName}
+          fallbackName="ID uploaded"
+          uploading={idUploading === 'id'}
+          uploadingText="Uploading ID..."
+          idleText="Tap to upload your ID"
+          accept={OWNERSHIP_ACCEPT}
+          error={uploadErrors.id}
+          onPick={(e) => handleIdUpload(e, 'id')}
+          onRemove={() => { setFormData((p) => ({ ...p, id_document_url: '' })); setIdDocName('') }}
+        />
 
-        <div className="border-t border-border pt-4">
-          <label className="block text-sm font-semibold text-foreground mb-2">Ownership Document (optional)</label>
-          <p className="text-xs text-muted-foreground mb-3">
-            Only if you own property yourself. Agents and property managers can skip this. EboHomes checks each property separately when you list it.
-          </p>
-          {formData.ownership_doc_url ? (
-            <div className="flex items-center justify-between border-2 border-border rounded-lg p-3 bg-secondary">
-              <a href={docPreviewUrl || '#'} target="_blank" rel="noreferrer" className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
-                <Check size={14} className="text-primary" /> {docName || 'Document uploaded'}
-              </a>
-              <button type="button" onClick={removeDoc} className="text-destructive text-sm font-semibold min-h-11 px-3">
-                Remove
-              </button>
-            </div>
-          ) : (
-            <label className="block min-h-14 border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors text-sm focus-within:outline-2 focus-within:outline-primary">
-              {docUploading ? (
-                <span className="text-primary">Uploading document...</span>
-              ) : (
-                <span className="font-semibold text-foreground flex items-center justify-center gap-2">
-                  <FileText size={16} /> Click to upload document
-                </span>
-              )}
-              <input type="file" accept={OWNERSHIP_ACCEPT} onChange={handleDocUpload} className="hidden" />
-            </label>
-          )}
-        </div>
+        <UploadField
+          id="v-selfie"
+          title="Selfie holding your ID *"
+          hint="Take a clear photo of your face, holding the same ID next to it."
+          uploaded={!!formData.selfie_url}
+          fileName={selfieName}
+          fallbackName="Selfie uploaded"
+          uploading={idUploading === 'selfie'}
+          uploadingText="Uploading selfie..."
+          idleText="Tap to take or upload a selfie"
+          accept="image/jpeg,image/png,image/webp"
+          capture="user"
+          error={uploadErrors.selfie}
+          onPick={(e) => handleIdUpload(e, 'selfie')}
+          onRemove={() => { setFormData((p) => ({ ...p, selfie_url: '' })); setSelfieName('') }}
+        />
+
+        <UploadField
+          id="v-ownership"
+          title="Ownership document (optional)"
+          hint="Only if you own property yourself. Agents and property managers can skip this. EboHomes checks each property separately when you list it."
+          uploaded={!!formData.ownership_doc_url}
+          fileName={docName}
+          fallbackName="Document uploaded"
+          uploading={docUploading}
+          uploadingText="Uploading document..."
+          idleText="Tap to upload a document"
+          accept={OWNERSHIP_ACCEPT}
+          error={uploadErrors.doc}
+          href={docPreviewUrl || undefined}
+          onPick={handleDocUpload}
+          onRemove={removeDoc}
+        />
 
         <div className="border-t border-border pt-4">
           <div className="flex items-start gap-3 rounded-lg border border-border bg-secondary p-4 text-sm">
-            <Landmark size={18} className="mt-0.5 shrink-0 text-primary" />
+            <Landmark size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden />
             <p className="text-muted-foreground">
               <span className="font-semibold text-foreground">Payout account comes next.</span>{' '}
               Submit the details above first. Your next screen shows everything you sent and a button to add your payout
@@ -651,29 +789,36 @@ export default function GetVerifiedPage() {
           </div>
         </div>
 
-        <label className="flex items-start gap-3 rounded-lg border border-border bg-secondary p-4 text-sm cursor-pointer">
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-secondary p-4 text-sm">
           <input
             type="checkbox"
             checked={consent}
             onChange={(e) => setConsent(e.target.checked)}
-            className="mt-1 h-4 w-4 shrink-0"
+            className="mt-1 h-5 w-5 shrink-0 accent-primary"
           />
           <span className="text-muted-foreground">
             I confirm these details and documents are mine and true. I agree that EboHomes may review my ID, selfie and
             any document I upload to verify my identity, as described in the{' '}
-            <Link href="/privacy" target="_blank" className="font-semibold text-primary underline">Privacy Policy</Link>.
+            <Link href="/privacy" target="_blank" className="focus-ring font-semibold text-primary underline">Privacy Policy</Link>.
           </span>
         </label>
 
-        {message && <p role="alert" className="text-sm text-destructive">{message}</p>}
-
-        <button
-          type="submit"
-          disabled={!canSubmit || submitting}
-          className="w-full min-h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {submitting ? 'Submitting...' : 'Submit for Verification'}
-        </button>
+        {/* Stays on screen above the phone's bottom bar so the main action is never lost. */}
+        <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 -mx-5 -mb-5 space-y-2 border-t border-border bg-card px-5 py-3 sm:-mx-6 sm:-mb-6 sm:px-6 md:bottom-0">
+          {message && <p role="alert" className="text-sm font-medium text-destructive">{message}</p>}
+          {!canSubmit && !submitting && (
+            <p className="text-xs text-muted-foreground">
+              {missing.length > 0 ? 'Complete the required details above to submit.' : 'Tick the confirmation above to submit.'}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={!canSubmit || submitting}
+            className="focus-ring min-h-12 w-full rounded-lg bg-primary py-3 font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? 'Submitting...' : 'Submit for Verification'}
+          </button>
+        </div>
       </form>
     </div>
   )
