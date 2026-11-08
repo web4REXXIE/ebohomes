@@ -9,14 +9,17 @@
    EBOHOMES DESIGN TOKENS  (Phase 2)
 
    How to use this file
-   - Existing tokens (primary, accent, muted, card, border, ...) are UNCHANGED.
+   - Existing tokens keep their names. Stage 3 changed the VALUE of --primary (light mode) to the
+     official brand colour #0A2E1A and added the support and status tokens. See docs/BRAND.md.
    - Everything marked "Phase 2" is additive. Nothing was renamed or removed.
    - Components should use token utilities (bg-forest, text-primary,
      rounded-card, shadow-rest, py-section ...) and NOT emerald-*, amber-*
      or arbitrary hex values.
 
    Colour roles
-     primary          #0A7A3B  actions: buttons, links, active states
+     primary          #0A2E1A  brand colour for key actions (buttons, links, active states)
+     support          #0A7A3B  supporting green: success, verified, charts, soft highlights.
+                               Never a competing button colour next to primary.
      forest           #0A2E1A  deep brand surfaces: hero overlay, footer, banners
      cream            #FAF7F2  warm section background (dark mode: card colour)
      featured         #F59E0B  gold accent, "Featured" only. Text on it must use
@@ -90,6 +93,16 @@
   --color-cream-foreground: var(--cream-foreground);
   --color-featured-foreground: var(--featured-foreground);
 
+  /* Stage 3: supporting green and status colours */
+  --color-support: var(--support);
+  --color-support-foreground: var(--support-foreground);
+  --color-success: var(--success);       --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);       --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);         --color-danger-soft: var(--danger-soft);
+  --color-verified: var(--verified);     --color-verified-soft: var(--verified-soft);
+  --color-pending: var(--pending);       --color-pending-soft: var(--pending-soft);
+  --color-unverified: var(--unverified); --color-unverified-soft: var(--unverified-soft);
+
   /* Type scale (responsive: values come from the --fs-* and --lh-* variables below) */
   --text-display: var(--fs-display);
   --text-display--line-height: var(--lh-display);
@@ -136,8 +149,8 @@
   --popover: #FFFFFF;
   --popover-foreground: #111827;
 
-  /* Primary Green — main brand color, buttons, links, active states */
-  --primary: #0A7A3B;
+  /* Primary — official brand colour #0A2E1A: buttons, links, active states (Stage 3) */
+  --primary: #0A2E1A;
   --primary-foreground: #FFFFFF;
 
   /* Light neutral for secondary surfaces */
@@ -169,7 +182,7 @@
 
   --sidebar: #FAFAF9;
   --sidebar-foreground: #111827;
-  --sidebar-primary: #0A7A3B;
+  --sidebar-primary: #0A2E1A;
   --sidebar-primary-foreground: #FFFFFF;
   --sidebar-accent: #F59E0B;
   --sidebar-accent-foreground: #FFFFFF;
@@ -182,7 +195,21 @@
   --cream: #FAF7F2;
   --cream-foreground: #0A2E1A;
   --featured-foreground: #451A03;
-  --gradient-forest: linear-gradient(135deg, var(--forest) 0%, var(--primary) 100%);
+  --gradient-forest: linear-gradient(135deg, var(--forest) 0%, var(--support) 100%);
+
+  /* ---- Stage 3 brand tokens (light) ---- */
+  --support: #0A7A3B;
+  --support-foreground: #FFFFFF;
+
+  /* Status colours: text/icon colour on the matching -soft surface */
+  --success: #065F2E;       --success-soft: #E8F5EC;
+  --warning: #92400E;       --warning-soft: #FEF3C7;
+  --danger: #B91C1C;        --danger-soft: #FEE2E2;
+
+  /* Verification states (listings, landlords, companies) */
+  --verified: #065F2E;      --verified-soft: #E8F5EC;
+  --pending: #92400E;       --pending-soft: #FEF3C7;
+  --unverified: #4B5563;    --unverified-soft: #F3F4F6;
 }
 
 .dark {
@@ -240,6 +267,18 @@
   --featured-foreground: #451A03;
   /* The bright dark-mode primary would wash the gradient out, so end on the deeper green */
   --gradient-forest: linear-gradient(135deg, var(--forest) 0%, #065F2E 100%);
+
+  /* ---- Stage 3 brand tokens (dark) ---- */
+  --support: #22C55E;
+  --support-foreground: #0F1512;
+
+  --success: #4ADE80;       --success-soft: #12261A;
+  --warning: #FBBF24;       --warning-soft: #2A2111;
+  --danger: #F87171;        --danger-soft: #2B1717;
+
+  --verified: #4ADE80;      --verified-soft: #12261A;
+  --pending: #FBBF24;       --pending-soft: #2A2111;
+  --unverified: #9CA3AF;    --unverified-soft: #1F2A24;
 }
 
 /* ---- Phase 2 responsive tokens ----
