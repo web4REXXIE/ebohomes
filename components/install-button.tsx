@@ -38,7 +38,7 @@ export function InstallButton({ variant = 'hero', className = '' }: { variant?: 
     header:
       'hidden h-9 gap-1.5 rounded-button border border-border-strong px-3.5 text-label font-semibold text-foreground hover:bg-muted focus-ring lg:inline-flex',
     footer:
-      'inline-flex h-10 gap-2 rounded-full border border-amber-400/60 px-4 text-sm font-medium text-amber-400 hover:bg-amber-400/10',
+      'inline-flex h-10 gap-2 rounded-button border border-featured/60 px-4 text-label font-medium text-featured hover:bg-featured/10 focus-ring',
   }
 
   const label = variant === 'header' ? 'Get App' : 'Get the EboHomes App'
