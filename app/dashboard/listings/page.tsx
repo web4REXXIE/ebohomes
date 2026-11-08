@@ -1,15 +1,14 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Home, Star, Pause, Play, Pencil, Trash2, Plus, Eye, CheckCircle2, X, MessageCircle, ShieldCheck } from 'lucide-react'
+import { Home, Star, Pause, Play, Pencil, Trash2, Plus, Eye, CheckCircle2, X, MessageCircle, ShieldCheck, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
 import { PropertySummary, type PropertyLite } from '@/components/property-summary'
 import { displayTitle, listingIsLive } from '@/lib/property-display'
 import {
-  GROUP_HELP, GROUP_ORDER, GROUP_TITLE, groupListings, isNewlyApproved, listingStatusInfo,
+  GROUP_HELP, GROUP_ORDER, GROUP_TITLE, groupListings, isNewlyApproved, listingGroup, listingStatusInfo,
   type ListingGroup,
 } from '@/lib/listing-status'
 import { TONE_CLASS } from '@/lib/viewing-status'
@@ -29,7 +28,6 @@ const actionBtn =
   'inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40'
 
 export default function MyListingsPage() {
-  const router = useRouter()
   const [listings, setListings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -38,6 +36,9 @@ export default function MyListingsPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [seenMs, setSeenMs] = useState<number>(Date.now() - SEVEN_DAYS)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  // Search and filter only change what is shown. They never change the data or any listing.
+  const [query, setQuery] = useState('')
+  const [groupFilter, setGroupFilter] = useState<'all' | ListingGroup>('all')
   const inspected = useInspectedIds(listings.map((l) => l.id))
 
   const loadListings = async () => {
@@ -150,7 +151,16 @@ export default function MyListingsPage() {
     }
   }
 
-  const groups = useMemo(() => groupListings(listings), [listings])
+  const visibleListings = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return listings.filter((l) => {
+      if (groupFilter !== 'all' && listingGroup(l.status) !== groupFilter) return false
+      if (!q) return true
+      return `${displayTitle(l)} ${l.location_text ?? ''}`.toLowerCase().includes(q)
+    })
+  }, [listings, query, groupFilter])
+  const groups = useMemo(() => groupListings(visibleListings), [visibleListings])
+  const filtering = query.trim() !== '' || groupFilter !== 'all'
   const newlyApproved = useMemo(() => listings.filter((l) => isNewlyApproved(l, seenMs)), [listings, seenMs])
   const newIds = useMemo(() => new Set(newlyApproved.map((l) => l.id)), [newlyApproved])
 
@@ -184,17 +194,20 @@ export default function MyListingsPage() {
           <h1 className="mb-1 text-2xl font-bold text-foreground">My Properties</h1>
           <p className="text-sm text-muted-foreground">See which of your properties are live, waiting or need action.</p>
         </div>
-        <button
-          onClick={() => router.push('/list-property')}
-          className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+        <Link
+          href="/list-property"
+          className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
         >
           <Plus size={16} aria-hidden /> Add new property
-        </button>
+        </Link>
       </div>
 
       {loadError && (
-        <div role="alert" className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-900">
-          We could not load your properties. Please refresh the page.
+        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-900">
+          <span>We could not load your properties. Your properties are not lost.</span>
+          <button onClick={loadListings} className="focus-ring min-h-11 rounded-full border border-red-300 px-4 text-xs font-bold">
+            Try again
+          </button>
         </div>
       )}
 
@@ -260,15 +273,60 @@ export default function MyListingsPage() {
           <Home size={32} className="mx-auto mb-3 text-muted-foreground" aria-hidden />
           <p className="mb-1 font-semibold text-foreground">No properties yet</p>
           <p className="mb-5 text-sm text-muted-foreground">You haven&apos;t listed any properties. Add your first one to get started.</p>
-          <button
-            onClick={() => router.push('/list-property')}
-            className="min-h-11 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          <Link
+            href="/list-property"
+            className="focus-ring inline-flex min-h-11 items-center rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
           >
             Add new property
-          </button>
+          </Link>
         </div>
       ) : (
         <>
+          {listings.length > 0 && (
+            <>
+            <div role="search" className="mb-4 flex flex-col gap-2 sm:flex-row">
+              <div className="relative min-w-0 flex-1">
+                <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search by title or location"
+                  aria-label="Search your properties by title or location"
+                  className="focus-ring h-11 w-full rounded-full border border-border bg-card pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <select
+                value={groupFilter}
+                onChange={(e) => setGroupFilter(e.target.value as 'all' | ListingGroup)}
+                aria-label="Show properties by status"
+                className="focus-ring h-11 rounded-full border border-border bg-card px-4 text-sm text-foreground"
+              >
+                <option value="all">All statuses</option>
+                {GROUP_ORDER.map((g) => (
+                  <option key={g} value={g}>{GROUP_TITLE[g]}</option>
+                ))}
+              </select>
+            </div>
+            <p className="sr-only" role="status" aria-live="polite">
+              {filtering ? `${visibleListings.length} of ${listings.length} properties shown` : ''}
+            </p>
+
+            {visibleListings.length === 0 && (
+              <div className="mb-8 rounded-2xl border border-dashed border-border bg-card p-8 text-center">
+                <p className="mb-1 font-semibold text-foreground">No properties match</p>
+                <p className="mb-4 text-sm text-muted-foreground">Try a different word or choose All statuses.</p>
+                <button
+                  onClick={() => { setQuery(''); setGroupFilter('all') }}
+                  className="focus-ring min-h-11 rounded-full border border-border px-5 text-sm font-semibold text-foreground hover:bg-secondary"
+                >
+                  Clear search and filter
+                </button>
+              </div>
+            )}
+            </>
+          )}
+
           <nav aria-label="Jump to a group" className="mb-6 flex flex-wrap gap-2">
             {GROUP_ORDER.filter((g) => groups[g].length > 0).map((g) => (
               <a key={g} href={`#group-${g}`} className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-4 text-xs font-bold text-foreground">
@@ -342,12 +400,12 @@ export default function MyListingsPage() {
                           </Link>
                         )}
 
-                        <button
-                          onClick={() => router.push(`/dashboard/edit/${listing.id}`)}
+                        <Link
+                          href={`/dashboard/edit/${listing.id}`}
                           className={`${actionBtn} border-primary/30 text-primary hover:bg-primary/5`}
                         >
                           <Pencil size={12} aria-hidden /> Edit
-                        </button>
+                        </Link>
 
                         <Link
                           href={`/dashboard/authority/${listing.id}`}
@@ -380,7 +438,7 @@ export default function MyListingsPage() {
                         )}
 
                         {confirmDeleteId === listing.id ? (
-                          <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-2">
+                          <div role="group" aria-label={`Confirm deleting ${displayTitle(listing)}`} className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-2">
                             <p className="w-full text-xs font-medium text-red-900">Delete this property? This cannot be undone.</p>
                             <button
                               onClick={() => handleDelete(listing.id)}
@@ -390,8 +448,9 @@ export default function MyListingsPage() {
                               {busy ? 'Deleting…' : 'Yes, delete'}
                             </button>
                             <button
+                              autoFocus
                               onClick={() => setConfirmDeleteId(null)}
-                              className="min-h-11 px-3 text-xs font-semibold text-muted-foreground"
+                              className="focus-ring min-h-11 px-3 text-xs font-semibold text-muted-foreground"
                             >
                               Cancel
                             </button>
@@ -415,4 +474,4 @@ export default function MyListingsPage() {
       )}
     </div>
   )
-                    }
+}
