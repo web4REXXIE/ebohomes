@@ -1,4 +1,3 @@
-
 // The tools inside each person's dashboard. Used by the menu "Dashboard" drop-down and the bottom bar.
 export type DashboardLink = { label: string; href: string }
 
@@ -18,6 +17,7 @@ export const LANDLORD_LINKS: DashboardLink[] = [
   { label: 'My Properties', href: '/dashboard/listings' },
   { label: 'Viewings', href: '/dashboard/viewings' },
   { label: 'Applications', href: '/dashboard/applications' },
+  { label: 'Inspection requests', href: '/dashboard/inspection-requests' },
   { label: 'Tenancies', href: '/dashboard/tenancies' },
   { label: 'Payments', href: '/dashboard/payments' },
   { label: 'Messages', href: '/dashboard/messages' },
