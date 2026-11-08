@@ -876,19 +876,19 @@ export default function ListingDetailPage() {
             />
 
             {/* Safety tip */}
-            <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4">
+            <div className="mt-6 rounded-xl border border-warning/25 bg-warning-soft p-4">
               <div className="flex items-start gap-3">
                 <ShieldCheck
                   size={20}
-                  className="mt-0.5 shrink-0 text-amber-700"
+                  className="mt-0.5 shrink-0 text-warning"
                 />
 
                 <div className="min-w-0">
-                  <p className="text-sm font-extrabold text-amber-900">
+                  <p className="text-sm font-extrabold text-warning">
                     Stay safe: never pay outside EboHomes
                   </p>
 
-                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-amber-900">
+                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-warning">
                     <li>
                       Do not send money to any person or account that is not
                       arranged through EboHomes.
