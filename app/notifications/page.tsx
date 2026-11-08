@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -59,32 +60,36 @@ export default function NotificationsPage() {
 
   return (
     <div className="max-w-2xl mx-auto w-full px-4 py-8">
-      <div className="flex items-center justify-between mb-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-foreground">Notifications</h1>
-          <Link href="/notifications/preferences" className="text-xs text-muted-foreground underline">
+          <Link href="/notifications/preferences" className="focus-ring inline-flex min-h-11 items-center text-xs font-medium text-muted-foreground underline">
             Settings
           </Link>
         </div>
         {unreadCount > 0 && (
-          <button onClick={() => void markAllRead()} className="text-sm text-primary font-medium">
+          <button type="button" onClick={() => void markAllRead()} className="focus-ring min-h-11 rounded-chip px-2 text-sm font-medium text-primary">
             Mark all read
           </button>
         )}
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
+      <div role="group" aria-label="Filter notifications" className="mb-4 flex items-center gap-2">
         <button
+          type="button"
+          aria-pressed={filter === 'all'}
           onClick={() => setFilter('all')}
-          className={`rounded-full px-3 py-1 text-xs font-medium ${
+          className={`focus-ring min-h-11 rounded-full px-4 text-xs font-medium ${
             filter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground'
           }`}
         >
           All
         </button>
         <button
+          type="button"
+          aria-pressed={filter === 'unread'}
           onClick={() => setFilter('unread')}
-          className={`rounded-full px-3 py-1 text-xs font-medium ${
+          className={`focus-ring min-h-11 rounded-full px-4 text-xs font-medium ${
             filter === 'unread' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground'
           }`}
         >
@@ -95,11 +100,11 @@ export default function NotificationsPage() {
       {signedOut ? (
         <p className="text-sm text-muted-foreground">Please log in to see your notifications.</p>
       ) : loading ? (
-        <Loader2 className="animate-spin text-primary" size={24} />
+        <Loader2 className="animate-spin text-primary" size={24} role="status" aria-label="Loading notifications" />
       ) : error ? (
-        <div className="text-sm text-muted-foreground">
+        <div role="alert" className="text-sm text-muted-foreground">
           <p>Could not load notifications.</p>
-          <button onClick={() => void refresh()} className="mt-2 text-primary font-medium">
+          <button type="button" onClick={() => void refresh()} className="focus-ring mt-2 min-h-11 rounded-chip px-2 font-medium text-primary">
             Try again
           </button>
         </div>
@@ -114,7 +119,7 @@ export default function NotificationsPage() {
               key={n.id}
               type="button"
               onClick={() => handleOpen(n)}
-              className="w-full text-left"
+              className="focus-ring w-full rounded-card text-left"
             >
               <div
                 className={`flex items-start gap-3 border rounded-lg p-3 ${
@@ -122,7 +127,7 @@ export default function NotificationsPage() {
                 }`}
               >
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                  <Bell size={14} className="text-primary" />
+                  <Bell size={14} className="text-primary" aria-hidden />
                 </div>
                 <div className="min-w-0 flex-1">
                   {n.title && (
@@ -137,9 +142,14 @@ export default function NotificationsPage() {
                   <p className="text-sm text-foreground">
                     {n.message ? n.message : n.body ? n.body : 'Notification'}
                   </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">{timeAgo(n.created_at)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{timeAgo(n.created_at)}</p>
                 </div>
-                {!n.read && <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-2" />}
+                {!n.read && (
+                  <>
+                    <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                    <span className="sr-only">Unread</span>
+                  </>
+                )}
               </div>
             </button>
           ))}
