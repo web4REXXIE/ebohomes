@@ -77,7 +77,7 @@ export default function RootLayout({
             <PushSync />
             <PushPrompt />
             <SplashScreen>
-              <div className="pb-16 md:pb-0">
+              <div className="pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
                 {children}
               </div>
             </SplashScreen>
