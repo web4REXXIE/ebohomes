@@ -17,7 +17,6 @@ import {
   Bath,
   Star,
   ShieldCheck,
-  BadgeCheck,
   Calendar,
   Copy,
   Send,
@@ -420,7 +419,7 @@ function PropertyCard({
   return (
     <article
       className={cn(
-        'flex flex-col overflow-hidden rounded-card bg-card shadow-rest transition-shadow hover:shadow-raised',
+        'group flex flex-col overflow-hidden rounded-card bg-card shadow-rest transition-shadow hover:shadow-raised',
         featured ? 'border border-featured ring-1 ring-featured/40' : 'border border-border',
         isList && 'md:flex-row'
       )}
@@ -438,7 +437,7 @@ function PropertyCard({
           {photo ? (
             <div
               className={cn(
-                'relative w-full bg-secondary/40',
+                'relative w-full overflow-hidden bg-secondary/40',
                 isList ? 'aspect-[4/3] md:aspect-auto md:h-full md:min-h-52' : 'aspect-[4/3]'
               )}
             >
@@ -447,6 +446,7 @@ function PropertyCard({
                 srcSet={photoSrcSet(photo, [320, 480, 640])}
                 sizes={isList ? '(min-width: 768px) 288px, 100vw' : '(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw'}
                 alt=""
+                className="transition-transform duration-500 motion-reduce:transition-none group-hover:scale-[1.03]"
               />
             </div>
           ) : (
@@ -467,16 +467,10 @@ function PropertyCard({
           {inspected && (
             <span className={cn(badge, 'bg-forest text-forest-foreground ring-1 ring-white/25')}>
               <ShieldCheck size={12} aria-hidden="true" />
-              Physically inspected
+              Inspected by EboHomes
             </span>
           )}
 
-          {listing.verified && (
-            <span className={cn(badge, 'bg-primary text-primary-foreground')}>
-              <BadgeCheck size={12} aria-hidden="true" />
-              Verified
-            </span>
-          )}
         </div>
 
         <button
@@ -548,15 +542,13 @@ function PropertyCard({
           {listing.bedrooms != null && (
             <span className="flex items-center gap-1">
               <BedDouble size={14} className="text-primary" aria-hidden="true" />
-              {listing.bedrooms}
-              <span className="sr-only"> bedrooms</span>
+              {listing.bedrooms} {Number(listing.bedrooms) === 1 ? 'bed' : 'beds'}
             </span>
           )}
           {listing.bathrooms != null && (
             <span className="flex items-center gap-1">
               <Bath size={14} className="text-primary" aria-hidden="true" />
-              {listing.bathrooms}
-              <span className="sr-only"> bathrooms</span>
+              {listing.bathrooms} {Number(listing.bathrooms) === 1 ? 'bath' : 'baths'}
             </span>
           )}
         </div>
@@ -825,7 +817,7 @@ function SearchContent() {
 
   async function toggleSave(listingId: string) {
     if (!userId) {
-      router.push(`/login?redirect=${encodeURIComponent('/search')}`)
+      router.push(`/login?redirect=${encodeURIComponent(searchHref)}`)
       return
     }
 
@@ -870,7 +862,6 @@ function SearchContent() {
   }, [listings])
 
   const featuredTotal = useMemo(() => listings.filter((l) => l.featured).length, [listings])
-  const verifiedTotal = useMemo(() => listings.filter((l) => l.verified).length, [listings])
 
   /* ---- Filter + rank: featured always first ---- */
 
@@ -1253,12 +1244,6 @@ function SearchContent() {
                   <span className="font-bold text-foreground">{featuredTotal}</span> featured
                 </>
               )}
-              {verifiedTotal > 0 && (
-                <>
-                  {' · '}
-                  <span className="font-bold text-foreground">{verifiedTotal}</span> marked verified
-                </>
-              )}
             </p>
           )}
 
@@ -1272,12 +1257,10 @@ function SearchContent() {
                 <span className="font-semibold text-foreground">Featured:</span> the landlord chose to promote this listing.
               </li>
               <li>
-                <span className="font-semibold text-foreground">Verified:</span> EboHomes has marked this listing as verified.
+                <span className="font-semibold text-foreground">Inspected by EboHomes:</span> shown only when EboHomes holds a current inspection record for the property.
               </li>
-              <li>
-                <span className="font-semibold text-foreground">Physically inspected:</span> shown only when EboHomes holds a current inspection record for the property. It is separate from Verified.
-              </li>
-              <li>A listing with no badge has been approved to appear here but has not been marked verified or inspected.</li>
+              <li>A listing with no badge has been approved to appear here but has no current inspection on record.</li>
+              <li>Landlord identity checks and document reviews are shown on each property page, not on the cards.</li>
             </ul>
           </details>
         </div>
