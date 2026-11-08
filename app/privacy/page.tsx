@@ -2,8 +2,9 @@ import type { Metadata } from 'next'
 import { LegalLayout, LegalSection, LegalNote } from '@/components/legal-layout'
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | EboHomes',
+  title: 'Privacy Policy',
   description: 'How EboHomes collects, uses, and protects your information.',
+  alternates: { canonical: '/privacy' },
 }
 
 const TOC = [
@@ -26,7 +27,7 @@ const TOC = [
 export default function PrivacyPolicyPage() {
   return (
     <LegalLayout title="Privacy Policy" activeHref="/privacy" toc={TOC}>
-      <p className="text-sm text-[#171717]/80 leading-relaxed">
+      <p className="text-body text-foreground/85 leading-relaxed">
         EboHomes (&quot;EboHomes&quot;, &quot;we&quot;, &quot;us&quot;) operates a real-estate technology
         platform connecting tenants, landlords, agents and property
         companies in Nigeria. This Privacy Policy explains what information
@@ -48,7 +49,7 @@ export default function PrivacyPolicyPage() {
           <li><strong>Bookings and applications</strong> &mdash; inspection bookings, rental applications, and related status information.</li>
           <li><strong>Payment/transaction information</strong> &mdash; where in-platform payments are enabled, transaction records and payment status. <span className="italic">EboHomes does not store full card or bank account numbers; these are handled by a licensed payment processor.</span> [TO CONFIRM once a payment provider is selected]</li>
           <li><strong>Maintenance requests and reports</strong> &mdash; issues, complaints, and correspondence submitted by tenants regarding a property.</li>
-          <li><strong>Device, IP, cookies and analytics information</strong> &mdash; device type, browser, IP address, approximate location, and usage data collected through cookies and analytics tools. See our <a href="/cookies" className="text-[#0A2E1A] underline underline-offset-2">Cookie Policy</a> for details.</li>
+          <li><strong>Device, IP, cookies and analytics information</strong> &mdash; device type, browser, IP address, approximate location, and usage data collected through cookies and analytics tools. See our <a href="/cookies" className="font-medium text-primary underline underline-offset-2">Cookie Policy</a> for details.</li>
         </ul>
       </LegalSection>
 
@@ -144,7 +145,7 @@ export default function PrivacyPolicyPage() {
           <li>Withdraw consent where processing is based on consent;</li>
           <li>Lodge a complaint with the Nigeria Data Protection Commission (NDPC).</li>
         </ul>
-        <p>To exercise these rights, see <a href="#contact" className="text-[#0A2E1A] underline underline-offset-2">Section 14</a>.</p>
+        <p>To exercise these rights, see <a href="#contact" className="font-medium text-primary underline underline-offset-2">Section 14</a>.</p>
       </LegalSection>
 
       <LegalSection id="breach" number="9" title="Data Breach Procedures">
@@ -196,10 +197,10 @@ export default function PrivacyPolicyPage() {
         <p>
           To ask a question about this Policy or exercise your data
           protection rights, contact us via WhatsApp at{' '}
-          <a href="https://wa.me/2349169069445" className="text-[#0A2E1A] underline underline-offset-2">
+          <a href="https://wa.me/2349169069445" className="font-medium text-primary underline underline-offset-2">
             +234 916 906 9445
           </a>{' '}
-          or through our <a href="/contact" className="text-[#0A2E1A] underline underline-offset-2">Contact page</a>.
+          or through our <a href="/contact" className="font-medium text-primary underline underline-offset-2">Contact page</a>.
         </p>
         <LegalNote>
           Dedicated data-protection email address and/or DPO contact: [TO CONFIRM].
