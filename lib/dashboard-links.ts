@@ -1,3 +1,4 @@
+
 // The tools inside each person's dashboard. Used by the menu "Dashboard" drop-down and the bottom bar.
 export type DashboardLink = { label: string; href: string }
 
@@ -7,6 +8,7 @@ export const TENANT_LINKS: DashboardLink[] = [
   { label: 'My Applications', href: '/applications' },
   { label: 'Tenancy & Payments', href: '/tenancies' },
   { label: 'My Viewings', href: '/viewings' },
+  { label: 'My Inspections', href: '/inspections' },
   { label: 'Messages', href: '/messages' },
   { label: 'Notifications', href: '/notifications' },
 ]
@@ -27,6 +29,6 @@ export function dashboardLinks(role: string | null | undefined): DashboardLink[]
 
 // True when the page belongs to the dashboard, so the Dashboard tab can be highlighted.
 export function isDashboardPath(pathname: string): boolean {
-  return ['/home', '/dashboard', '/applications', '/tenancies', '/viewings', '/journey', '/messages', '/notifications']
+  return ['/home', '/dashboard', '/applications', '/tenancies', '/viewings', '/inspections', '/journey', '/messages', '/notifications']
     .some((p) => pathname === p || pathname.startsWith(p + '/'))
 }
