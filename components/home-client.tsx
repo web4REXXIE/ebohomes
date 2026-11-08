@@ -675,4 +675,196 @@ export default function HomeClient() {
         <SignedInHome />
 
         {/* 3b. EMPTY INVENTORY */}
-        {showEmpty && <EmptyInven
+        {showEmpty && <EmptyInventory />}
+
+        {/* 4. FEATURED (only when featured listings exist) */}
+        {loading ? (
+          <Section width="wide" spacing="sm" aria-busy="true" aria-label="Loading properties">
+            <div className="grid grid-cols-2 gap-grid lg:grid-cols-4">
+              {[1, 2, 3, 4].map((i) => <div key={i} className="h-64 animate-pulse rounded-card border border-border bg-card" />)}
+            </div>
+          </Section>
+        ) : featured.length > 0 ? (
+          <Section width="wide" spacing="sm" aria-labelledby="featured-heading">
+            <SectionHead
+              title="Featured homes" sub="Properties their landlords have chosen to promote." href="/search?featured=1" cta="See all"
+              badge={<span className="inline-flex items-center gap-1 rounded-full bg-featured px-2.5 py-1 text-xs font-semibold text-featured-foreground"><Crown size={12} aria-hidden="true" /> Featured</span>}
+            />
+            <ListingRow items={featured} speed={0.6} />
+          </Section>
+        ) : null}
+
+        {/* 5. BROWSE BY TYPE (only types with listings) */}
+        {activeCats.length > 0 && (
+          <Section width="wide" spacing="sm">
+            <SectionHead title="Browse by property type" sub="Most listings first." href="/search" cta="View all" />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {activeCats.map((cat) => {
+                const count = categoryCounts[cat.value] ?? 0
+                const photo = categoryPhotos[cat.value]
+                return (
+                  <Link
+                    key={cat.value}
+                    href={'/search?type=' + encodeURIComponent(cat.value)}
+                    className="group relative aspect-[4/3] overflow-hidden rounded-card border border-border bg-forest text-left shadow-rest transition-all hover:-translate-y-0.5 hover:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
+                    {photo ? (
+                      <SmartImage src={img(photo, 500)} alt="" dark className="transition-transform duration-500 group-hover:scale-105" />
+                    ) : (
+                      <cat.icon size={44} aria-hidden="true" className="absolute right-4 top-4 text-white/25" />
+                    )}
+                    <span className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+                    <span className="absolute inset-x-0 bottom-0 p-3.5">
+                      <span className="flex items-center gap-1.5 text-sm font-bold text-white md:text-base">
+                        <cat.icon size={15} aria-hidden="true" className="shrink-0 text-featured" />
+                        {cat.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-white/80">{count} {count === 1 ? 'listing' : 'listings'}</span>
+                    </span>
+                  </Link>
+                )
+              })}
+            </div>
+          </Section>
+        )}
+
+        {/* 6. RECENTLY ADDED */}
+        {!loading && recent.length > 0 && (
+          <Section width="wide" spacing="sm">
+            <div className="rounded-panel bg-forest py-6 text-forest-foreground shadow-raised dark:border dark:border-border md:py-9">
+              <div className="px-5 md:px-8">
+                <SectionHead title="Recently added" sub="The newest homes on EboHomes." href="/search?sort=newest" tone="dark" />
+              </div>
+              <div className="pl-5 md:pl-8">
+                <ListingRow items={recent} speed={0.5} />
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {/* 7. EXPLORE BY AREA */}
+        {(areas.length > 0 || !showEmpty) && (
+          <Section width="wide" spacing="sm">
+            <SectionHead title="Explore by area" sub={areas.length > 0 ? 'Real listing counts. Tap an area to see its properties.' : 'Search the areas around Ebonyi State.'} href="/search" cta="All areas" />
+            {areas.length > 0 && (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                {areas.slice(0, 8).map((a) => (
+                  <Link key={a.name} href={`/search?location=${encodeURIComponent(a.name)}`} className="group flex flex-col justify-between rounded-card border border-border bg-card p-4 shadow-rest transition hover:-translate-y-0.5 hover:border-primary hover:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:p-5">
+                    <p className="text-4xl font-bold leading-none text-foreground sm:text-5xl">{a.count}</p>
+                    <div className="mt-6">
+                      <p className="line-clamp-1 text-base font-bold capitalize text-foreground">{a.name}</p>
+                      <p className="text-xs text-muted-foreground">{a.count === 1 ? 'property' : 'properties'} available</p>
+                      <p className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-primary">Explore <ArrowRight size={14} aria-hidden="true" className="transition-transform group-hover:translate-x-0.5" /></p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+            {extraAreas.length > 0 && (
+              <div className={areas.length > 0 ? 'mt-6' : ''}>
+                <p className="mb-3 text-sm font-medium text-foreground">Search another area</p>
+                <div className="flex flex-wrap gap-2">
+                  {extraAreas.map((a) => (
+                    <Link key={a} href={`/search?location=${encodeURIComponent(a)}`} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                      <MapPin size={14} aria-hidden="true" className="text-primary" /> {SEARCH_AREA_LABELS[a] ?? a}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+        )}
+
+        {/* 8. VIDEO TOURS (only when real videos exist) */}
+        {videos.length > 0 && (
+          <Section width="wide" spacing="sm">
+            <SectionHead title="Video tours" sub="Walk through the real property before you request a viewing." />
+            <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {videos.map((l) => (
+                <Link key={l.id} href={`/listing/${l.id}`} className="group w-[72%] shrink-0 snap-start overflow-hidden rounded-card border border-border bg-card shadow-rest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:w-[46%] md:w-[31%]">
+                  <div className="relative overflow-hidden bg-black">
+                    <video src={`${l.video_url}#t=0.5`} preload="none" muted playsInline className="aspect-video w-full object-cover transition duration-500 group-hover:scale-105" />
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/10">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/95 text-black shadow-lg"><Play size={22} aria-hidden="true" className="ml-0.5 fill-current" /></span>
+                    </span>
+                  </div>
+                  <div className="p-3.5">
+                    <p className="font-bold text-primary">{naira(l.price_monthly)}<span className="text-[11px] font-medium text-muted-foreground"> /month</span></p>
+                    <p className="line-clamp-1 text-sm font-semibold text-foreground">{l.title ?? l.property_type}</p>
+                    <p className="line-clamp-1 text-xs text-muted-foreground">{l.location_text}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* 9. HOW IT WORKS */}
+        <HowItWorks />
+
+        {/* 10. FOUNDER */}
+        <FounderSection />
+
+        {/* 11. WHY TRUST */}
+        <Section tone="cream" aria-labelledby="why-trust-heading">
+          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+            <Reveal>
+              <div className="relative h-60 w-full overflow-hidden rounded-card bg-secondary md:h-[420px]">
+                <SmartImage src="/hero.jpg" alt="A home in Ebonyi State" />
+              </div>
+            </Reveal>
+            <div>
+              <Reveal>
+                <p className="text-caption font-semibold uppercase tracking-wide text-primary">Our promise</p>
+                <h2 id="why-trust-heading" className="mb-3 mt-2 text-h2 font-bold text-foreground">Why trust EboHomes?</h2>
+                <p className="mb-8 max-w-md text-body text-muted-foreground">Finding a home in Ebonyi State shouldn&apos;t mean risking a scam. Here is what we do about it.</p>
+              </Reveal>
+              <ul className="grid gap-5 sm:grid-cols-2">
+                {WHY_CHOOSE.map((item, i) => (
+                  <li key={item.title}>
+                    <Reveal delay={i * 0.05} className="flex gap-3">
+                      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-primary"><item.icon size={18} aria-hidden="true" /></span>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                        <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{item.desc}</p>
+                      </div>
+                    </Reveal>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </Section>
+
+        {/* 12. INSTITUTIONS */}
+        <Section spacing="sm">
+          <Reveal><InstitutionsStrip /></Reveal>
+        </Section>
+
+        {/* 13. FAQ */}
+        <Section id="faq" width="reading" className="scroll-mt-24" aria-labelledby="faq-heading">
+          <div className="mb-6 md:mb-8">
+            <h2 id="faq-heading" className="text-h2 font-bold text-foreground">Frequently asked questions</h2>
+          </div>
+          <FaqList />
+          <p className="mt-5 text-center text-sm text-muted-foreground">
+            Still stuck? <Link href="/contact" className="font-semibold text-primary hover:underline">Contact EboHomes support</Link>
+          </p>
+        </Section>
+
+        {/* 14. AI */}
+        <AiComingSoon />
+
+        {/* 15. APP INSTALL */}
+        <InstallPromoSection />
+
+        {/* 16. LANDLORDS */}
+        <LandlordCta />
+
+        {/* 17. FINAL CTA */}
+        <FinalCta />
+      </main>
+      <Footer />
+    </div>
+  )
+            }
