@@ -70,7 +70,7 @@ export function PropertyActionsSidebar({
       <p className="mb-3 mt-4 text-sm font-semibold text-foreground">Interested?</p>
 
       {actions.note && (
-        <p role="note" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs leading-snug text-amber-950">
+        <p role="note" className="mb-3 rounded-lg border border-warning/25 bg-warning-soft p-3 text-xs leading-snug text-warning">
           {actions.note}
         </p>
       )}
