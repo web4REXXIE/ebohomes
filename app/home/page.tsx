@@ -14,7 +14,11 @@ import {
   ShieldCheck,
   Heart,
   Bell,
+  KeyRound,
+  ArrowRight,
+  AlertCircle,
 } from 'lucide-react'
+import { resolveNotificationLink } from '@/components/notification-provider'
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
 import { TenantNextStep } from '@/components/tenant-next-step'
@@ -60,10 +64,26 @@ export default function TenantHomePage() {
   const [recentSearches, setRecentSearches] = useState<{ id: string; text: string }[]>([])
   const [recentMessages, setRecentMessages] = useState<ConvoPreview[]>([])
   const [notifications, setNotifications] = useState<any[]>([])
+  const [savedCount, setSavedCount] = useState<number | null>(null)
+  // Sections whose data could not be loaded. They say so instead of showing an empty message.
+  const [failed, setFailed] = useState<string[]>([])
 
   useEffect(() => { load() }, [])
 
   async function load() {
+    const bad: string[] = []
+    try {
+      await loadAll(bad)
+    } catch (e) {
+      console.error('Tenant dashboard: load failed:', e)
+      bad.push('page')
+    } finally {
+      setFailed(Array.from(new Set(bad)))
+      setLoading(false)
+    }
+  }
+
+  async function loadAll(bad: string[]) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
     setUserId(user.id)
@@ -83,13 +103,14 @@ export default function TenantHomePage() {
     const { data: heldRows, error: heldError } = await supabase.rpc('held_listing_ids')
     if (!heldError && Array.isArray(heldRows)) (heldRows as string[]).forEach((id) => heldSet.add(id))
 
-    // Recommended For You
-    const { data: recsAll } = await supabase
+    // New homes: the newest approved listings (not personalised)
+    const { data: recsAll, error: recsError } = await supabase
       .from('listings')
       .select('id, title, price_monthly, location_text, property_type, bedrooms, bathrooms, photos, landlord_id, created_at')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(12)
+    if (recsError) bad.push('homes')
     const recs = (recsAll ?? []).filter((r) => !heldSet.has(r.id)).slice(0, 4)
     setRecommended(recs)
     if (recs && recs.length > 0) {
@@ -138,12 +159,13 @@ export default function TenantHomePage() {
     )
 
     // Recent conversations with EboHomes Support (top 3)
-    const { data: threads } = await supabase
+    const { data: threads, error: threadsError } = await supabase
       .from('support_threads')
       .select('id, subject, last_message_at')
       .eq('customer_id', user.id)
       .order('last_message_at', { ascending: false })
       .limit(3)
+    if (threadsError) bad.push('messages')
     if (threads && threads.length > 0) {
       const { data: unreadRows } = await supabase
         .from('support_messages').select('thread_id').eq('sender_kind', 'staff').is('read_at', null)
@@ -160,57 +182,87 @@ export default function TenantHomePage() {
     }
 
     // Notifications (last 3, columns unconfirmed beyond user_id/read — select * and render defensively)
-    const { data: notifs } = await supabase
+    const { data: notifs, error: notifsError } = await supabase
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(3)
+    if (notifsError) bad.push('notifications')
     setNotifications(notifs ?? [])
 
-    setLoading(false)
+    // Number of saved homes (same table and column the Saved page reads).
+    const { count: savedTotal, error: savedError } = await supabase
+      .from('saved_properties')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', user.id)
+    if (!savedError && savedTotal != null) setSavedCount(savedTotal)
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="mx-auto max-w-6xl space-y-4 px-4 py-6 sm:px-6" role="status" aria-busy="true" aria-label="Loading your dashboard">
+        <div className="h-40 animate-pulse rounded-panel bg-secondary" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 animate-pulse rounded-card border border-border bg-card" />)}
+        </div>
+        <div className="h-56 animate-pulse rounded-card border border-border bg-card" />
       </div>
     )
   }
 
+  const firstName = fullName.trim().split(/\s+/)[0] || 'there'
+  const failedHomes = failed.includes('homes')
+
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-      {/* Greeting */}
-      <div className="mb-6">
-        <p className="text-sm text-muted-foreground">{greeting()},</p>
-        <h1 className="text-2xl font-extrabold text-foreground flex items-center gap-2">{fullName} 👋</h1>
-        <p className="text-sm text-muted-foreground mb-3">Here is what needs your attention.</p>
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+      {/* Welcome and search */}
+      <section aria-labelledby="dashboard-title" className="mb-6 rounded-panel bg-forest p-5 text-white sm:p-7">
+        <p className="text-sm text-white/80">{greeting()},</p>
+        <h1 id="dashboard-title" className="text-2xl font-bold sm:text-3xl">{firstName}</h1>
+        <p className="mt-1 text-sm text-white/80">Here is what needs your attention.</p>
         <Link
           href="/search"
-          className="inline-flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2.5 rounded-full"
+          className="focus-ring mt-5 flex min-h-12 items-center gap-3 rounded-button bg-white px-4 text-sm font-medium text-forest shadow-rest"
         >
-          <Search size={16} />
-          Search Homes
+          <Search size={18} aria-hidden />
+          <span className="flex-1">Search for a home</span>
+          <ArrowRight size={16} aria-hidden />
         </Link>
-      </div>
+      </section>
+
+      {failed.includes('page') && (
+        <p role="alert" className="mb-4 flex items-start gap-2 rounded-card border border-warning/40 bg-warning-soft p-3 text-sm text-foreground">
+          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden />
+          Some of your dashboard could not load. Please refresh the page.
+        </p>
+      )}
 
       <TenantNextStep />
 
       {/* Where to find things */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <nav aria-label="Dashboard shortcuts" className="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <StatCard icon={KeyRound} title="My Rental Journey" text="Apply, view, agree terms and pay" href="/journey" />
         <StatCard icon={CalendarClock} title="My Viewings" text="Requests and appointments" href="/viewings" />
+        <StatCard
+          icon={Heart}
+          title="Saved Homes"
+          text={savedCount != null && savedCount > 0 ? `${savedCount} saved` : 'Your favourites'}
+          href="/saved"
+        />
+        <StatCard icon={HomeIcon} title="Tenancy & Payments" text="Rent terms, payments, receipts" href="/tenancies" />
         <StatCard icon={FileText} title="My Applications" text="Status of each application" href="/applications" />
-        <StatCard icon={HomeIcon} title="My Tenancy & Payments" text="Rent terms, payments, receipts" href="/tenancies" />
         <StatCard icon={MessageCircle} title="Messages" text={unreadMsgCount > 0 ? `${unreadMsgCount} unread` : 'No unread messages'} href="/messages" />
-      </div>
+      </nav>
 
-      {/* Recommended For You */}
-      <Section title="Recommended For You" href="/search">
-        {recommended.length === 0 ? (
-          <EmptyRow text="No recommendations yet — start browsing to see properties here." />
+      {/* Newest approved homes. This is a plain newest-first list, not a personalised recommendation. */}
+      <Section title="New homes on EboHomes" href="/search">
+        {failedHomes ? (
+          <ErrorRow text="We could not load homes just now. Please refresh the page." />
+        ) : recommended.length === 0 ? (
+          <EmptyRow text="No homes to show yet. Search to see what is available." />
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {recommended.map((l) => (
               <ListingMini key={l.id} listing={l} verified={l.landlord_id ? landlordVerified[l.landlord_id] : false} />
             ))}
@@ -219,22 +271,22 @@ export default function TenantHomePage() {
       </Section>
 
       {/* Continue Browsing + Recent Searches */}
-      <div id="continue-browsing" className="grid lg:grid-cols-2 gap-6 mt-8">
+      <div id="continue-browsing" className="mt-8 grid gap-6 lg:grid-cols-2">
         <Section title="Continue Browsing" href="/search" compact>
           {continueBrowsing.length === 0 ? (
             <EmptyRow text="Properties you view will show up here." />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-1">
               {continueBrowsing.map((l) => (
-                <Link key={l.id} href={`/listing/${l.id}`} className="flex items-center gap-3 hover:bg-secondary/40 rounded-lg p-2 -mx-2">
-                  <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-secondary">
+                <Link key={l.id} href={`/listing/${l.id}`} className="focus-ring -mx-2 flex min-h-14 items-center gap-3 rounded-card p-2 hover:bg-muted">
+                  <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-chip bg-secondary">
                     <SmartImage src={sizedPhoto(l.photos?.[0], 200) || '/placeholder.jpg'} alt="" fallbackSrc="/placeholder.jpg" compact />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-foreground truncate">{l.title || l.property_type}</p>
-                    <p className="text-xs text-muted-foreground truncate">{l.location_text}</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{l.title || l.property_type}</p>
+                    <p className="truncate text-xs text-muted-foreground">{l.location_text}</p>
                   </div>
-                  <p className="text-sm font-bold text-primary whitespace-nowrap">₦{l.price_monthly?.toLocaleString()}/month</p>
+                  <p className="whitespace-nowrap text-sm font-bold text-primary">{rent(l.price_monthly)}</p>
                 </Link>
               ))}
             </div>
@@ -250,10 +302,10 @@ export default function TenantHomePage() {
                 <Link
                   key={s.id}
                   href={`/search?location=${encodeURIComponent(s.text)}`}
-                  className="flex items-center justify-between px-2 py-2 rounded-lg hover:bg-secondary/40 text-sm text-foreground"
+                  className="focus-ring flex min-h-11 items-center justify-between rounded-card px-2 text-sm text-foreground hover:bg-muted"
                 >
-                  <span className="flex items-center gap-2"><Search size={13} className="text-muted-foreground" />{s.text}</span>
-                  <ChevronRight size={14} className="text-muted-foreground" />
+                  <span className="flex min-w-0 items-center gap-2"><Search size={14} className="shrink-0 text-muted-foreground" aria-hidden /><span className="truncate">{s.text}</span></span>
+                  <ChevronRight size={14} className="shrink-0 text-muted-foreground" aria-hidden />
                 </Link>
               ))}
             </div>
@@ -262,9 +314,11 @@ export default function TenantHomePage() {
       </div>
 
       {/* Recent Messages + Notifications */}
-      <div className="grid lg:grid-cols-2 gap-6 mt-8 mb-8">
+      <div className="mb-8 mt-8 grid gap-6 lg:grid-cols-2">
         <Section title="Recent Messages" href="/messages" compact>
-          {recentMessages.length === 0 ? (
+          {failed.includes('messages') ? (
+            <ErrorRow text="We could not load your messages. Please refresh the page." />
+          ) : recentMessages.length === 0 ? (
             <EmptyRow text="No conversations yet." />
           ) : (
             <div className="space-y-1">
@@ -272,18 +326,23 @@ export default function TenantHomePage() {
                 <Link
                   key={c.partnerId}
                   href={`/messages?thread=${c.partnerId}`}
-                  className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-secondary/40"
+                  className="focus-ring flex min-h-14 items-center gap-3 rounded-card px-2 hover:bg-muted"
                 >
-                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary" aria-hidden>
                     {c.partnerName[0]?.toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-foreground truncate">{c.partnerName}</p>
-                    <p className="text-xs text-muted-foreground truncate">{c.lastMessage}</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{c.partnerName}</p>
+                    <p className="truncate text-xs text-muted-foreground">{c.lastMessage}</p>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-[10px] text-muted-foreground">{c.lastTime}</span>
-                    {c.unread && <span className="w-2 h-2 rounded-full bg-primary" />}
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="text-xs text-muted-foreground">{c.lastTime}</span>
+                    {c.unread && (
+                      <>
+                        <span className="h-2 w-2 rounded-full bg-primary" aria-hidden />
+                        <span className="sr-only">Unread</span>
+                      </>
+                    )}
                   </div>
                 </Link>
               ))}
@@ -292,22 +351,38 @@ export default function TenantHomePage() {
         </Section>
 
         <Section title="Notifications" href="/notifications" compact>
-          {notifications.length === 0 ? (
+          {failed.includes('notifications') ? (
+            <ErrorRow text="We could not load your notifications. Please refresh the page." />
+          ) : notifications.length === 0 ? (
             <EmptyRow text="You're all caught up." />
           ) : (
             <div className="space-y-1">
-              {notifications.map((n) => (
-                <div key={n.id} className="flex items-start gap-3 px-2 py-2 rounded-lg hover:bg-secondary/40">
-                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <Bell size={13} className="text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-foreground truncate">{n.message || n.title || n.body || 'Notification'}</p>
-                    <p className="text-[10px] text-muted-foreground">{n.created_at ? formatTime(n.created_at) : ''}</p>
-                  </div>
-                  {!n.read && <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1.5" />}
-                </div>
-              ))}
+              {notifications.map((n) => {
+                const destination = resolveNotificationLink(n.link, 'tenant')
+                const body = (
+                  <>
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10" aria-hidden>
+                      <Bell size={14} className="text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 text-sm text-foreground">{n.message || n.title || n.body || 'Notification'}</p>
+                      <p className="text-xs text-muted-foreground">{n.created_at ? formatTime(n.created_at) : ''}</p>
+                    </div>
+                    {!n.read && (
+                      <>
+                        <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                        <span className="sr-only">Unread</span>
+                      </>
+                    )}
+                  </>
+                )
+                const cls = 'flex min-h-14 items-start gap-3 rounded-card px-2 py-2'
+                return destination ? (
+                  <Link key={n.id} href={destination} className={`${cls} focus-ring hover:bg-muted`}>{body}</Link>
+                ) : (
+                  <div key={n.id} className={cls}>{body}</div>
+                )
+              })}
             </div>
           )}
         </Section>
@@ -318,9 +393,9 @@ export default function TenantHomePage() {
 
 function StatCard({ icon: Icon, title, text, href }: { icon: any; title: string; text: string; href: string }) {
   return (
-    <Link href={href} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors">
-      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
-        <Icon size={17} className="text-primary" />
+    <Link href={href} className="focus-ring rounded-card border border-border bg-card p-4 shadow-rest transition-colors hover:border-primary">
+      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-button bg-primary/10">
+        <Icon size={18} className="text-primary" aria-hidden />
       </div>
       <p className="text-sm font-bold text-foreground">{title}</p>
       <p className="text-xs text-muted-foreground">{text}</p>
@@ -331,6 +406,10 @@ function StatCard({ icon: Icon, title, text, href }: { icon: any; title: string;
 function greeting() {
   const h = new Date().getHours()
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+}
+
+function rent(n: number | null | undefined) {
+  return n != null ? `₦${n.toLocaleString()}/month` : 'Price not set'
 }
 
 function Section({
@@ -347,12 +426,12 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section id={id} className={compact ? 'bg-card border border-border rounded-xl p-4' : ''}>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className={compact ? 'font-semibold text-foreground text-sm' : 'text-lg font-bold text-foreground'}>{title}</h2>
+    <section id={id} className={compact ? 'rounded-card border border-border bg-card p-4' : ''}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className={compact ? 'text-sm font-semibold text-foreground' : 'text-lg font-bold text-foreground'}>{title}</h2>
         {href && (
-          <Link href={href} className="text-xs font-medium text-primary flex items-center gap-0.5">
-            View all <ChevronRight size={13} />
+          <Link href={href} className="focus-ring inline-flex min-h-11 items-center gap-0.5 rounded-chip px-1 text-xs font-semibold text-primary">
+            View all <ChevronRight size={14} aria-hidden />
           </Link>
         )}
       </div>
@@ -362,30 +441,32 @@ function Section({
 }
 
 function EmptyRow({ text }: { text: string }) {
-  return <p className="text-sm text-muted-foreground py-4 text-center">{text}</p>
+  return <p className="py-4 text-center text-sm text-muted-foreground">{text}</p>
+}
+
+function ErrorRow({ text }: { text: string }) {
+  return <p role="alert" className="py-4 text-center text-sm text-foreground">{text}</p>
 }
 
 function ListingMini({ listing, verified }: { listing: Listing; verified?: boolean }) {
   return (
-    <Link href={`/listing/${listing.id}`} className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
-      <div className="relative h-28">
+    <Link href={`/listing/${listing.id}`} className="focus-ring overflow-hidden rounded-card border border-border bg-card shadow-rest transition-shadow hover:shadow-raised">
+      <div className="relative h-28 sm:h-32">
         <SmartImage src={sizedPhoto(listing.photos?.[0], 480) || '/placeholder.jpg'} alt="" fallbackSrc="/placeholder.jpg" />
+        {/* This is the landlord's own check (identity and ownership documents), not an inspection of the property. */}
         {verified && (
-          <span className="absolute top-2 left-2 bg-white/95 text-primary text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
-            <ShieldCheck size={10} /> Verified
+          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-xs font-semibold text-primary">
+            <ShieldCheck size={12} aria-hidden /> Landlord verified
           </span>
         )}
-        <button className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 flex items-center justify-center">
-          <Heart size={11} />
-        </button>
       </div>
-      <div className="p-2.5">
-        <p className="text-sm font-bold text-primary">₦{listing.price_monthly?.toLocaleString()}/month</p>
-        <p className="text-xs text-muted-foreground truncate">{listing.property_type}</p>
-        <p className="text-xs text-muted-foreground truncate">{listing.location_text}</p>
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-1">
-          <span className="flex items-center gap-0.5"><Bed size={10} />{listing.bedrooms}</span>
-          {listing.bathrooms != null && <span className="flex items-center gap-0.5"><Bath size={10} />{listing.bathrooms}</span>}
+      <div className="p-3">
+        <p className="text-sm font-bold text-primary">{rent(listing.price_monthly)}</p>
+        <p className="truncate text-xs text-muted-foreground">{listing.property_type}</p>
+        <p className="truncate text-xs text-muted-foreground">{listing.location_text}</p>
+        <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><Bed size={12} aria-hidden /><span className="sr-only">Bedrooms: </span>{listing.bedrooms}</span>
+          {listing.bathrooms != null && <span className="flex items-center gap-1"><Bath size={12} aria-hidden /><span className="sr-only">Bathrooms: </span>{listing.bathrooms}</span>}
         </div>
       </div>
     </Link>
