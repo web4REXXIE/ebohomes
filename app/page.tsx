@@ -1,17 +1,17 @@
-
 import type { Metadata } from 'next'
 import HomeClient from '@/components/home-client'
 import { EBOHOMES_EMAIL } from '@/lib/contact'
+import { BRAND_TITLE } from '@/lib/brand'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL || 'https://ebohomes.vercel.app').replace(/\/+$/, '')
 
 export const metadata: Metadata = {
-  title: 'EboHomes | Find Homes. Skip the Stress.',
+  title: BRAND_TITLE,
   description:
     'Find reviewed homes to rent in Abakaliki and across Ebonyi State. Search by area, type and budget, request a viewing and apply online, all in one place.',
   alternates: { canonical: '/' },
   openGraph: {
-    title: 'EboHomes | Find Homes. Skip the Stress.',
+    title: BRAND_TITLE,
     description: 'Reviewed rental listings in Ebonyi State. Search, request a viewing and apply online.',
     url: '/',
     siteName: 'EboHomes',
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'EboHomes | Find Homes. Skip the Stress.',
+    title: BRAND_TITLE,
     description: 'Reviewed rental listings in Ebonyi State.',
     images: ['/og-image.jpg'],
   },
