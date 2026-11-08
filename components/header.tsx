@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import {
@@ -9,23 +9,39 @@ import {
   Bell, Search as SearchIcon, Home as HomeIcon, Heart,
   UserCircle, ChevronDown,
 } from 'lucide-react'
-import { Button } from './ui/button'
+import { Button, buttonVariants } from './ui/button'
 import { ProfileMenu } from './profile-menu'
 import { InstallButton } from '@/components/install-button'
 import { NotificationBell } from '@/components/notification-bell'
 import { supabase } from '@/lib/supabase'
-import { dashboardLinks } from '@/lib/dashboard-links'
+import { dashboardLinks, isDashboardPath } from '@/lib/dashboard-links'
+import { BRAND_LOGOS } from '@/lib/brand'
+import { useDismissable } from '@/lib/use-dismissable'
+import { cn } from '@/lib/utils'
 
-// Stage 5: refined header. All state, auth, role and routing logic is unchanged.
-// Visual changes: shorter bar, text-only desktop links with an underline for the current page,
-// About and Contact added to the desktop links on large screens, and a mobile menu with
-// focus handling (focus moves into the menu, Tab stays inside it, focus returns on close).
+// Stage 6: premium navigation. All state, auth, role and routing logic is unchanged.
+// - Transparent brand logos (onLight / onDark) replace logo-header.png and the invert filter.
+// - Desktop: Home link dropped (the logo goes home), Saved and Messages move to the account menu below
+//   1024px, and a Dashboard drop-down gives tenants and landlords their role links on desktop.
+// - Log in / Sign Up are real links styled as buttons (no button nested inside a link).
+// - Safe-area padding on the bar and the mobile menu.
+// - Mobile menu keeps its focus trap, Escape-to-close and focus return.
+
+// Brand logo: green lockup on light, white lockup on dark. Two files, no filters or blend modes.
+function Logo({ className }: { className?: string }) {
+  return (
+    <>
+      <img src={BRAND_LOGOS.onLight} alt="EboHomes" width={1280} height={392} className={cn('w-auto dark:hidden', className)} />
+      <img src={BRAND_LOGOS.onDark} alt="" aria-hidden="true" width={799} height={210} className={cn('hidden w-auto dark:block', className)} />
+    </>
+  )
+}
 
 const desktopLink = (active: boolean, display = 'inline-flex') =>
-  `${display} relative h-full items-center rounded-md px-0.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full ${
+  `${display} relative h-full items-center rounded-chip px-0.5 text-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full ${
     active
       ? 'text-foreground after:bg-primary'
-      : 'text-foreground/70 hover:text-foreground after:bg-transparent hover:after:bg-border'
+      : 'text-foreground-secondary hover:text-foreground after:bg-transparent hover:after:bg-border-strong'
   }`
 
 export function Header() {
@@ -184,14 +200,14 @@ export function Header() {
 
   if (!mounted) {
     return (
-      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm">
+      <header className="sticky top-0 z-40 border-b border-border-subtle bg-card/95 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] shadow-nav backdrop-blur-sm">
         <div className="container-wide flex h-16 items-center justify-between lg:h-[72px]">
-          <Link href="/" className="flex shrink-0 items-center">
-            <img src="/logo-header.png" alt="EboHomes" className="h-9 w-auto sm:h-10 lg:h-11 dark:brightness-0 dark:invert" />
+          <Link href="/" className="flex shrink-0 items-center" aria-label="EboHomes home">
+            <Logo className="h-10 lg:h-11" />
           </Link>
           <div className="flex items-center gap-2" aria-hidden="true">
-            <div className="h-9 w-20 rounded-xl bg-muted" />
-            <div className="h-9 w-24 rounded-xl bg-muted" />
+            <div className="h-9 w-20 rounded-button bg-muted" />
+            <div className="h-9 w-24 rounded-button bg-muted" />
           </div>
         </div>
       </header>
@@ -200,14 +216,14 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm">
+      <header className="sticky top-0 z-40 border-b border-border-subtle bg-card/95 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] shadow-nav backdrop-blur-sm">
         <div className="container-wide">
           <div className="flex h-16 items-center justify-between gap-4 lg:h-[72px]">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={openDrawer}
-                className="-ml-2 flex h-11 w-11 items-center justify-center rounded-xl text-foreground hover:bg-muted md:hidden"
+                className="-ml-2 flex h-11 w-11 items-center justify-center rounded-button text-foreground hover:bg-muted focus-ring md:hidden"
                 aria-label="Open menu"
                 aria-expanded={drawerOpen}
                 aria-controls="mobile-menu"
@@ -216,27 +232,21 @@ export function Header() {
               </button>
 
               <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="EboHomes home">
-                <img
-                  src="/logo-header.png"
-                  alt="EboHomes"
-                  className="h-9 w-auto sm:h-10 lg:h-11 dark:brightness-0 dark:invert"
-                />
+                <Logo className="h-10 lg:h-11" />
               </Link>
             </div>
 
             <nav aria-label="Main" className="hidden h-full items-stretch gap-6 md:flex lg:gap-8">
-              <Link href="/" className={desktopLink(isActive('/'))} aria-current={isActive('/') ? 'page' : undefined}>
-                Home
-              </Link>
               <Link href="/search" className={desktopLink(isActive('/search'))} aria-current={isActive('/search') ? 'page' : undefined}>
                 Properties
               </Link>
+              {loggedIn && <DesktopDashboardMenu role={role} pathname={pathname} />}
               {loggedIn && (
                 <>
-                  <Link href="/saved" className={desktopLink(isActive('/saved'))} aria-current={isActive('/saved') ? 'page' : undefined}>
+                  <Link href="/saved" className={desktopLink(isActive('/saved'), 'hidden lg:inline-flex')} aria-current={isActive('/saved') ? 'page' : undefined}>
                     Saved
                   </Link>
-                  <Link href="/messages" className={desktopLink(isActive('/messages'))} aria-current={isActive('/messages') ? 'page' : undefined}>
+                  <Link href="/messages" className={desktopLink(isActive('/messages'), 'hidden lg:inline-flex')} aria-current={isActive('/messages') ? 'page' : undefined}>
                     Messages
                   </Link>
                 </>
@@ -257,7 +267,7 @@ export function Header() {
               <button
                 type="button"
                 onClick={toggleDarkMode}
-                className="hidden rounded-xl p-2.5 text-foreground/70 transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+                className="hidden h-10 w-10 items-center justify-center rounded-button text-foreground-secondary transition-colors hover:bg-muted hover:text-foreground focus-ring sm:inline-flex"
                 aria-label="Toggle dark mode"
                 aria-pressed={isDark}
               >
@@ -267,11 +277,11 @@ export function Header() {
               {!loggedIn && (
                 <>
                   {/* Below 380px only Sign Up shows here; Log in stays in the menu */}
-                  <Link href="/login" className="max-[380px]:hidden">
-                    <Button variant="outline" size="sm">Log in</Button>
+                  <Link href="/login" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-10 max-[380px]:hidden sm:h-9')}>
+                    Log in
                   </Link>
-                  <Link href="/login?mode=signup">
-                    <Button size="sm">Sign Up</Button>
+                  <Link href="/login?mode=signup" className={cn(buttonVariants({ size: 'sm' }), 'h-10 sm:h-9')}>
+                    Sign Up
                   </Link>
                 </>
               )}
@@ -295,7 +305,7 @@ export function Header() {
                   <button
                     type="button"
                     onClick={openDrawer}
-                    className="flex h-11 w-11 items-center justify-center sm:hidden"
+                    className="flex h-11 w-11 items-center justify-center rounded-full focus-ring sm:hidden"
                     aria-label="Open account menu"
                     aria-expanded={drawerOpen}
                     aria-controls="mobile-menu"
@@ -319,7 +329,7 @@ export function Header() {
         }`}
       >
         <div
-          className="absolute inset-0 bg-black/50"
+          className="absolute inset-0 bg-forest/60"
           aria-hidden="true"
           onClick={closeDrawer}
         />
@@ -328,17 +338,20 @@ export function Header() {
           role="dialog"
           aria-modal="true"
           aria-label="Menu"
-          className={`absolute left-0 top-0 flex h-full w-[85%] max-w-[330px] flex-col bg-card shadow-2xl transition-transform duration-300 ease-out ${
+          className={`absolute left-0 top-0 flex h-full w-[85%] max-w-[330px] flex-col bg-surface-elevated pl-[env(safe-area-inset-left)] shadow-modal transition-transform duration-300 ease-out motion-reduce:transition-none ${
             drawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-5">
-            <img src="/logo-header.png" alt="EboHomes" className="h-10 w-auto dark:brightness-0 dark:invert" />
+          <div
+            className="flex min-h-16 shrink-0 items-center justify-between border-b border-border-subtle px-5"
+            style={{ paddingTop: 'env(safe-area-inset-top)' }}
+          >
+            <Logo className="h-10" />
             <button
               ref={closeButtonRef}
               type="button"
               onClick={closeDrawer}
-              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-xl text-foreground hover:bg-muted"
+              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-button text-foreground hover:bg-muted focus-ring"
               aria-label="Close menu"
             >
               <X size={20} />
@@ -355,7 +368,7 @@ export function Header() {
               <button
                 type="button"
                 onClick={() => { setDrawerOpen(false); handleListClick() }}
-                className="mb-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+                className="mb-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-button bg-primary py-3 text-label font-semibold text-primary-foreground focus-ring"
               >
                 <PlusCircle size={16} />
                 Post a Listing
@@ -422,20 +435,71 @@ export function Header() {
 
             {!loggedIn && (
               <div className="mt-2 flex flex-col gap-2 px-2">
-                <Link href="/login" onClick={() => setDrawerOpen(false)}>
-                  <Button variant="outline" className="h-11 w-full">Log in</Button>
+                <Link href="/login" onClick={() => setDrawerOpen(false)} className={cn(buttonVariants({ variant: 'outline' }), 'w-full')}>
+                  Log in
                 </Link>
-                <Link href="/login?mode=signup" onClick={() => setDrawerOpen(false)}>
-                  <Button className="h-11 w-full">Sign Up</Button>
+                <Link href="/login?mode=signup" onClick={() => setDrawerOpen(false)} className={cn(buttonVariants(), 'w-full')}>
+                  Sign Up
                 </Link>
               </div>
             )}
 
-            <p className="mt-6 px-3 text-xs text-muted-foreground">EboHomes. Real Estate You Can Trust.</p>
+            <p className="mt-6 px-3 text-caption text-muted-foreground">EboHomes. Real Estate You Can Trust.</p>
           </div>
         </div>
       </div>
     </>
+  )
+}
+
+// Desktop "Dashboard" drop-down. Same role links as the mobile menu and bottom bar (lib/dashboard-links).
+function DesktopDashboardMenu({ role, pathname }: { role: string | null; pathname: string }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const close = useCallback(() => setOpen(false), [])
+  useDismissable(open, close, wrapRef, triggerRef)
+
+  const links = dashboardLinks(role)
+  const active = isDashboardPath(pathname)
+
+  return (
+    <div ref={wrapRef} className="relative flex h-full items-stretch">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls="desktop-dashboard-menu"
+        className={`${desktopLink(active)} gap-1`}
+      >
+        Dashboard
+        <ChevronDown size={14} aria-hidden="true" className={`transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div
+          id="desktop-dashboard-menu"
+          className="absolute left-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-card border border-border bg-surface-elevated py-1 shadow-dropdown"
+        >
+          {links.map((l) => {
+            const current = pathname === l.href
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={close}
+                aria-current={current ? 'page' : undefined}
+                className={`flex min-h-10 items-center px-4 text-label font-medium transition-colors focus-visible:bg-muted focus-visible:outline-none ${
+                  current ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-muted'
+                }`}
+              >
+                {l.label}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -506,7 +570,7 @@ function DrawerAccountCard({ onNavigate }: { onNavigate: () => void }) {
     <Link
       href="/profile"
       onClick={onNavigate}
-      className="mb-5 flex items-center gap-3 rounded-xl border border-border bg-secondary/40 p-3"
+      className="mb-5 flex items-center gap-3 rounded-card border border-border bg-secondary/40 p-3 focus-ring"
     >
       <Avatar size={44} />
       <div className="min-w-0 flex-1">
@@ -521,7 +585,7 @@ function DrawerAccountCard({ onNavigate }: { onNavigate: () => void }) {
 function DrawerGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mb-1.5 px-3 text-caption font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
       <div className="flex flex-col">{children}</div>
     </div>
   )
@@ -550,7 +614,7 @@ function DrawerItem({
     </>
   )
 
-  const className = `flex min-h-[46px] items-center justify-between rounded-xl px-3 py-3 transition-colors hover:bg-muted ${
+  const className = `flex min-h-[46px] items-center justify-between rounded-button px-3 py-3 transition-colors hover:bg-muted focus-ring ${
     active ? 'bg-accent' : ''
   }`
 
@@ -580,7 +644,7 @@ function DrawerDropdown({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex min-h-[46px] w-full items-center justify-between rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted"
+        className="flex min-h-[46px] w-full items-center justify-between rounded-button px-3 py-3 text-left transition-colors hover:bg-muted focus-ring"
       >
         <span className="flex items-center gap-3 text-foreground">
           {icon}
@@ -595,7 +659,7 @@ function DrawerDropdown({
               key={i.href}
               href={i.href}
               onClick={onNavigate}
-              className="flex min-h-[42px] items-center rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted"
+              className="flex min-h-[42px] items-center rounded-button px-3 py-2 text-sm text-foreground hover:bg-muted focus-ring"
             >
               {i.label}
             </Link>
