@@ -2,8 +2,9 @@ import type { Metadata } from 'next'
 import { LegalLayout, LegalSection, LegalNote } from '@/components/legal-layout'
 
 export const metadata: Metadata = {
-  title: 'Terms & Conditions | EboHomes',
+  title: 'Terms & Conditions',
   description: 'The terms that govern your use of the EboHomes platform.',
+  alternates: { canonical: '/terms' },
 }
 
 const TOC = [
@@ -38,7 +39,7 @@ const TOC = [
 export default function TermsPage() {
   return (
     <LegalLayout title="Terms & Conditions" activeHref="/terms" toc={TOC}>
-      <p className="text-sm text-[#171717]/80 leading-relaxed">
+      <p className="text-body text-foreground/85 leading-relaxed">
         These Terms &amp; Conditions (&quot;Terms&quot;) govern your access
         to and use of EboHomes. By creating an account or using the
         platform, you agree to these Terms. If you do not agree, please do
@@ -291,10 +292,10 @@ export default function TermsPage() {
       <LegalSection id="contact" number="26" title="Contact Information">
         <p>
           Questions about these Terms can be sent via WhatsApp at{' '}
-          <a href="https://wa.me/2349169069445" className="text-[#0A2E1A] underline underline-offset-2">
+          <a href="https://wa.me/2349169069445" className="font-medium text-primary underline underline-offset-2">
             +234 916 906 9445
           </a>{' '}
-          or through our <a href="/contact" className="text-[#0A2E1A] underline underline-offset-2">Contact page</a>.
+          or through our <a href="/contact" className="font-medium text-primary underline underline-offset-2">Contact page</a>.
         </p>
       </LegalSection>
     </LegalLayout>
