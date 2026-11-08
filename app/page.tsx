@@ -35,7 +35,7 @@ const jsonLd = {
       '@id': `${SITE}/#organization`,
       name: 'EboHomes',
       url: SITE,
-      logo: `${SITE}/logo.png`,
+      logo: `${SITE}/icons/icon-512.png`,
       email: EBOHOMES_EMAIL,
       areaServed: { '@type': 'AdministrativeArea', name: 'Ebonyi State, Nigeria' },
       sameAs: ['https://www.tiktok.com/@ebohomes7'],
