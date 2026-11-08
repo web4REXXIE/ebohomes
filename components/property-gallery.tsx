@@ -8,6 +8,13 @@ import { cleanMediaUrls } from '@/lib/property-media'
 
 const NO_SCROLLBAR = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
 
+// Cloudinary photos are offered at the two sizes the watermark helper already builds, so phones
+// and high-density screens can pick the sharper one. Other hosts get no srcSet.
+function mainSrcSet(src: string): string | undefined {
+  if (!src.includes('/upload/')) return undefined
+  return `${watermarkedUrl(src, 800)} 800w, ${watermarkedUrl(src, 1600)} 1600w`
+}
+
 // Keeps a swipe scroller on the same slide when its width changes (phone rotation, window resize)
 function useRealign(
   ref: RefObject<HTMLDivElement | null>,
@@ -232,6 +239,8 @@ export function PropertyGallery({
             >
               <SmartImage
                 src={watermarkedUrl(src, 900)}
+                srcSet={mainSrcSet(src)}
+                sizes="(min-width: 1024px) 760px, 100vw"
                 alt={`${title} - photo ${i + 1}`}
                 eager={i === 0}
                 priority={i === 0}
@@ -300,7 +309,7 @@ export function PropertyGallery({
               aria-current={i === index}
               className={`relative h-14 w-20 shrink-0 overflow-hidden rounded-md border-2 bg-cream transition ${
                 i === index ? 'border-featured' : 'border-transparent opacity-70 hover:opacity-100'
-              }`}
+              } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}
             >
               <SmartImage src={plainUrl(src, 200)} alt="" compact />
             </button>
@@ -317,7 +326,7 @@ export function PropertyGallery({
           aria-modal="true"
           aria-label={`${title} photos`}
         >
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
             <div className="min-w-0">
               <p className="truncate text-body font-semibold">{title}</p>
               <p className="text-caption text-forest-foreground/70">
@@ -381,7 +390,7 @@ export function PropertyGallery({
           {total > 1 && (
             <div
               ref={fsStripRef}
-              className={`relative flex gap-2 overflow-x-auto px-4 py-3 ${NO_SCROLLBAR}`}
+              className={`relative flex gap-2 overflow-x-auto px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 ${NO_SCROLLBAR}`}
             >
               {photos.map((src, i) => (
                 <button
