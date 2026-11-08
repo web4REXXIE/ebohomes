@@ -236,6 +236,10 @@ export function PropertyTrust({
             An inspection looks at the physical property only. It does not confirm ownership, the right to rent it out,
             the rental terms or availability. Check the property and the documents yourself before you pay.
           </p>
+          <p>
+            These checks help you decide, but they cannot guarantee that a listing is free from fraud. Never pay
+            outside EboHomes.
+          </p>
         </div>
       </div>
     </section>
