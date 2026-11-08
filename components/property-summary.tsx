@@ -8,6 +8,8 @@ import { PropertyGallery } from '@/components/property-gallery'
 import { plainUrl } from '@/lib/watermark'
 import { naira } from '@/lib/case-status'
 import { displayTitle, listingIsLive } from '@/lib/property-display'
+import { sizedPhoto } from '@/lib/image-url'
+import { SmartImage } from '@/components/ui/smart-image'
 
 export type PropertyLite = {
   id: string
@@ -91,7 +93,7 @@ function Thumb({ src, alt, className }: { src?: string; alt: string; className: 
   return (
     <div className={`shrink-0 overflow-hidden rounded-lg bg-secondary ${className}`}>
       {src ? (
-        <img src={src} alt={alt} className="h-full w-full object-cover" loading="lazy" />
+        <div className="relative h-full w-full"><SmartImage src={sizedPhoto(src, 400)} alt={alt} compact /></div>
       ) : (
         <div
           className="flex h-full w-full flex-col items-center justify-center gap-0.5 text-muted-foreground"
