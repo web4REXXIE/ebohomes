@@ -1,15 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { ApplicantFacts, ApplicationStatusBadge } from '@/components/application-ui'
 import { ApplicationDocuments } from '@/components/application-documents'
 import { RentalOfferPanel } from '@/components/rental-offer-panel'
+import { ToneChip } from '@/components/dashboard-ui'
 
 // Landlord view of applications for the landlord's OWN properties.
 // EboHomes makes every decision. The landlord can only add a recommendation while the application is still open.
 // The database trigger enforce_application_rules is the real gate: it rejects any other change by a landlord.
+// Stage 16 Part 2: presentation only. Queries, the update call and its filters are unchanged.
+// New: tabs with counts, a retry button when loading fails, and a confirmation before "I do not recommend".
 
 type AppRow = {
   id: string
@@ -54,9 +57,13 @@ export default function LandlordApplicationsPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [choice, setChoice] = useState<Record<string, string>>({})
   const [note, setNote] = useState<Record<string, string>>({})
-  const [showAll, setShowAll] = useState(false)
+  const [tab, setTab] = useState<'open' | 'closed'>('open')
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const goBackRef = useRef<HTMLButtonElement>(null)
 
   const load = useCallback(async () => {
+    setLoadFailed(false)
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -74,6 +81,7 @@ export default function LandlordApplicationsPage() {
       .limit(200)
     if (e) {
       setError('Could not load applications. Please refresh and try again.')
+      setLoadFailed(true)
       setLoading(false)
       return
     }
@@ -95,7 +103,12 @@ export default function LandlordApplicationsPage() {
   const closed = useMemo(() => apps.filter((a) => !OPEN.includes(a.status)), [apps])
   const waiting = open.filter((a) => !a.landlord_recommendation).length
 
-  const save = async (a: AppRow) => {
+  // When the confirmation opens, focus goes to the safe choice (Go back).
+  useEffect(() => {
+    if (confirmId) goBackRef.current?.focus()
+  }, [confirmId])
+
+  const save = async (a: AppRow, confirmed = false) => {
     if (busyId) return
     const picked = choice[a.id] ?? ''
     if (!CHOICES.some((c) => c.value === picked)) {
@@ -109,6 +122,12 @@ export default function LandlordApplicationsPage() {
       setNotice('')
       return
     }
+    // A negative recommendation asks for one more tap. The request itself is unchanged.
+    if (picked === 'not_recommend' && !confirmed) {
+      setConfirmId(a.id)
+      return
+    }
+    setConfirmId(null)
     setBusyId(a.id)
     setError('')
     setNotice('')
@@ -132,8 +151,9 @@ export default function LandlordApplicationsPage() {
 
   const card = (a: AppRow, isOpen: boolean) => {
     const rec = a.landlord_recommendation
+    const confirming = confirmId === a.id
     return (
-      <li key={a.id} className="space-y-3 rounded-xl border border-border bg-card p-4">
+      <li key={a.id} className="space-y-3 rounded-card border border-border bg-card p-4 shadow-rest">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <ApplicationStatusBadge status={a.status} />
           <span className="text-xs text-muted-foreground">
@@ -169,14 +189,17 @@ export default function LandlordApplicationsPage() {
             </legend>
             <div className="space-y-1.5">
               {CHOICES.map((c) => (
-                <label key={c.value} className="flex min-h-11 items-center gap-2 text-sm">
+                <label key={c.value} className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
                   <input
                     type="radio"
                     name={`rec-${a.id}`}
                     value={c.value}
                     checked={(choice[a.id] ?? '') === c.value}
-                    onChange={() => setChoice((p) => ({ ...p, [a.id]: c.value }))}
-                    className="h-4 w-4"
+                    onChange={() => {
+                      setChoice((p) => ({ ...p, [a.id]: c.value }))
+                      if (confirmId === a.id) setConfirmId(null)
+                    }}
+                    className="h-5 w-5 shrink-0 accent-primary"
                   />
                   {c.label}
                 </label>
@@ -189,16 +212,46 @@ export default function LandlordApplicationsPage() {
               placeholder="Short note for EboHomes (optional)"
               value={note[a.id] ?? ''}
               onChange={(e) => setNote((p) => ({ ...p, [a.id]: e.target.value }))}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
-            <button
-              type="button"
-              onClick={() => void save(a)}
-              disabled={busyId === a.id || !(choice[a.id] ?? '')}
-              className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-            >
-              {busyId === a.id ? 'Saving…' : 'Save recommendation'}
-            </button>
+            <p className="text-right text-xs text-muted-foreground">
+              {(note[a.id] ?? '').length}/{MAX_NOTE}
+            </p>
+
+            {confirming ? (
+              <div role="group" aria-label="Confirm your recommendation" className="space-y-2 rounded-lg border border-warning/30 bg-warning-soft p-3">
+                <p className="text-sm font-semibold text-foreground">Tell EboHomes you do not recommend this applicant?</p>
+                <p className="text-xs text-muted-foreground">
+                  EboHomes still makes the final decision. You can change this while the application is open.
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    ref={goBackRef}
+                    type="button"
+                    onClick={() => setConfirmId(null)}
+                    className="focus-ring min-h-11 rounded-md border border-border bg-background px-4 text-sm font-semibold text-foreground"
+                  >
+                    Go back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void save(a, true)}
+                    className="focus-ring min-h-11 rounded-md bg-destructive px-4 text-sm font-semibold text-white"
+                  >
+                    Yes, save it
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void save(a)}
+                disabled={busyId === a.id || !(choice[a.id] ?? '')}
+                className="focus-ring min-h-11 w-full rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
+              >
+                {busyId === a.id ? 'Saving…' : 'Save recommendation'}
+              </button>
+            )}
             <p className="text-xs text-muted-foreground">
               This is only advice. EboHomes approves or declines every application and tells the tenant.
             </p>
@@ -222,26 +275,39 @@ export default function LandlordApplicationsPage() {
     )
   }
 
+  const shown = tab === 'open' ? open : closed
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
       <h1 className="text-2xl font-bold text-foreground">Applications</h1>
-      <p className="mb-5 mt-1 text-sm text-muted-foreground">
+      <p className="mb-4 mt-1 text-sm text-muted-foreground">
         Tenants who applied for your properties. EboHomes makes the final decision on every application. You can add a
         recommendation to help.
-        {!loading && waiting > 0 && (
-          <span className="mt-1 block font-semibold text-amber-900">
-            {waiting} {waiting === 1 ? 'application is' : 'applications are'} waiting for your recommendation.
-          </span>
-        )}
       </p>
 
-      {error && (
-        <p role="alert" className="mb-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
+      {!loading && !loadFailed && waiting > 0 && (
+        <p role="status" className="mb-4 flex flex-wrap items-center gap-2 rounded-card border border-warning/30 bg-warning-soft p-3 text-sm font-semibold text-foreground">
+          <ToneChip tone="amber">Action needed</ToneChip>
+          {waiting} {waiting === 1 ? 'application is' : 'applications are'} waiting for your recommendation.
         </p>
       )}
+
+      {error && (
+        <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md bg-danger-soft p-3 text-sm text-danger">
+          <span>{error}</span>
+          {loadFailed && (
+            <button
+              type="button"
+              onClick={() => { setLoading(true); setError(''); void load() }}
+              className="focus-ring min-h-11 rounded-md border border-danger/40 px-4 font-semibold"
+            >
+              Try again
+            </button>
+          )}
+        </div>
+      )}
       {notice && (
-        <p role="status" className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
+        <p role="status" className="mb-3 rounded-md border border-success/30 bg-success-soft p-3 text-sm font-medium text-foreground">
           {notice}
         </p>
       )}
@@ -249,35 +315,49 @@ export default function LandlordApplicationsPage() {
       {loading ? (
         <div className="space-y-4" aria-busy="true" aria-label="Loading applications">
           {[0, 1].map((i) => (
-            <div key={i} className="h-40 animate-pulse rounded-xl border border-border bg-secondary" />
+            <div key={i} className="h-40 animate-pulse rounded-card border border-border bg-secondary" />
           ))}
         </div>
-      ) : apps.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border py-14 text-center text-sm text-muted-foreground">
-          No one has applied for your properties yet.
+      ) : loadFailed && apps.length === 0 ? null : apps.length === 0 ? (
+        <div className="rounded-card border border-dashed border-border py-14 text-center">
+          <p className="text-sm font-semibold text-foreground">No applications yet</p>
+          <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+            When a tenant applies for one of your properties, it appears here.
+          </p>
         </div>
       ) : (
         <>
-          <h2 className="mb-2 text-sm font-semibold text-foreground">Open ({open.length})</h2>
-          {open.length === 0 ? (
-            <p className="mb-6 text-sm text-muted-foreground">Nothing is waiting right now.</p>
-          ) : (
-            <ul className="mb-6 space-y-4">{open.map((a) => card(a, true))}</ul>
-          )}
-
-          {closed.length > 0 && (
-            <>
+          <div role="tablist" aria-label="Application groups" className="mb-4 flex gap-2">
+            {([
+              ['open', 'Open', open.length],
+              ['closed', 'Decided and closed', closed.length],
+            ] as const).map(([key, label, count]) => (
               <button
+                key={key}
                 type="button"
-                onClick={() => setShowAll((v) => !v)}
-                aria-expanded={showAll}
-                className="mb-3 min-h-11 text-sm font-semibold text-primary hover:underline"
+                role="tab"
+                id={`apps-tab-${key}`}
+                aria-selected={tab === key}
+                aria-controls="apps-panel"
+                onClick={() => setTab(key)}
+                className={`focus-ring min-h-11 flex-1 rounded-lg border px-3 text-sm font-semibold sm:flex-none ${
+                  tab === key ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground hover:bg-secondary'
+                }`}
               >
-                {showAll ? 'Hide' : 'Show'} decided and closed applications ({closed.length})
+                {label} ({count})
               </button>
-              {showAll && <ul className="space-y-4">{closed.map((a) => card(a, false))}</ul>}
-            </>
-          )}
+            ))}
+          </div>
+
+          <div id="apps-panel" role="tabpanel" aria-labelledby={`apps-tab-${tab}`}>
+            {shown.length === 0 ? (
+              <p className="rounded-card border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
+                {tab === 'open' ? 'Nothing is waiting right now.' : 'No decided or closed applications yet.'}
+              </p>
+            ) : (
+              <ul className="space-y-4">{shown.map((a) => card(a, tab === 'open'))}</ul>
+            )}
+          </div>
         </>
       )}
     </main>
