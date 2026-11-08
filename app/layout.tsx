@@ -11,11 +11,12 @@ import { NotificationProvider } from '@/components/notification-provider'
 import { PushSync } from '@/components/push-sync'
 import { PushPrompt } from '@/components/push-prompt'
 import { TapFeedback } from '@/components/tap-feedback'
+import { BRAND_TITLE } from '@/lib/brand'
 
 export const metadata: Metadata = {
   metadataBase: new URL((process.env.NEXT_PUBLIC_SITE_URL || 'https://ebohomes.vercel.app').replace(/\/+$/, '')),
   title: {
-    default: 'EboHomes | Find Homes. Skip the Stress.',
+    default: BRAND_TITLE,
     template: '%s | EboHomes',
   },
   description: 'Reviewed rental listings in Ebonyi State, Nigeria. Search, request a viewing and apply online.',
@@ -25,9 +26,9 @@ export const metadata: Metadata = {
     siteName: 'EboHomes',
     type: 'website',
     locale: 'en_NG',
-    images: [{ url: '/hero-home.jpg', alt: 'EboHomes' }],
+    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: 'EboHomes' }],
   },
-  twitter: { card: 'summary_large_image', images: ['/hero-home.jpg'] },
+  twitter: { card: 'summary_large_image', images: ['/og-image.jpg'] },
   appleWebApp: {
     capable: true,
     title: 'EboHomes',
