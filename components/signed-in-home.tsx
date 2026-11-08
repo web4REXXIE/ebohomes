@@ -123,7 +123,7 @@ function TenantSections({ userId }: { userId: string }) {
     <section aria-label="Your dashboard" className="mx-auto max-w-7xl space-y-5 px-4 pt-6 sm:px-6 md:pt-8 lg:px-8">
       <div>
         <p className="text-sm text-muted-foreground">{greeting()},</p>
-        <h2 className="text-2xl font-extrabold text-foreground">{name || 'there'} 👋</h2>
+        <h2 className="text-2xl font-extrabold text-foreground">{name || 'there'}</h2>
       </div>
 
       <Link
@@ -352,5 +352,3 @@ function LandlordSections({ userId }: { userId: string }) {
     </section>
   )
 }
-
-<div className="grid grid-cols-3 gap-3 lg:grid-cols-6"></div>
