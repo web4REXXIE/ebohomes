@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { createClient } from "@supabase/supabase-js"
 import { isValidListingId } from "@/lib/listing-id"
 import { cleanMediaUrls } from "@/lib/property-media"
+import { watermarkedUrl } from "@/lib/watermark"
 
 // The listing page itself lives in page.tsx (a client component). This layout only adds the
 // per-listing metadata and renders its children. It reads the same public listing row the page
@@ -52,7 +53,9 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
     const description = shorten(lead + body, 200)
 
     const photo = cleanMediaUrls(data.photos).find((p) => /^https:\/\//i.test(p))
-    const images = photo ? [{ url: photo, alt: title }] : [{ url: "/og-image.jpg", width: 1200, height: 630, alt: "EboHomes" }]
+    // Same 1600px watermarked version the gallery uses, so shared previews match the site and the
+    // file is a sensible size for social networks.
+    const images = photo ? [{ url: watermarkedUrl(photo, 1600), alt: title }] : [{ url: "/og-image.jpg", width: 1200, height: 630, alt: "EboHomes" }]
     const canonical = `/listing/${id}`
 
     return {
