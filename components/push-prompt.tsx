@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { Bell, Loader2, X } from 'lucide-react'
+import { Bell } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { PromptCard } from '@/components/ui/prompt-card'
 import { useNotifications } from '@/components/notification-provider'
 import { enablePush, getPermission, getPushSupport } from '@/lib/push-client'
 
@@ -99,52 +101,21 @@ export function PushPrompt() {
       aria-label="Turn on push notifications"
       className="fixed inset-x-3 top-[calc(0.75rem+env(safe-area-inset-top))] z-[60] md:inset-x-auto md:right-6 md:top-6 md:w-[380px] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-4 motion-safe:duration-500"
     >
-      <div className="relative overflow-hidden rounded-2xl border border-amber-400/40 bg-[#FAF7F2] p-4 shadow-2xl ring-1 ring-black/5">
-        <span className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#0A2E1A] via-amber-400 to-[#0A2E1A]" />
-
-        <button
-          type="button"
-          onClick={dismiss}
-          aria-label="Dismiss"
-          className="absolute right-1.5 top-2 flex h-9 w-9 items-center justify-center rounded-full text-[#0A2E1A]/50 hover:bg-black/5 hover:text-[#0A2E1A]"
-        >
-          <X size={16} />
-        </button>
-
-        <div className="flex items-start gap-3 pr-7">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#0A2E1A] text-amber-300 shadow-md">
-            <Bell size={22} />
-          </span>
-          <div className="min-w-0">
-            <p className="text-base font-extrabold leading-tight text-[#0A2E1A]">Never miss an update.</p>
-            <p className="mt-1 text-[13px] leading-snug text-[#0A2E1A]/70">
-              Get an alert when EboHomes Support replies or your application changes, even when the
-              app is closed. We never show private details on your lock screen.
-            </p>
-          </div>
-        </div>
-
-        {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
-
-        <div className="mt-3.5 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={turnOn}
-            disabled={busy}
-            className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#0A7A3B] text-sm font-bold text-white shadow-sm transition hover:bg-[#0A7A3B]/90 active:translate-y-px disabled:opacity-60"
-          >
-            {busy && <Loader2 className="animate-spin" size={14} />}
-            Turn on notifications
-          </button>
-          <button
-            type="button"
-            onClick={dismiss}
-            className="h-11 rounded-xl px-4 text-sm font-semibold text-[#0A2E1A]/70 hover:bg-black/5"
-          >
-            Not now
-          </button>
-        </div>
-      </div>
+      <PromptCard
+        onDismiss={dismiss}
+        title="Never miss an update."
+        icon={<Bell size={22} aria-hidden="true" />}
+        actions={
+          <>
+            <Button onClick={turnOn} loading={busy} className="flex-1">Turn on notifications</Button>
+            <Button variant="ghost" onClick={dismiss}>Not now</Button>
+          </>
+        }
+      >
+        Get an alert when EboHomes Support replies or your application changes, even when the app is closed.
+        We never show private details on your lock screen.
+        {error && <span role="alert" className="mt-2 block text-xs text-danger">{error}</span>}
+      </PromptCard>
     </aside>
   )
 }
