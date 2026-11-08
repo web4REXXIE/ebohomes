@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   User, Calendar, Heart, MessageCircle, Settings, LogOut, ChevronDown, Building2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useDismissable } from '@/lib/use-dismissable'
 
 type Profile = {
   full_name: string | null
@@ -19,6 +20,8 @@ export function ProfileMenu({ email }: { email: string }) {
   const [open, setOpen] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const close = useCallback(() => setOpen(false), [])
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
@@ -33,13 +36,8 @@ export function ProfileMenu({ email }: { email: string }) {
     })
   }, [])
 
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
+  // Escape, outside click and tabbing away close the menu; Escape returns focus to the avatar button
+  useDismissable(open, close, ref, triggerRef)
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -68,8 +66,13 @@ export function ProfileMenu({ email }: { email: string }) {
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={triggerRef}
+        type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full hover:bg-muted transition-colors"
+        aria-expanded={open}
+        aria-controls="account-menu"
+        aria-label="Account menu"
+        className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full hover:bg-muted transition-colors focus-ring"
       >
         {profile?.avatar_url ? (
           <img src={profile.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover" />
@@ -82,8 +85,8 @@ export function ProfileMenu({ email }: { email: string }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-72 bg-card border border-border rounded-xl shadow-lg overflow-hidden z-50">
-          <div className="flex items-center gap-3 p-4 border-b border-border">
+        <div id="account-menu" className="absolute right-0 mt-2 w-72 overflow-hidden rounded-card border border-border bg-surface-elevated shadow-dropdown z-50">
+          <div className="flex items-center gap-3 p-4 border-b border-border-subtle">
             {profile?.avatar_url ? (
               <img src={profile.avatar_url} alt="" className="w-11 h-11 rounded-full object-cover" />
             ) : (
@@ -95,7 +98,7 @@ export function ProfileMenu({ email }: { email: string }) {
               <p className="text-sm font-semibold text-foreground truncate">
                 {profile?.full_name ?? 'Your Account'}
               </p>
-              <span className="inline-block text-[10px] font-medium bg-secondary text-muted-foreground px-2 py-0.5 rounded-full capitalize mt-0.5">
+              <span className="mt-0.5 inline-block rounded-full bg-secondary px-2 py-0.5 text-caption font-medium capitalize text-muted-foreground">
                 {profile?.role ?? 'user'}
               </span>
               <p className="text-xs text-muted-foreground truncate mt-0.5">{email}</p>
@@ -108,20 +111,21 @@ export function ProfileMenu({ email }: { email: string }) {
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted transition-colors"
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none transition-colors"
               >
                 <item.icon size={17} className="text-muted-foreground shrink-0" />
                 <span>
                   <span className="block text-sm font-medium text-foreground">{item.label}</span>
-                  <span className="block text-[11px] text-muted-foreground">{item.desc}</span>
+                  <span className="block text-caption text-muted-foreground">{item.desc}</span>
                 </span>
               </Link>
             ))}
           </div>
 
           <button
+            type="button"
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 border-t border-border text-destructive hover:bg-destructive/5 transition-colors text-left"
+            className="w-full flex items-center gap-3 px-4 py-3 border-t border-border-subtle text-danger hover:bg-danger-soft focus-visible:bg-danger-soft focus-visible:outline-none transition-colors text-left"
           >
             <LogOut size={17} />
             <span className="text-sm font-medium">Log Out</span>
