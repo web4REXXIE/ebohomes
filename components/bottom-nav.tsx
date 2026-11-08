@@ -14,6 +14,7 @@ export function BottomNav() {
   const [role, setRole] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const dashButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const fetchRole = async (userId: string) => {
@@ -46,11 +47,20 @@ export function BottomNav() {
     const onDown = (e: Event) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setSheetOpen(false)
     }
+    // Escape closes the drop-down and returns focus to the Dashboard tab
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSheetOpen(false)
+        dashButtonRef.current?.focus()
+      }
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('touchstart', onDown)
+    document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('touchstart', onDown)
+      document.removeEventListener('keydown', onKey)
     }
   }, [sheetOpen])
 
@@ -65,9 +75,9 @@ export function BottomNav() {
   const dashActive = isDashboardPath(pathname)
 
   // Home, Search, Dashboard, Saved. Active tab is green, the rest are grey.
-  const tabBase = 'flex-1 flex flex-col items-center justify-center gap-1 py-2.5'
+  const tabBase = 'flex min-h-14 flex-1 flex-col items-center justify-center gap-1 py-2 focus-ring'
   const iconCls = (active: boolean) => (active ? 'text-primary' : 'text-muted-foreground')
-  const labelCls = (active: boolean) => `text-[11px] font-medium ${active ? 'text-primary' : 'text-muted-foreground'}`
+  const labelCls = (active: boolean) => `text-caption font-medium ${active ? 'text-primary' : 'text-muted-foreground'}`
 
   const simpleTab = (href: string, label: string, Icon: any, active: boolean, protect = false) => (
     <Link
@@ -86,8 +96,8 @@ export function BottomNav() {
     <div ref={wrapRef} className="md:hidden">
       {sheetOpen && loggedIn && (
         <div
-          role="menu"
-          className="fixed left-3 right-3 z-40 overflow-hidden rounded-2xl border border-border bg-card shadow-xl"
+          id="bottom-nav-dashboard"
+          className="fixed left-3 right-3 z-40 overflow-hidden rounded-card border border-border bg-surface-elevated shadow-dropdown"
           style={{ bottom: 'calc(64px + env(safe-area-inset-bottom))' }}
         >
           {links.map((l, i) => {
@@ -96,9 +106,9 @@ export function BottomNav() {
               <Link
                 key={l.href}
                 href={l.href}
-                role="menuitem"
-                className={`flex min-h-12 items-center justify-between px-4 text-sm font-medium ${
-                  i > 0 ? 'border-t border-border' : ''
+                aria-current={active ? 'page' : undefined}
+                className={`flex min-h-12 items-center justify-between px-4 text-sm font-medium focus-visible:bg-muted focus-visible:outline-none ${
+                  i > 0 ? 'border-t border-border-subtle' : ''
                 } ${active ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted'}`}
               >
                 {l.label}
@@ -109,7 +119,8 @@ export function BottomNav() {
       )}
 
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border flex items-stretch"
+        aria-label="Mobile"
+        className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-border bg-card shadow-nav"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         {simpleTab('/', 'Home', Home, pathname === '/')}
@@ -117,13 +128,14 @@ export function BottomNav() {
 
         {/* Dashboard: tap to open a drop-down with the tools inside it */}
         <button
+          ref={dashButtonRef}
           type="button"
           onClick={(e) => {
             if (!loggedIn) { guard(e); return }
             setSheetOpen((o) => !o)
           }}
-          aria-haspopup="menu"
           aria-expanded={sheetOpen}
+          aria-controls="bottom-nav-dashboard"
           className={tabBase}
         >
           <span className="relative">
