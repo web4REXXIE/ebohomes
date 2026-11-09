@@ -247,11 +247,11 @@ function AdminSupportInner() {
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-foreground truncate">{people[t.customer_id]?.full_name ?? 'Customer'}</p>
                 {(unread[t.id] ?? 0) > 0 && (
-                  <span className="bg-primary text-primary-foreground text-[10px] font-bold min-w-5 h-5 px-1 rounded-full flex items-center justify-center">{unread[t.id]}</span>
+                  <span className="bg-primary text-primary-foreground text-xs font-bold min-w-5 h-5 px-1 rounded-full flex items-center justify-center">{unread[t.id]}</span>
                 )}
               </div>
               <p className="text-xs text-muted-foreground truncate">{t.subject}</p>
-              <div className="mt-1 flex items-center gap-2 text-[11px]">
+              <div className="mt-1 flex items-center gap-2 text-xs">
                 <span className="px-2 py-0.5 rounded-full bg-secondary capitalize">{t.customer_role}</span>
                 <span className="px-2 py-0.5 rounded-full bg-secondary">{CATEGORY_LABELS[t.category]}</span>
                 <span className={`px-2 py-0.5 rounded-full capitalize ${STATUS_STYLE[t.status]}`}>{t.status}</span>
@@ -286,7 +286,7 @@ function AdminSupportInner() {
                   <option value="closed">Closed</option>
                 </select>
               </div>
-              <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
+              <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
                 {customer?.phone && <span>Staff only: {customer.phone}</span>}
                 {active.assigned_to === uid ? <span>Assigned to you</span> :
                   <button onClick={() => void assignToMe()} className="underline">Assign to me</button>}
@@ -300,10 +300,10 @@ function AdminSupportInner() {
                 return (
                   <div key={m.id} className={`flex ${fromCustomer ? 'justify-start' : 'justify-end'}`}>
                     <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${fromCustomer ? 'bg-secondary text-foreground rounded-bl-sm' : 'bg-primary text-primary-foreground rounded-br-sm'}`}>
-                      {m.relayed_from_thread_id && <p className="text-[10px] opacity-70 mb-0.5">Relayed</p>}
+                      {m.relayed_from_thread_id && <p className="text-xs opacity-70 mb-0.5">Relayed</p>}
                       <p className="whitespace-pre-wrap break-words">{m.message}</p>
                       {m.flagged && (
-                        <div className="mt-1 text-[11px] text-amber-700 flex items-center gap-1">
+                        <div className="mt-1 text-xs text-amber-700 flex items-center gap-1">
                           <AlertTriangle size={11} /> Contact details hidden
                           {orig && (
                             <button className="ml-1 underline inline-flex items-center gap-0.5"
@@ -316,7 +316,7 @@ function AdminSupportInner() {
                       {revealed[m.id] && orig && (
                         <p className="mt-1 rounded bg-background/80 text-foreground px-2 py-1 text-xs whitespace-pre-wrap">{orig}</p>
                       )}
-                      <div className={`mt-1 flex items-center gap-2 text-[10px] ${fromCustomer ? 'text-muted-foreground' : 'text-primary-foreground/70'}`}>
+                      <div className={`mt-1 flex items-center gap-2 text-xs ${fromCustomer ? 'text-muted-foreground' : 'text-primary-foreground/70'}`}>
                         <span>{formatTime(m.created_at)}</span>
                         {fromCustomer && !m.flagged && (
                           <button className="inline-flex items-center gap-0.5 underline"
