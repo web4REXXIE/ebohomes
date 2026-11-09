@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { AdminPageHeader, EmptyState, ErrorState, LoadingState } from '@/components/admin-ui'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { Loader2, ClipboardList } from 'lucide-react'
 import {
   QUEUE_ORDER, QUEUE_TITLE, dueText, isOverdue, checkAdminReason, checkBudgetAmount, suggestionLine, friendlyError,
   type QueueRow, type Suggestion,
@@ -116,15 +116,12 @@ export default function AdminRemoteInspectionsPage() {
     </label>
   )
 
-  if (loading) return <div className="p-6 flex justify-center"><Loader2 className="animate-spin" /></div>
+  if (loading) return <div className="mx-auto max-w-3xl px-4"><LoadingState label="Loading remote inspections..." /></div>
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2"><ClipboardList size={20} /> Remote inspections</h1>
-        <p className="text-sm text-muted-foreground">Tenant-requested inspections. Free to tenants, private reports, never a verification badge. The landlord has already confirmed access for anything that needs an inspector.</p>
-      </div>
-      {msg && <div role="status" className={`text-sm rounded-lg border px-3 py-2 ${msg.ok ? 'border-border bg-secondary' : 'border-destructive/40 text-destructive'}`}>{msg.text}</div>}
+      <AdminPageHeader title="Remote inspections" description="Tenant-requested inspections. Free to tenants, private reports, never a verification badge. The landlord has already confirmed access for anything that needs an inspector." />
+      {msg && (msg.ok ? <div role="status" className="rounded-lg border border-border bg-secondary px-3 py-2 text-sm">{msg.text}</div> : <ErrorState message={msg.text} />)}
 
       <div className="bg-card border border-border rounded-lg p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -138,8 +135,8 @@ export default function AdminRemoteInspectionsPage() {
           <Button type="button" variant="outline" onClick={() => { setDraft(settings); setShowSettings((v) => !v) }}>Settings</Button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-[8rem_1fr_auto] gap-2">
-          <input className={field} inputMode="numeric" placeholder="Amount ₦" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          <input className={field} placeholder="Where the money comes from" value={source} onChange={(e) => setSource(e.target.value)} />
+          <input className={field} inputMode="numeric" aria-label="Amount ₦" placeholder="Amount ₦" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <input className={field} aria-label="Where the money comes from" placeholder="Where the money comes from" value={source} onChange={(e) => setSource(e.target.value)} />
           <Button type="button" onClick={addBudget} disabled={busy}>Add budget</Button>
         </div>
         {showSettings && draft && (
@@ -165,7 +162,7 @@ export default function AdminRemoteInspectionsPage() {
 
       <Button type="button" variant="outline" onClick={() => load(true)}>Refresh and apply deadlines</Button>
 
-      {rows.length === 0 && <p className="text-sm text-muted-foreground">No open remote inspection requests.</p>}
+      {rows.length === 0 && <EmptyState title="No open remote inspection requests" />}
 
       {QUEUE_ORDER.map((st) => {
         const list = rows.filter((r) => r.status === st)
@@ -214,7 +211,7 @@ export default function AdminRemoteInspectionsPage() {
                       </>
                     )}
                     {mode === 'back' && (
-                      <input className={field} placeholder="Why take this back? (declined later, no-show, other)" value={reason} onChange={(e) => setReason(e.target.value)} />
+                      <input className={field} aria-label="Why take this back? (declined later, no-show, other)" placeholder="Why take this back? (declined later, no-show, other)" value={reason} onChange={(e) => setReason(e.target.value)} />
                     )}
                     {formError && <p role="alert" className="text-xs text-destructive">{formError}</p>}
                     <div className="flex gap-2">
