@@ -10,6 +10,9 @@ async function load(path) {
 }
 
 const layout = readFileSync('app/dashboard/layout.tsx', 'utf8')
+// Stage 17: the menu, logo and focus handling moved into the shared shell.
+const shell = readFileSync('components/account-shell.tsx', 'utf8')
+const layoutAndShell = layout + shell
 const overview = readFileSync('app/dashboard/page.tsx', 'utf8')
 const listings = readFileSync('app/dashboard/listings/page.tsx', 'utf8')
 const verSrc = readFileSync('lib/landlord-verification.ts', 'utf8')
@@ -96,8 +99,11 @@ const PRE_STAGE16_DESTINATIONS = [
   '/dashboard/analytics', '/dashboard/verify', '/dashboard/professional', '/dashboard/company',
   '/list-property', '/dashboard/profile', '/contact',
 ]
+// Stage 18c: one destination was added on purpose, the existing /notifications page (the phone bell already linked to it).
+const EXPECTED_SIDEBAR_COUNT = PRE_STAGE16_DESTINATIONS.length + 1
+assert.ok(layout.includes("href: '/notifications'"), 'landlord sidebar links to Notifications')
 for (const href of PRE_STAGE16_DESTINATIONS) assert.ok(layout.includes(`href: '${href}'`), `sidebar lost ${href}`)
-assert.equal([...layout.matchAll(/href: '/g)].length, PRE_STAGE16_DESTINATIONS.length, 'sidebar should have exactly the same 15 destinations')
+assert.equal([...layout.matchAll(/href: '/g)].length, EXPECTED_SIDEBAR_COUNT, 'sidebar should have the 15 original destinations plus Notifications')
 // Every shared landlord link is reachable from the sidebar.
 for (const l of links.LANDLORD_LINKS) assert.ok(layout.includes(`href: '${l.href}'`), `shared link ${l.href} is not in the sidebar`)
 assert.ok(links.LANDLORD_LINKS.some((l) => l.href === '/dashboard/inspection-requests'), 'Inspection requests must be in LANDLORD_LINKS')
@@ -114,13 +120,13 @@ assert.ok(/router\.push\('\/login'\)/.test(layout), 'signed-out visitors still g
 assert.ok(/getUnreadMessageCount/.test(layout) && /postgres_changes/.test(layout))
 assert.ok(/\.eq\('landlord_id', user\.id\)/.test(layout) && /\['pending', 'info_requested'\]/.test(layout), 'sidebar application badge query is unchanged')
 // Mobile menu: real dialog, Escape closes, focus handled, no second bottom bar.
-assert.ok(/role="dialog"/.test(layout) && /aria-modal="true"/.test(layout) && /'Escape'/.test(layout))
-assert.ok(/closeButtonRef\.current\?\.focus\(\)/.test(layout) && /menuButtonRef\.current\?\.focus\(\)/.test(layout), 'focus moves into and back out of the mobile menu')
-assert.ok(!/fixed bottom-0/.test(layout), 'dashboard layout must not draw its own fixed bottom bar')
+assert.ok(/role="dialog"/.test(layoutAndShell) && /aria-modal="true"/.test(layoutAndShell) && /'Escape'/.test(layoutAndShell))
+assert.ok(/closeButtonRef\.current\?\.focus\(\)/.test(layoutAndShell) && /menuButtonRef\.current\?\.focus\(\)/.test(layoutAndShell), 'focus moves into and back out of the mobile menu')
+assert.ok(!/fixed bottom-0/.test(layoutAndShell), 'dashboard layout must not draw its own fixed bottom bar')
 // Brand logo comes from the shared brand file, not a generic icon tile.
-assert.ok(/BRAND_LOGOS\.onLight/.test(layout) && /BRAND_LOGOS\.onDark/.test(layout))
+assert.ok(/BRAND_LOGOS\.onLight/.test(layoutAndShell) && /BRAND_LOGOS\.onDark/.test(layoutAndShell))
 // Badge text is no longer 9 or 10px.
-assert.ok(!/text-\[(9|10)px\]/.test(layout), 'no 9px or 10px text in the landlord shell')
+assert.ok(!/text-\[(9|10)px\]/.test(layoutAndShell), 'no 9px or 10px text in the landlord shell')
 
 // ---------- 4. Overview: real data only ----------
 assert.ok(/OWNER_LISTING_COLUMNS/.test(overview), 'overview keeps the private-location column list')
