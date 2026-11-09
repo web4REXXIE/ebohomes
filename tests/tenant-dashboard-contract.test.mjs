@@ -3,13 +3,16 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const layout = readFileSync('app/home/layout.tsx', 'utf8')
+// Stage 17: the menu now lives in the shared shell.
+const shell = readFileSync('components/account-shell.tsx', 'utf8')
+const layoutAndShell = layout + shell
 const home = readFileSync('app/home/page.tsx', 'utf8')
 const saved = readFileSync('app/saved/page.tsx', 'utf8')
 const profile = readFileSync('app/profile/page.tsx', 'utf8')
 const links = readFileSync('lib/dashboard-links.ts', 'utf8')
 
 // One bottom bar only: the app-wide components/bottom-nav.tsx. The dashboard layout must not draw a second one.
-assert.ok(!/fixed bottom-0/.test(layout), 'dashboard layout must not draw its own fixed bottom bar')
+assert.ok(!/fixed bottom-0/.test(layoutAndShell), 'dashboard layout must not draw its own fixed bottom bar')
 
 // Every tenant link in the shared list is reachable from the dashboard sidebar
 const tenantBlock = links.split('export const TENANT_LINKS')[1].split(']')[0]
@@ -24,7 +27,7 @@ assert.ok(/router\.push\('\/login'\)/.test(layout), 'signed-out visitors still g
 assert.ok(/getUnreadMessageCount/.test(layout) && /postgres_changes/.test(layout) && /supabase\.auth\.signOut\(\)/.test(layout))
 
 // Mobile menu is a real dialog that closes on Escape
-assert.ok(/role="dialog"/.test(layout) && /aria-modal="true"/.test(layout) && /'Escape'/.test(layout))
+assert.ok(/role="dialog"/.test(layoutAndShell) && /aria-modal="true"/.test(layoutAndShell) && /'Escape'/.test(layoutAndShell))
 
 // No invented numbers or claims
 for (const [name, src] of [['layout', layout], ['home', home], ['saved', saved]]) {
