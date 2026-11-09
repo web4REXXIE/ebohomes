@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { ClipboardCheck, Search, UserPlus, Loader2, AlertTriangle } from 'lucide-react'
+import { useConfirm } from '@/components/confirm-dialog'
 
 const REASONS = [
   { v: 'new_property', l: 'New property' },
@@ -359,6 +360,7 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
 }
 
 export default function AdminInspectionsPage() {
+  const { confirm, dialog } = useConfirm()
   const [tab, setTab] = useState<Tab>('jobs')
   const [me, setMe] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
@@ -474,7 +476,7 @@ export default function AdminInspectionsPage() {
   }
 
   const cancelJob = async (jobId: string) => {
-    if (!window.confirm('Cancel this inspection request?')) return
+    if (!(await confirm({ title: 'Cancel inspection request?', message: 'Cancel this inspection request?', confirmLabel: 'Cancel request', cancelLabel: 'Keep it', destructive: true }))) return
     const { error } = await supabase.from('inspection_jobs').update({ status: 'cancelled' }).eq('id', jobId)
     if (error) return flash('Failed: ' + error.message)
     loadJobs()
@@ -661,6 +663,7 @@ export default function AdminInspectionsPage() {
           </div>
         </div>
       )}
+      {dialog}
     </div>
   )
   }
