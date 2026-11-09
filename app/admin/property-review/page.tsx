@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, X, FileEdit, Home as HomeIcon, ShieldCheck, ClipboardCheck } from 'lucide-react'
+import { AlertTriangle, Check, X, FileEdit, Home as HomeIcon, ShieldCheck, ClipboardCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getOwnershipSignedUrl } from '@/lib/ownership-docs'
 import { Button } from '@/components/ui/button'
 import { authorityStatusInfo, isAuthorityReviewed } from '@/lib/listing-authority'
 import { AdminLocationPanel } from '@/components/admin-location-panel'
 import { useConfirm } from '@/components/confirm-dialog'
+import { AdminPageHeader, EmptyState, ErrorState, LoadingState, StatusChip } from '@/components/admin-ui'
 
 const CHECKLIST = [
   'Property photos are clear and real',
@@ -18,10 +19,16 @@ const CHECKLIST = [
   'Follows EboHomes listing guidelines',
 ]
 
+// A small heading that tells the reviewer which part of the page they are in.
+function GroupLabel({ children }: { children: React.ReactNode }) {
+  return <h2 className="pt-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{children}</h2>
+}
+
 export default function PropertyReviewPage() {
   const { confirm, dialog } = useConfirm()
   const [listings, setListings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [tab, setTab] = useState<'pending' | 'inspection_required' | 'approved' | 'suspended' | 'rejected'>('pending')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [ownershipDocUrl, setOwnershipDocUrl] = useState('')
@@ -40,11 +47,13 @@ export default function PropertyReviewPage() {
 
   const fetchListings = async () => {
     setLoading(true)
-    const { data } = await supabase
+    setLoadError('')
+    const { data, error: listingsError } = await supabase
       .from('listings')
       // Explicit columns on purpose: the exact pin (lat, lng) is not readable from the table. The location panel gets it from an admin function.
       .select('id, landlord_id, title, description, location_text, price_monthly, property_type, bedrooms, bathrooms, furnished, photos, status, created_at, availability_date, featured, reviewed_at, rejection_reason, suspension_reason, ownership_doc_url, authority_status')
       .order('created_at', { ascending: false })
+    if (listingsError) setLoadError(`Could not load listings: ${listingsError.message}`)
     setListings(data ?? [])
     const { data: legacy } = await supabase.from('listing_authority_legacy').select('listing_id').is('resolved_at', null)
     setLegacyOpen(new Set((legacy ?? []).map((r: any) => r.listing_id as string)))
@@ -206,15 +215,15 @@ export default function PropertyReviewPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <h1 className="text-2xl font-bold text-foreground mb-1">Property Review / Approval</h1>
-      <p className="text-sm text-muted-foreground mb-6">Review property details and approve or reject listings.</p>
+      <AdminPageHeader title="Property Review / Approval" description="Review property details and approve or reject listings." />
 
-      <div className="flex gap-2 mb-6">
+      <div className="mb-6 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Listing status">
         {(['pending', 'inspection_required', 'approved', 'suspended', 'rejected'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${
+            aria-pressed={tab === t}
+            className={`focus-ring min-h-11 shrink-0 px-4 rounded-lg text-sm font-semibold capitalize transition-colors ${
               tab === t ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:bg-secondary'
             }`}
           >
@@ -223,35 +232,36 @@ export default function PropertyReviewPage() {
         ))}
       </div>
 
+      {loadError && <div className="mb-4"><ErrorState message={loadError} onRetry={fetchListings} /></div>}
+
       {loading ? (
-        <p className="text-muted-foreground">Loading...</p>
+        <LoadingState label="Loading listings..." />
       ) : filtered.length === 0 ? (
-        <div className="bg-card border border-border rounded-lg p-12 text-center text-muted-foreground">
-          No {tab.replace('_', ' ')} listings.
-        </div>
+        loadError ? null : <EmptyState title={`No ${tab.replace('_', ' ')} listings`} text="Listings that match this status will appear here." />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* List */}
-          <div className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
+          <div className="space-y-3 max-h-80 overflow-y-auto pr-1 lg:max-h-[75vh]">
             {filtered.map((l) => (
               <button
                 key={l.id}
                 onClick={() => setSelectedId(l.id)}
-                className={`w-full text-left bg-card border rounded-lg p-3 flex gap-3 transition-colors ${
+                aria-pressed={selected?.id === l.id}
+                className={`focus-ring w-full text-left bg-card border rounded-lg p-3 flex gap-3 transition-colors ${
                   selected?.id === l.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
                 }`}
               >
                 {l.photos?.[0] ? (
-                  <img src={l.photos[0]} className="w-16 h-16 object-cover rounded-lg bg-secondary shrink-0" />
+                  <img src={l.photos[0]} alt="" className="w-16 h-16 object-cover rounded-lg bg-secondary shrink-0" />
                 ) : (
                   <div className="w-16 h-16 rounded-lg bg-secondary shrink-0 flex items-center justify-center">
-                    <HomeIcon size={20} className="text-muted-foreground" />
+                    <HomeIcon size={20} className="text-muted-foreground" aria-hidden />
                   </div>
                 )}
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate flex items-center gap-1">
                     {l.title ?? 'Untitled listing'}
-                    {isAuthorityReviewed(l.authority_status) && <ShieldCheck size={13} className="text-emerald-600 shrink-0" aria-label="Authority reviewed" />}
+                    {isAuthorityReviewed(l.authority_status) && <ShieldCheck size={13} className="text-success shrink-0" aria-label="Authority reviewed" />}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">{l.location_text}</p>
                   <p className="text-xs text-muted-foreground">
@@ -265,18 +275,19 @@ export default function PropertyReviewPage() {
           {/* Detail */}
           {selected && (
             <div className="lg:col-span-2 space-y-4">
+              <GroupLabel>Listing and evidence</GroupLabel>
               <div className="bg-card border border-border rounded-lg overflow-hidden">
                 {selected.photos?.[0] ? (
-                  <img src={selected.photos[0]} className="w-full h-72 object-cover" />
+                  <img src={selected.photos[0]} alt={`Photo of ${selected.title ?? 'the listing'}`} className="w-full h-56 object-cover sm:h-72" />
                 ) : (
-                  <div className="w-full h-72 bg-secondary flex items-center justify-center text-muted-foreground">
+                  <div className="w-full h-56 bg-secondary flex items-center justify-center text-muted-foreground sm:h-72">
                     No Photo
                   </div>
                 )}
                 {selected.photos?.length > 1 && (
                   <div className="flex gap-2 p-3 overflow-x-auto">
                     {selected.photos.slice(1, 6).map((p: string, i: number) => (
-                      <img key={i} src={p} className="w-16 h-16 object-cover rounded-md shrink-0" />
+                      <img key={i} src={p} alt={`Listing photo ${i + 2}`} className="w-16 h-16 object-cover rounded-md shrink-0" />
                     ))}
                     {selected.photos.length > 6 && (
                       <div className="w-16 h-16 rounded-md bg-secondary flex items-center justify-center text-xs text-muted-foreground shrink-0">
@@ -288,14 +299,12 @@ export default function PropertyReviewPage() {
               </div>
 
               <div className="bg-card border border-border rounded-lg p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold text-foreground flex flex-wrap items-center gap-2">
                       {selected.title ?? 'Untitled listing'}
                       {isAuthorityReviewed(selected.authority_status) && (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                          <ShieldCheck size={12} /> Authority reviewed
-                        </span>
+                        <StatusChip state="success">Authority reviewed</StatusChip>
                       )}
                     </h2>
                     <p className="text-sm text-muted-foreground">{selected.location_text}</p>
@@ -351,7 +360,7 @@ export default function PropertyReviewPage() {
                       rel="noreferrer"
                       className="inline-flex items-center gap-1.5 text-sm text-primary font-medium hover:underline"
                     >
-                      <FileEdit size={14} /> View ownership document
+                      <FileEdit size={14} aria-hidden /> View ownership document
                     </a>
                   ) : (
                     <p className="text-sm text-destructive">Document unavailable: invalid path.</p>
@@ -359,6 +368,7 @@ export default function PropertyReviewPage() {
                 )}
               </div>
 
+              <GroupLabel>Risk and location</GroupLabel>
               {risk && (
                 <div className="bg-card border border-border rounded-lg p-5">
                   <h3 className="font-semibold text-foreground mb-1">
@@ -377,7 +387,7 @@ export default function PropertyReviewPage() {
 
               {flags.length > 0 && (
                 <div className="bg-card border-2 border-destructive/40 rounded-lg p-5">
-                  <h3 className="font-semibold text-destructive mb-1">⚠ Possible duplicate or conflict</h3>
+                  <h3 className="flex items-center gap-1.5 font-semibold text-destructive mb-1"><AlertTriangle size={16} aria-hidden /> Possible duplicate or conflict</h3>
                   <p className="text-xs text-muted-foreground mb-3">
                     This is a warning, not proof of fraud. Check it before approving.
                   </p>
@@ -392,7 +402,7 @@ export default function PropertyReviewPage() {
                             Other listing: {f.related.title ?? 'Untitled'} · {f.related.location_text} · {f.related.status}
                           </p>
                         )}
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex flex-wrap gap-2 mt-2">
                           <Button size="sm" variant="outline" onClick={() => resolveFlag(f.id, 'dismissed')}>
                             Not a problem
                           </Button>
@@ -410,12 +420,13 @@ export default function PropertyReviewPage() {
               <AdminLocationPanel listingId={selected.id} />
 
               {/* Review checklist + actions */}
+              <GroupLabel>Decision</GroupLabel>
               <div className="bg-card border border-border rounded-lg p-5">
                 <h3 className="font-semibold text-foreground mb-3">Check before approving</h3>
                 <ul className="space-y-2 mb-5">
                   {CHECKLIST.map((item) => (
                     <li key={item} className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Check size={14} className="text-primary" /> {item}
+                      <Check size={14} className="text-primary" aria-hidden /> {item}
                     </li>
                   ))}
                 </ul>
@@ -434,8 +445,9 @@ export default function PropertyReviewPage() {
                 )}
 
                 {!canApprove && selected.status !== 'approved' && (
-                  <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-                    Approval is blocked until the property authority is accepted. Review it on the Listing Authority page.
+                  <p className="mb-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs text-warning">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+                    <span>Approval is blocked until the property authority is accepted. Review it on the Listing Authority page.</span>
                   </p>
                 )}
 
@@ -446,26 +458,30 @@ export default function PropertyReviewPage() {
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <Button
-                    onClick={() => handleApprove(selected.id)}
-                    disabled={updating || !awaitingReview || !canApprove}
-                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold flex items-center justify-center gap-2"
-                  >
-                    <Check size={16} /> Approve Property
-                  </Button>
-                  <Button
-                    onClick={() => handleReject(selected.id)}
-                    disabled={updating || !awaitingReview || rejectReason.trim().length < 5}
-                    variant="outline"
-                    className="flex-1 border-destructive text-destructive hover:bg-destructive/10 font-semibold flex items-center justify-center gap-2"
-                  >
-                    <X size={16} /> Reject Property
-                  </Button>
+                  {/* On phones Approve and Reject stay in view just above the bottom bar. From tablet width up they sit in the row. */}
+                  <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-5 flex gap-3 border-t border-border bg-card px-5 py-3 sm:contents">
+                    <Button
+                      onClick={() => handleApprove(selected.id)}
+                      disabled={updating || !awaitingReview || !canApprove}
+                      className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold flex items-center justify-center gap-2"
+                    >
+                      <Check size={16} aria-hidden /> Approve<span className="hidden sm:inline">&nbsp;Property</span>
+                    </Button>
+                    <Button
+                      onClick={() => handleReject(selected.id)}
+                      disabled={updating || !awaitingReview || rejectReason.trim().length < 5}
+                      variant="outline"
+                      className="flex-1 border-destructive text-destructive hover:bg-destructive/10 font-semibold flex items-center justify-center gap-2"
+                    >
+                      <X size={16} aria-hidden /> Reject<span className="hidden sm:inline">&nbsp;Property</span>
+                    </Button>
+                  </div>
                   <Button
                     onClick={() => handleToggleFeatured(selected.id, selected.featured)}
                     variant="outline"
+                    aria-pressed={!!selected.featured}
                     className={`flex-1 font-semibold flex items-center justify-center gap-2 ${
-                      selected.featured ? 'border-amber-500 text-amber-600 bg-amber-50' : 'border-border text-muted-foreground'
+                      selected.featured ? 'border-warning text-warning bg-warning-soft' : 'border-border text-muted-foreground'
                     }`}
                   >
                     ⭐️ {selected.featured ? 'Unfeature' : 'Feature'} Property
@@ -510,6 +526,7 @@ export default function PropertyReviewPage() {
               </div>
 
               {/* Property authority: reviewed separately. This replaces the old "Property verified" toggle. */}
+              <GroupLabel>Authority and inspection</GroupLabel>
               <div className="bg-card border border-border rounded-lg p-5">
                 <h3 className="font-semibold text-foreground mb-1">Property authority</h3>
                 <p className="text-xs text-muted-foreground mb-3">
@@ -518,11 +535,11 @@ export default function PropertyReviewPage() {
                 <p className="text-sm font-semibold text-foreground">{authInfo.label}</p>
                 <p className="text-xs text-muted-foreground mb-1">{authInfo.detail}</p>
                 {legacyOpen.has(selected.id) && !isAuthorityReviewed(selected.authority_status) && (
-                  <p className="text-xs text-amber-800 mb-3">An existing listing from before authority review. It may stay live during the transition.</p>
+                  <p className="text-xs text-warning mb-3">An existing listing from before authority review. It may stay live during the transition.</p>
                 )}
                 <Link
                   href={`/admin/listing-authority?listing=${selected.id}`}
-                  className="mt-2 w-full inline-flex items-center justify-center gap-2 font-semibold border border-border rounded-lg px-4 py-2.5 text-sm hover:bg-secondary transition-colors"
+                  className="focus-ring mt-2 w-full inline-flex min-h-11 items-center justify-center gap-2 font-semibold border border-border rounded-lg px-4 py-2.5 text-sm hover:bg-secondary transition-colors"
                 >
                   <ShieldCheck size={16} /> Open this listing in Listing Authority
                 </Link>
@@ -536,7 +553,7 @@ export default function PropertyReviewPage() {
                 </p>
                 <Link
                   href="/admin/inspections"
-                  className="w-full inline-flex items-center justify-center gap-2 font-semibold border border-border rounded-lg px-4 py-2.5 text-sm hover:bg-secondary transition-colors"
+                  className="focus-ring w-full inline-flex min-h-11 items-center justify-center gap-2 font-semibold border border-border rounded-lg px-4 py-2.5 text-sm hover:bg-secondary transition-colors"
                 >
                   <ClipboardCheck size={16} /> Request or review inspections
                 </Link>
@@ -548,4 +565,4 @@ export default function PropertyReviewPage() {
       {dialog}
     </div>
   )
-}
+              }
