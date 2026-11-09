@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { Loader2, Wallet } from 'lucide-react'
+import { AdminPageHeader, EmptyState, ErrorState, LoadingState, StatusChip, type AdminState } from '@/components/admin-ui'
 import { checkAdminReason, checkBudgetAmount, friendlyError } from '@/lib/remote-inspection'
 
-const field = 'w-full px-3 py-2 rounded-lg border border-border bg-background text-sm'
+const field = 'w-full min-h-11 px-3 py-2 rounded-lg border border-border bg-background text-base'
+// One fixed state per payout status. The chip always shows the status as text with an icon.
+const PAYOUT_STATE: Record<string, AdminState> = { payable: 'pending', paid: 'success', void: 'neutral' }
+const PAYOUT_LABEL: Record<string, string> = { payable: 'Payable', paid: 'Paid', void: 'Cancelled' }
 const fmt = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' }) : '—')
 const naira = (n: number | string | null | undefined) => '₦' + Number(n || 0).toLocaleString()
 const SERVICE: Record<string, string> = { verification: 'Property verification', remote: 'Remote inspection' }
@@ -87,18 +90,19 @@ export default function InspectionPayoutsPage() {
     if (ok) { setBAmount({ ...bAmount, [kind]: '' }); setBSource({ ...bSource, [kind]: '' }) }
   }
 
-  if (loading) return <Loader2 className="animate-spin text-muted-foreground m-6" aria-label="Loading" />
+  if (loading) return <div className="mx-auto max-w-3xl px-4"><LoadingState label="Loading payouts..." /></div>
   const f = data?.finance
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2"><Wallet size={20} /> Inspector payouts</h1>
-        <p className="text-sm text-muted-foreground">
-          Inspectors are paid for valid completed work, not for a PASS. You pay by hand, then record the payment here. Property verification and remote inspections keep separate budgets.
-        </p>
-      </div>
-      {msg && <div role={msg.ok ? 'status' : 'alert'} className={`text-sm rounded-lg border px-3 py-2 ${msg.ok ? 'border-border bg-secondary' : 'border-destructive/40 text-destructive'}`}>{msg.text}</div>}
+      <AdminPageHeader
+        title="Inspector payouts"
+        description="Inspectors are paid for valid completed work, not for a PASS. You pay by hand, then record the payment here. Property verification and remote inspections keep separate budgets."
+      />
+      {msg && (msg.ok
+        ? <div role="status" className="rounded-lg border border-border bg-secondary px-3 py-2 text-sm">{msg.text}</div>
+        : <ErrorState message={msg.text} onRetry={!data ? load : undefined} />)}
+      {!data && !msg && <ErrorState message="Could not load payouts." onRetry={load} />}
 
       {f && (['verification', 'remote'] as const).map((k) => {
         const b = f[k]
@@ -108,8 +112,8 @@ export default function InspectionPayoutsPage() {
             <p className="font-semibold">{SERVICE[k]} budget</p>
             <p>Allocated {naira(b.allocated)} · paid out {naira(b.spent)} · <b>{k === 'remote' ? 'free after reservations' : 'left'} {naira(left)}</b></p>
             <div className="grid grid-cols-2 gap-2">
-              <input className={field} inputMode="decimal" placeholder="Amount to add" value={bAmount[k]} onChange={(e) => setBAmount({ ...bAmount, [k]: e.target.value })} />
-              <input className={field} maxLength={300} placeholder="Where the money comes from" value={bSource[k]} onChange={(e) => setBSource({ ...bSource, [k]: e.target.value })} />
+              <input className={field} inputMode="decimal" aria-label="Amount to add to the budget" placeholder="Amount to add" value={bAmount[k]} onChange={(e) => setBAmount({ ...bAmount, [k]: e.target.value })} />
+              <input className={field} maxLength={300} aria-label="Where the money comes from" placeholder="Where the money comes from" value={bSource[k]} onChange={(e) => setBSource({ ...bSource, [k]: e.target.value })} />
             </div>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => addBudget(k)}>Add to budget</Button>
           </div>
@@ -118,18 +122,18 @@ export default function InspectionPayoutsPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold text-sm">Completed work waiting for a payout ({data?.ready.length ?? 0})</h2>
-        {data?.ready.length === 0 && <p className="text-sm text-muted-foreground">Nothing is waiting.</p>}
+        {data?.ready.length === 0 && <EmptyState title="Nothing is waiting" text="Completed inspections that need a payout will appear here." />}
         {data?.ready.map((r) => {
           const a = amounts[r.job_id] ?? { amount: r.suggested_amount ? String(r.suggested_amount) : '', transport: '' }
           return (
             <div key={r.job_id} className="bg-card border border-border rounded-lg p-3 text-sm space-y-2">
               <p className="font-semibold">{r.title ?? 'Property'} <span className="text-xs font-normal text-muted-foreground">{r.ref ?? SERVICE[r.service_type]}</span></p>
               <p className="text-xs text-muted-foreground">{SERVICE[r.service_type]} · inspector {r.inspector_name ?? '—'} · verdict {(r.verdict ?? '').toUpperCase()} · done {fmt(r.done_at)}</p>
-              {r.involved ? <p className="text-xs text-amber-800">You are part of this work, so another administrator must approve its payout.</p> : (
+              {r.involved ? <p className="text-xs text-warning">You are part of this work, so another administrator must approve its payout.</p> : (
                 <>
                   <div className="grid grid-cols-2 gap-2">
-                    <input className={field} inputMode="decimal" placeholder="Inspection amount (₦)" value={a.amount} onChange={(e) => setAmounts({ ...amounts, [r.job_id]: { ...a, amount: e.target.value } })} />
-                    <input className={field} inputMode="decimal" placeholder="Transport (₦, optional)" value={a.transport} onChange={(e) => setAmounts({ ...amounts, [r.job_id]: { ...a, transport: e.target.value } })} />
+                    <input className={field} inputMode="decimal" aria-label="Inspection amount in naira" placeholder="Inspection amount (₦)" value={a.amount} onChange={(e) => setAmounts({ ...amounts, [r.job_id]: { ...a, amount: e.target.value } })} />
+                    <input className={field} inputMode="decimal" aria-label="Transport amount in naira, optional" placeholder="Transport (₦, optional)" value={a.transport} onChange={(e) => setAmounts({ ...amounts, [r.job_id]: { ...a, transport: e.target.value } })} />
                   </div>
                   <Button size="sm" disabled={busy} onClick={() => approve(r)}>Approve payout</Button>
                 </>
@@ -141,12 +145,12 @@ export default function InspectionPayoutsPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold text-sm">Payout records</h2>
-        {data?.payouts.length === 0 && <p className="text-sm text-muted-foreground">No payouts yet.</p>}
+        {data?.payouts.length === 0 && <EmptyState title="No payouts yet" />}
         {data?.payouts.map((p) => (
           <div key={p.id} className="bg-card border border-border rounded-lg p-3 text-sm space-y-2">
-            <p className="font-semibold">{naira(p.total_amount)} <span className="text-xs font-normal text-muted-foreground">({naira(p.amount)} + {naira(p.transport_amount)} transport)</span></p>
+            <p className="flex flex-wrap items-center gap-2 font-semibold">{naira(p.total_amount)} <span className="text-xs font-normal text-muted-foreground">({naira(p.amount)} + {naira(p.transport_amount)} transport)</span> <StatusChip state={PAYOUT_STATE[p.status] ?? 'neutral'}>{PAYOUT_LABEL[p.status] ?? p.status}</StatusChip></p>
             <p className="text-xs text-muted-foreground">
-              {SERVICE[p.service_type]} · {p.inspector_name ?? '—'} · {p.title ?? ''} {p.ref ?? ''} · {p.status.toUpperCase()}
+              {SERVICE[p.service_type]} · {p.inspector_name ?? '—'} · {p.title ?? ''} {p.ref ?? ''}
               {p.status === 'paid' ? ` · ${p.method} · ref ${p.reference} · ${fmt(p.paid_at)}` : ` · approved ${fmt(p.approved_at)}`}
               {p.status === 'void' && p.void_reason ? ` · ${p.void_reason}` : ''}
             </p>
@@ -154,16 +158,16 @@ export default function InspectionPayoutsPage() {
               <div className="space-y-2">
                 {payId === p.id ? (
                   <div className="space-y-2">
-                    <select className={field} value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>
+                    <select aria-label="Payment method" className={field} value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>
                       {METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
-                    <input className={field} maxLength={100} placeholder="Payment reference (required)" value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })} />
-                    <input className={field} maxLength={200} placeholder="Account or number paid to (optional)" value={pay.destination} onChange={(e) => setPay({ ...pay, destination: e.target.value })} />
+                    <input className={field} maxLength={100} aria-label="Payment reference" placeholder="Payment reference (required)" value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })} />
+                    <input className={field} maxLength={200} aria-label="Account or number paid to, optional" placeholder="Account or number paid to (optional)" value={pay.destination} onChange={(e) => setPay({ ...pay, destination: e.target.value })} />
                     <Button size="sm" disabled={busy} onClick={() => markPaid(p.id)}>Record payment</Button>
                   </div>
                 ) : voidId === p.id ? (
                   <div className="space-y-2">
-                    <input className={field} maxLength={300} placeholder="Why cancel this payout? (required)" value={reason} onChange={(e) => setReason(e.target.value)} />
+                    <input className={field} maxLength={300} aria-label="Reason for cancelling this payout" placeholder="Why cancel this payout? (required)" value={reason} onChange={(e) => setReason(e.target.value)} />
                     <Button size="sm" variant="outline" className="text-destructive border-destructive" disabled={busy} onClick={() => voidPayout(p.id)}>Confirm cancel</Button>
                   </div>
                 ) : (
