@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { AdminPageHeader, EmptyState, ErrorState, LoadingState } from '@/components/admin-ui'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { Loader2, ClipboardCheck, AlertTriangle } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { friendlyError } from '@/lib/remote-inspection'
 
 const field = 'w-full px-3 py-2 rounded-lg border border-border bg-background text-sm'
@@ -41,16 +42,13 @@ export default function RemoteInspectionReviewsPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck size={20} /> Remote inspection reviews</h1>
-        <p className="text-sm text-muted-foreground">Check the evidence, then release the report to the tenant, ask for another visit, or reject it. Landlords never see the report. Nothing here publishes anything or gives a badge.</p>
-      </div>
-      {msg && <div role={msg.ok ? 'status' : 'alert'} className={`text-sm rounded-lg border px-3 py-2 ${msg.ok ? 'border-border bg-secondary' : 'border-destructive/40 text-destructive'}`}>{msg.text}</div>}
-      {loading && <Loader2 className="animate-spin text-muted-foreground" />}
-      {!loading && rows.length === 0 && <p className="text-sm text-muted-foreground">Nothing is waiting for review.</p>}
+      <AdminPageHeader title="Remote inspection reviews" description="Check the evidence, then release the report to the tenant, ask for another visit, or reject it. Landlords never see the report. Nothing here publishes anything or gives a badge." />
+      {msg && (msg.ok ? <div role="status" className="rounded-lg border border-border bg-secondary px-3 py-2 text-sm">{msg.text}</div> : <ErrorState message={msg.text} />)}
+      {loading && <LoadingState label="Loading reviews..." />}
+      {!loading && rows.length === 0 && <EmptyState title="Nothing is waiting for review" />}
       {rows.map((r) => (
         <div key={r.id} className="bg-card border border-border rounded-lg p-3 text-sm space-y-2">
-          <button type="button" className="w-full text-left min-h-11" onClick={() => setOpenId(openId === r.id ? null : r.id)}>
+          <button type="button" className="focus-ring w-full text-left min-h-11" onClick={() => setOpenId(openId === r.id ? null : r.id)}>
             <p className="font-semibold">{r.title ?? 'Property'} <span className="text-xs font-normal text-muted-foreground">{r.ref}</span></p>
             <p className="text-xs text-muted-foreground">{r.location_text}</p>
             <p className="text-xs">
@@ -58,7 +56,7 @@ export default function RemoteInspectionReviewsPage() {
               {r.extra_requested ? ' · waiting for extra evidence' : ''}
             </p>
           </button>
-          {r.involved && <p className="text-xs text-amber-800">You are part of this request, so another administrator must review it.</p>}
+          {r.involved && <p className="text-xs text-warning">You are part of this request, so another administrator must review it.</p>}
           {openId === r.id && !r.involved && (
             <Review id={r.id} onFlash={(text, ok) => setMsg({ text, ok })} onDecided={() => { setOpenId(null); void load() }} />
           )}
@@ -116,7 +114,7 @@ function Review({ id, onFlash, onDecided }: { id: string; onFlash: (t: string, o
     }), decision === 'released' ? 'Report released to the tenant.' : decision === 'reinspect' ? 'Sent back for another visit.' : 'Submission rejected.', true)
   }
 
-  if (!d) return <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 size={14} className="animate-spin" /> Loading…</p>
+  if (!d) return <LoadingState label="Loading..." />
   const i = d.inspection
   const blockers: string[] = d.blockers ?? []
   const facts: [string, string | null][] = [
@@ -141,7 +139,7 @@ function Review({ id, onFlash, onDecided }: { id: string; onFlash: (t: string, o
         {d.files.map((f: any) => (
           <li key={f.id} className="rounded-lg border border-border p-2 space-y-1.5 text-xs">
             <p><b>{f.kind === 'video' ? 'Video' : 'Photo'}</b> {f.name ?? 'file'} · {mb(f.bytes)} · {f.capture_method} · {f.review_status}{f.phase === 'supplement' ? ' · extra evidence' : ''}</p>
-            {f.duplicates > 0 && <p className="text-amber-800 font-semibold flex items-center gap-1"><AlertTriangle size={13} /> Identical to a file in {f.duplicates} other inspection(s). This can have an innocent cause. Compare before deciding.</p>}
+            {f.duplicates > 0 && <p className="text-warning font-semibold flex items-center gap-1"><AlertTriangle size={13} /> Identical to a file in {f.duplicates} other inspection(s). This can have an innocent cause. Compare before deciding.</p>}
             {f.review_note && <p>Note: {f.review_note}</p>}
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="outline" disabled={busy} onClick={() => open(f.id)}>Open (recorded)</Button>
@@ -151,7 +149,7 @@ function Review({ id, onFlash, onDecided }: { id: string; onFlash: (t: string, o
             {!f.opened_by_me && f.review_status !== 'accepted' && <p className="text-muted-foreground">Open the file first. Accept unlocks after you have opened it.</p>}
             {rejecting === f.id && (
               <div className="space-y-2">
-                <input className={field} maxLength={500} placeholder="Reason (required)" value={fileNote[f.id] ?? ''} onChange={(e) => setFileNote({ ...fileNote, [f.id]: e.target.value })} />
+                <input className={field} maxLength={500} aria-label="Reason" placeholder="Reason (required)" value={fileNote[f.id] ?? ''} onChange={(e) => setFileNote({ ...fileNote, [f.id]: e.target.value })} />
                 <Button size="sm" disabled={busy} onClick={() => reviewFile(f.id, 'rejected')}>Confirm reject</Button>
               </div>
             )}
@@ -160,17 +158,17 @@ function Review({ id, onFlash, onDecided }: { id: string; onFlash: (t: string, o
       </ul>
 
       {d.extra ? (
-        <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 space-y-1">
+        <div className="rounded border border-warning/30 bg-warning-soft p-2 text-xs text-warning space-y-1">
           <p className="font-semibold">Waiting for extra evidence (asked {fmt(d.extra.requested_at)})</p>
           <p>{d.extra.reason}</p>
-          <button className="min-h-11 font-semibold underline" disabled={busy}
+          <button className="focus-ring min-h-11 font-semibold underline" disabled={busy}
             onClick={() => { const r = window.prompt('Why cancel this request? (5+ characters)'); if (r) void run(() => supabase.rpc('admin_cancel_inspection_supplement', { p_request: d.extra.id, p_reason: r }), 'Request cancelled.') }}>
             Cancel request
           </button>
         </div>
       ) : (
         <div className="space-y-2">
-          <input className={field} maxLength={1000} placeholder="Ask the inspector for more evidence: what is needed? (10+ characters)" value={extra} onChange={(e) => setExtra(e.target.value)} />
+          <input className={field} maxLength={1000} aria-label="Ask the inspector for more evidence: what is needed? (10+ characters)" placeholder="Ask the inspector for more evidence: what is needed? (10+ characters)" value={extra} onChange={(e) => setExtra(e.target.value)} />
           <Button size="sm" variant="outline" disabled={busy || extra.trim().length < 10}
             onClick={async () => { if (await run(() => supabase.rpc('admin_request_inspection_supplement', { p_inspection: i.id, p_reason: extra.trim() }), 'Request sent. The report stays under review.')) setExtra('') }}>
             Request more evidence
@@ -180,13 +178,13 @@ function Review({ id, onFlash, onDecided }: { id: string; onFlash: (t: string, o
 
       <div className="space-y-2 pt-2 border-t border-border">
         {blockers.length > 0 && (
-          <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          <div role="alert" className="rounded border border-warning/30 bg-warning-soft p-2 text-xs text-warning">
             <p className="font-semibold">Not ready to release:</p>
             <ul className="list-disc pl-4">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
           </div>
         )}
-        <input className={field} maxLength={500} placeholder="Message to the tenant with the report (optional, they will read it)" value={tenantNote} onChange={(e) => setTenantNote(e.target.value)} />
-        <input className={field} maxLength={500} placeholder="Internal note. Required for another visit or reject. The tenant and landlord never see it." value={note} onChange={(e) => setNote(e.target.value)} />
+        <input className={field} maxLength={500} aria-label="Message to the tenant with the report (optional, they will read it)" placeholder="Message to the tenant with the report (optional, they will read it)" value={tenantNote} onChange={(e) => setTenantNote(e.target.value)} />
+        <input className={field} maxLength={500} aria-label="Internal note. Required for another visit or reject. The tenant and landlord never see it." placeholder="Internal note. Required for another visit or reject. The tenant and landlord never see it." value={note} onChange={(e) => setNote(e.target.value)} />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" disabled={busy || blockers.length > 0} onClick={() => decide('released')}>Release report to tenant</Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => decide('reinspect')}>Another visit</Button>
@@ -196,4 +194,4 @@ function Review({ id, onFlash, onDecided }: { id: string; onFlash: (t: string, o
       </div>
     </div>
   )
-        }
+}
