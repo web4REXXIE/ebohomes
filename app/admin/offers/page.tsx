@@ -317,10 +317,10 @@ export default function AdminOffersPage() {
                   <span className="text-xs text-muted-foreground">{a.case_ref ?? ''}</span>
                 </div>
                 <dl className="grid grid-cols-2 gap-3 rounded-lg bg-secondary/60 p-3 sm:grid-cols-4">
-                  <div className="min-w-0"><dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Tenant</dt><dd className="truncate font-medium">{names[a.tenant_id] ?? '—'}</dd></div>
-                  <div className="min-w-0"><dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Landlord</dt><dd className="truncate font-medium">{names[a.landlord_id] ?? '—'}</dd></div>
-                  <div><dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Listed rent</dt><dd className="font-medium">{l?.price_monthly != null ? `${naira(l.price_monthly)} / month` : '—'}</dd></div>
-                  <div><dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Tenant ready</dt><dd className="font-medium">{a.tenant_interest_at ? fmtDate(a.tenant_interest_at) : 'Not yet'}</dd></div>
+                  <div className="min-w-0"><dt className="text-xs uppercase tracking-wide text-muted-foreground">Tenant</dt><dd className="truncate font-medium">{names[a.tenant_id] ?? '—'}</dd></div>
+                  <div className="min-w-0"><dt className="text-xs uppercase tracking-wide text-muted-foreground">Landlord</dt><dd className="truncate font-medium">{names[a.landlord_id] ?? '—'}</dd></div>
+                  <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">Listed rent</dt><dd className="font-medium">{l?.price_monthly != null ? `${naira(l.price_monthly)} / month` : '—'}</dd></div>
+                  <div><dt className="text-xs uppercase tracking-wide text-muted-foreground">Tenant ready</dt><dd className="font-medium">{a.tenant_interest_at ? fmtDate(a.tenant_interest_at) : 'Not yet'}</dd></div>
                 </dl>
 
                 {live && (
@@ -499,4 +499,4 @@ export default function AdminOffersPage() {
       )}
     </div>
   )
-        }
+                    }
