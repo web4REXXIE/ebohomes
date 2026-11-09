@@ -24,6 +24,7 @@ export default function PropertyReviewPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [ownershipDocUrl, setOwnershipDocUrl] = useState('')
   const [rejectReason, setRejectReason] = useState('')
+  const [actionError, setActionError] = useState('')
   const [updating, setUpdating] = useState(false)
   const [flags, setFlags] = useState<any[]>([])
   const [risk, setRisk] = useState<any>(null)
@@ -107,6 +108,7 @@ export default function PropertyReviewPage() {
   useEffect(() => {
     setFlags([])
     setRisk(null)
+    setActionError('')
     if (selected?.id) loadFlags(selected.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id])
@@ -125,6 +127,7 @@ export default function PropertyReviewPage() {
     action: 'approve' | 'reject' | 'suspend' | 'reinstate',
     reason: string | null
   ): Promise<string | null> => {
+    setActionError('')
     setUpdating(true)
     const { data, error } = await supabase.rpc('admin_review_listing', {
       p_listing: listing.id,
@@ -134,7 +137,7 @@ export default function PropertyReviewPage() {
     })
     setUpdating(false)
     if (error) {
-      alert(`Could not ${action} this listing: ${error.message}`)
+      setActionError(`Could not ${action} this listing: ${error.message}`)
       if (error.code === '40001') fetchListings()
       return null
     }
@@ -165,7 +168,7 @@ export default function PropertyReviewPage() {
   const handleReject = async (id: string) => {
     const reason = rejectReason.trim()
     if (reason.length < 5) {
-      alert('Please enter a rejection reason (at least 5 characters).')
+      setActionError('Please enter a rejection reason (at least 5 characters).')
       return
     }
     const l = listings.find((x) => x.id === id)
@@ -175,7 +178,7 @@ export default function PropertyReviewPage() {
   const handleSuspend = async (id: string) => {
     const reason = suspendReason.trim()
     if (reason.length < 5) {
-      alert('Enter the reason for suspending this listing (at least 5 characters).')
+      setActionError('Enter the reason for suspending this listing (at least 5 characters).')
       return
     }
     const l = listings.find((x) => x.id === id)
@@ -249,7 +252,7 @@ export default function PropertyReviewPage() {
                     {isAuthorityReviewed(l.authority_status) && <ShieldCheck size={13} className="text-emerald-600 shrink-0" aria-label="Authority reviewed" />}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">{l.location_text}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Submitted {l.created_at ? new Date(l.created_at).toLocaleDateString() : ''}
                   </p>
                 </div>
@@ -431,6 +434,12 @@ export default function PropertyReviewPage() {
                 {!canApprove && selected.status !== 'approved' && (
                   <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
                     Approval is blocked until the property authority is accepted. Review it on the Listing Authority page.
+                  </p>
+                )}
+
+                {actionError && (
+                  <p role="alert" className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">
+                    {actionError}
                   </p>
                 )}
 
