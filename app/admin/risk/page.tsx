@@ -9,6 +9,7 @@ import {
   needsAttention, sortAlerts, isActive, friendlyRiskError, totalScore,
   type RiskCategory, type RiskSeverity, type RiskStatus,
 } from '@/lib/risk-alerts'
+import { useConfirm } from '@/components/confirm-dialog'
 
 const field = 'w-full min-h-11 rounded-lg border border-border bg-input px-3 py-2 text-base'
 const btn = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold disabled:opacity-50'
@@ -308,6 +309,7 @@ const SETTING_FIELDS: { k: string; label: string; help: string; min: number; max
 ]
 
 function Settings() {
+  const { confirm, dialog } = useConfirm()
   const [vals, setVals] = useState<Record<string, string> | null>(null)
   const [tol, setTol] = useState<number | null>(null)
   const [reason, setReason] = useState('')
@@ -337,7 +339,7 @@ function Settings() {
   }
 
   const scanExisting = async () => {
-    if (!window.confirm('Check all existing listings for matches? This only creates alerts. It changes no listing, account or application.')) return
+    if (!(await confirm({ title: 'Check all listings?', message: 'Check all existing listings for matches? This only creates alerts. It changes no listing, account or application.', confirmLabel: 'Start check' }))) return
     setBusy(true); setMsg(null)
     let offset = 0, scanned = 0, raised = 0
     for (;;) {
@@ -376,6 +378,7 @@ function Settings() {
         {scan && <p className="mt-1 text-xs">{scan}</p>}
         <button disabled={busy} onClick={scanExisting} className={`${btn} mt-2 border-border bg-card`}>Check existing listings</button>
       </div>
+      {dialog}
     </div>
   )
 }
