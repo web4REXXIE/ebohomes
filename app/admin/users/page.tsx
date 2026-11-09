@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fmtDate, fmtDateTime } from '@/lib/case-status'
+import { useConfirm } from '@/components/confirm-dialog'
 
 type Profile = {
   id: string
@@ -50,6 +51,7 @@ function Pill({ tone, children }: { tone: string; children: React.ReactNode }) {
 }
 
 export default function ManageUsersPage() {
+  const { confirm, dialog } = useConfirm()
   const [users, setUsers] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -136,7 +138,7 @@ export default function ManageUsersPage() {
     const name = user.full_name ?? 'this user'
     if (newStatus !== 'active') {
       const verb = newStatus === 'banned' ? 'Ban' : 'Suspend'
-      if (!window.confirm(`${verb} ${name}? You can reactivate them later.`)) return
+      if (!(await confirm({ title: `${verb} this user?`, message: `${verb} ${name}? You can reactivate them later.`, confirmLabel: verb, destructive: true }))) return
     }
     setBusyId(user.id)
     setNotice(null)
@@ -462,6 +464,7 @@ export default function ManageUsersPage() {
           </>
         )}
       </div>
+      {dialog}
     </div>
   )
                                                                         }
