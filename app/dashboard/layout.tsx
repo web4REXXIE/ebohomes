@@ -13,6 +13,7 @@ import {
   User,
   HelpCircle,
   Star,
+  Bell,
   ShieldCheck,
   BadgeCheck,
   Building2,
@@ -63,6 +64,7 @@ const NAV_GROUPS: AccountNavGroup[] = [
   {
     title: 'Account',
     items: [
+      { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
       { label: 'Profile', href: '/dashboard/profile', icon: User },
       { label: 'Help & Support', href: '/contact', icon: HelpCircle },
     ],
@@ -176,6 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       identity={{ name: displayName, roleLabel: 'Landlord', fallbackInitial: displayName[0]?.toUpperCase() ?? 'L' }}
       badges={{
         messages: { count: unreadMessages, label: (n) => `${n} unread ${n === 1 ? 'message' : 'messages'}` },
+        notifications: { count: unreadNotifs, label: (n) => `${n} unread ${n === 1 ? 'notification' : 'notifications'}` },
         applications: {
           count: pendingApplications,
           label: (n) => `${n} ${n === 1 ? 'application' : 'applications'} without your recommendation`,
