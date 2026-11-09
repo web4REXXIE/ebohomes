@@ -10,7 +10,9 @@ const trust = readFileSync('components/property-trust.tsx', 'utf8')
 
 // Stage 2 fix stays: the layout only adds metadata and renders its children. The page holds the listing.
 assert.ok(!/^['"]use client['"]/m.test(layout), 'layout must stay a server component (metadata)')
-assert.ok(/return <>\{children\}<\/>/.test(layout), 'layout must render its children only')
+// Stage 19a: the layout may also add one JSON-LD script for an approved listing, and nothing else.
+assert.ok(/\{children\}/.test(layout) && !/<(div|main|section|header|footer)\b/.test(layout), 'layout must render its children and no extra markup')
+assert.ok((layout.match(/<script\b/g) ?? []).length === 1 && /application\/ld\+json/.test(layout), 'layout adds exactly one JSON-LD script')
 assert.ok(/export default function ListingDetailPage/.test(page), 'page.tsx holds the listing page')
 assert.ok(!/generateMetadata/.test(page), 'metadata lives in the layout, not the client page')
 
