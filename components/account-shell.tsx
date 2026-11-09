@@ -50,6 +50,9 @@ export function AccountShell({
   unreadNotifs,
   sidebarPromo,
   navFooter,
+  logoHref = '/',
+  tagline = 'Find Homes. Skip the Stress.',
+  mobileHeaderAction,
   children,
 }: {
   groups: AccountNavGroup[]
@@ -61,6 +64,12 @@ export function AccountShell({
   unreadNotifs: number
   sidebarPromo?: ReactNode
   navFooter?: ReactNode
+  // Where the logo goes. Defaults to the public home page.
+  logoHref?: string
+  // Line under the sidebar logo. Pass null for none.
+  tagline?: string | null
+  // Replaces the notifications bell in the phone header (for example a log-out button).
+  mobileHeaderAction?: ReactNode
   children: ReactNode
 }) {
   const pathname = usePathname()
@@ -182,10 +191,10 @@ export function AccountShell({
       {/* Sidebar (large screens) */}
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-border bg-card lg:flex">
         <div className="border-b border-border p-5">
-          <Link href="/" aria-label="EboHomes home" className="focus-ring inline-flex rounded-chip">
+          <Link href={logoHref} aria-label="EboHomes home" className="focus-ring inline-flex rounded-chip">
             <Logo className="h-9" />
           </Link>
-          <p className="mt-2 text-xs text-muted-foreground">Find Homes. Skip the Stress.</p>
+          {tagline && <p className="mt-2 text-xs text-muted-foreground">{tagline}</p>}
         </div>
 
         {renderNav()}
@@ -218,18 +227,20 @@ export function AccountShell({
           <Link href={mobileHomeHref} aria-label="EboHomes" className="focus-ring inline-flex rounded-chip">
             <Logo className="h-7" />
           </Link>
-          <Link
-            href="/notifications"
-            aria-label={unreadNotifs > 0 ? `Notifications, ${unreadNotifs} unread` : 'Notifications'}
-            className="focus-ring relative flex h-11 w-11 items-center justify-center rounded-full bg-secondary"
-          >
-            <Bell size={18} aria-hidden />
-            {unreadNotifs > 0 && (
-              <span aria-hidden className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-bold text-primary-foreground">
-                {countText(unreadNotifs)}
-              </span>
-            )}
-          </Link>
+          {mobileHeaderAction ?? (
+            <Link
+              href="/notifications"
+              aria-label={unreadNotifs > 0 ? `Notifications, ${unreadNotifs} unread` : 'Notifications'}
+              className="focus-ring relative flex h-11 w-11 items-center justify-center rounded-full bg-secondary"
+            >
+              <Bell size={18} aria-hidden />
+              {unreadNotifs > 0 && (
+                <span aria-hidden className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-bold text-primary-foreground">
+                  {countText(unreadNotifs)}
+                </span>
+              )}
+            </Link>
+          )}
         </header>
 
         {mobileNavOpen && (
