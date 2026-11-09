@@ -6,6 +6,7 @@ import { Loader2, FileText, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { AUTHORITY_DOC_TYPES, AUTHORITY_ROLES, authorityStatusInfo } from '@/lib/listing-authority'
 import { friendlyAuthorityError } from '@/lib/authority-evidence'
+import { useConfirm } from '@/components/confirm-dialog'
 
 const field = 'w-full min-h-11 rounded-lg border border-border bg-input px-3 py-2 text-base'
 const btn = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold disabled:opacity-50'
@@ -89,6 +90,7 @@ function Queue() {
 }
 
 function Detail({ id, onBack }: { id: string; onBack: () => void }) {
+  const { confirm, dialog } = useConfirm()
   const [d, setD] = useState<any>(null)
   const [err, setErr] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -145,7 +147,7 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   async function decide(decision: 'accepted' | 'rejected' | 'needs_evidence' | 'on_hold') {
-    if (!window.confirm(`Record decision: ${decision.replace('_', ' ')}?`)) return
+    if (!(await confirm({ title: 'Record decision?', message: `Record decision: ${decision.replace('_', ' ')}?`, confirmLabel: 'Record decision', destructive: decision === 'rejected' }))) return
     setBusy(true); setErr(null); setMsg(null)
     const { error } = await supabase.rpc('admin_decide_listing_authority', {
       p_listing: id, p_decision: decision, p_message: message || null, p_internal_note: internal || null,
@@ -271,12 +273,14 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
         {reviews.length === 0 ? <p>No decisions yet.</p> : reviews.map((r: any, i: number) => (
           <p key={i}>{when(r.decided_at)}: {r.decision}{r.reason_code ? ` (${r.reason_code})` : ''}{r.internal_note ? ` - ${r.internal_note}` : ''}</p>))}
       </section>
+      {dialog}
     </div>
   )
 }
 
 // ---------------- Legacy transition ----------------
 function Legacy() {
+  const { confirm, dialog } = useConfirm()
   const [settings, setSettings] = useState<any>(null)
   const [pv, setPv] = useState<any>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -295,7 +299,7 @@ function Legacy() {
   useEffect(() => { load() }, [load])
 
   async function start() {
-    if (!window.confirm(`Start the transition? Every live listing gets ${settings?.transition_days ?? 30} days, and every lister is notified. This can only be done once.`)) return
+    if (!(await confirm({ title: 'Start the transition?', message: `Start the transition? Every live listing gets ${settings?.transition_days ?? 30} days, and every lister is notified. This can only be done once.`, confirmLabel: 'Start transition' }))) return
     setBusy(true); setErr(null); setMsg(null)
     const { data, error } = await supabase.rpc('admin_authority_start_transition')
     setBusy(false)
@@ -305,7 +309,7 @@ function Legacy() {
 
   async function run() {
     if (!pv || pv.eligible_count === 0) return
-    if (!window.confirm(`Unpublish ${pv.eligible_count} listing(s)? Each lister is notified. Active applications and tenancies are never touched.`)) return
+    if (!(await confirm({ title: 'Unpublish listings?', message: `Unpublish ${pv.eligible_count} listing(s)? Each lister is notified. Active applications and tenancies are never touched.`, confirmLabel: 'Unpublish', destructive: true }))) return
     setBusy(true); setErr(null); setMsg(null)
     const { data, error } = await supabase.rpc('admin_authority_run_batch', { p_expected_hash: pv.preview_hash, p_expected_count: pv.eligible_count, p_note: note || null })
     setBusy(false)
@@ -343,6 +347,7 @@ function Legacy() {
               <button className={`${btn} border-red-400 bg-white text-red-900`} disabled={busy} onClick={run}>Unpublish {pv.eligible_count} listing(s)</button>
             </div>)}
         </>)}
+      {dialog}
     </div>
   )
 }
