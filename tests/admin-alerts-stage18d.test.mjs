@@ -1,3 +1,4 @@
+
 // Stage 18d guard rails: admin review pages show errors inline, and decisions still go through the same database functions.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -18,7 +19,8 @@ assert.match(vl, /p_reason: decision === 'reject' \? reason : null/)
 assert.match(pr, /rpc\('admin_review_listing'/)
 assert.match(pr, /p_expected_status: listing\.status \?\? 'pending'/)
 assert.match(pr, /error\.code === '40001'/)
-assert.match(pr, /window\.confirm\('Reinstate this listing/)
+assert.match(pr, /await confirm\(\{ title: 'Reinstate listing\?', message: 'Reinstate this listing/)
+assert.doesNotMatch(pr, /window\.confirm\(/)
 assert.match(pr, /reason\.length < 5/)
 
 console.log('admin-alerts-stage18d: ok')
