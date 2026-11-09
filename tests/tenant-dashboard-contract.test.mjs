@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-const layout = readFileSync('app/home/layout.tsx', 'utf8')
+const layout = readFileSync('components/tenant-account-shell.tsx', 'utf8')
 // Stage 17: the menu now lives in the shared shell.
 const shell = readFileSync('components/account-shell.tsx', 'utf8')
 const layoutAndShell = layout + shell
