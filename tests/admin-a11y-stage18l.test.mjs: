@@ -1,0 +1,58 @@
+// Stage 18l guard rails: admin accessibility and dark mode, so they do not regress.
+// Reads source only. No browser, no network.
+import assert from 'node:assert/strict'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+function pages(dir) {
+  return readdirSync(dir).flatMap((n) => {
+    const p = join(dir, n)
+    return statSync(p).isDirectory() ? pages(p) : n === 'page.tsx' ? [p] : []
+  })
+}
+// End of a JSX tag, skipping {...} so that arrow functions do not end it early.
+function tagEnd(s, start) {
+  let depth = 0
+  for (let i = start; i < s.length; i++) {
+    const c = s[i]
+    if (c === '{') depth++
+    else if (c === '}') depth--
+    else if (c === '>' && depth === 0 && s[i - 1] !== '=') return i
+  }
+  return -1
+}
+
+// One visible keyboard focus state for every interactive element comes from the global stylesheet.
+const css = readFileSync('app/globals.css', 'utf8')
+assert.match(css, /:where\(a, button, input, select, textarea, summary, \[tabindex\]\):focus-visible\s*\{\s*outline: 2px solid var\(--ring\)/)
+
+const files = pages('app/admin')
+assert.ok(files.length >= 30, 'admin pages found')
+
+for (const file of files) {
+  const src = readFileSync(file, 'utf8')
+
+  // Nothing removes the focus outline without drawing a replacement.
+  for (const m of src.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)) {
+    const cls = m[1] ?? m[2]
+    if (/\boutline-none\b/.test(cls)) assert.match(cls, /focus(-visible)?:(ring|outline|border)/, `${file}: outline removed without a replacement`)
+  }
+
+  // Every field has a name: a wrapping label, an id for a label, or an aria-label.
+  for (const m of src.matchAll(/<(input|textarea|select)\b/g)) {
+    const tag = src.slice(m.index, tagEnd(src, m.index) + 1)
+    if (/type="hidden"/.test(tag)) continue
+    const before = src.slice(0, m.index)
+    const wrapped = before.lastIndexOf('<label') > before.lastIndexOf('</label>')
+    assert.ok(wrapped || /aria-label|aria-labelledby|\bid=/.test(tag), `${file}: unlabelled field: ${tag.slice(0, 70).replace(/\s+/g, ' ')}`)
+  }
+
+  // Dark mode: status colours come from tokens, never from fixed palette colours.
+  assert.doesNotMatch(src, /\b(?:amber|emerald|red|sky|slate|green|blue|yellow|orange|rose|gray|purple)-\d{2,3}\b/, `${file}: fixed colour`)
+  assert.doesNotMatch(src, /text-\[(9|10|11)px\]/, `${file}: text under 12px`)
+
+  // No browser confirm() or alert() pop-ups. (Two pages still use window.prompt to ask for a cancel reason: see the handover.)
+  assert.doesNotMatch(src, /window\.confirm\(|(?:^|[;{(\s])(?:window\.)?alert\(\s*[`'"]/m, `${file}: browser pop-up`)
+}
+
+console.log('admin-a11y-stage18l: ok')
