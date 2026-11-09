@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fmtDateTime } from '@/lib/case-status'
+import { useConfirm } from '@/components/confirm-dialog'
 
 type Failure = { id: string; tenancy_id: string; error_message: string; attempts: number; last_error_at: string }
 type Ten = { id: string; listing_id: string; status: string }
@@ -16,6 +17,7 @@ export default function AdminFinalizationPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const { confirm, dialog } = useConfirm()
 
   const load = useCallback(async () => {
     const { data, error: e } = await supabase
@@ -49,7 +51,7 @@ export default function AdminFinalizationPage() {
 
   async function retry(r: Failure) {
     if (busy) return
-    if (!window.confirm('Retry marking this property as rented?')) return
+    if (!(await confirm({ title: 'Retry finalization?', message: 'Retry marking this property as rented?', confirmLabel: 'Retry' }))) return
     setBusy(r.id)
     setError(null)
     setNotice(null)
@@ -75,6 +77,7 @@ export default function AdminFinalizationPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 md:p-6">
+      {dialog}
       <h1 className="mb-1 text-2xl font-bold text-foreground">Rental finalization</h1>
       <p className="mb-4 text-sm text-muted-foreground">
         A payment was verified but the property could not be marked rented. The payment is safe. Fix the cause shown, then retry.
