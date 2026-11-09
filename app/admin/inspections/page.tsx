@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { ClipboardCheck, Search, UserPlus, Loader2, AlertTriangle } from 'lucide-react'
+import { Search, UserPlus, AlertTriangle } from 'lucide-react'
 import { useConfirm } from '@/components/confirm-dialog'
+import { AdminPageHeader, LoadingState } from '@/components/admin-ui'
 
 const REASONS = [
   { v: 'new_property', l: 'New property' },
@@ -159,7 +160,7 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
   const methodLabel = (m: string) =>
     m === 'camera' ? 'Camera button (reported by the device, not proof)' : m === 'gallery' ? 'Gallery upload' : 'Source unknown'
   const statusTone = (s: string) =>
-    s === 'accepted' ? 'bg-emerald-100 text-emerald-800' : s === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+    s === 'accepted' ? 'bg-success-soft text-success' : s === 'rejected' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'
 
   return (
     <div className="bg-card border border-border rounded-lg text-sm">
@@ -168,18 +169,18 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
           <p className="font-semibold truncate">{i.listing?.title ?? 'Listing'}</p>
           <p className="text-xs text-muted-foreground">{i.listing?.location_text} · {when(i.inspected_at)}</p>
           <div className="flex flex-wrap gap-1 mt-1">
-            {!hashed && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">Legacy inspection — no file integrity hashes</span>}
-            {i.gps_flag === 'outside' && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">GPS far from pin</span>}
+            {!hashed && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-secondary text-foreground">Legacy inspection — no file integrity hashes</span>}
+            {i.gps_flag === 'outside' && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-warning-soft text-warning">GPS far from pin</span>}
           </div>
         </div>
         <span className={`text-xs font-bold uppercase px-2 py-1 rounded-full h-fit shrink-0 ${
-          i.verdict === 'pass' ? 'bg-emerald-100 text-emerald-700' : i.verdict === 'fail' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+          i.verdict === 'pass' ? 'bg-success-soft text-success' : i.verdict === 'fail' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'
         }`}>{i.verdict ?? 'legacy'}</span>
       </button>
 
       {open && (
         <div className="border-t border-border p-4 space-y-3">
-          {own && <p role="alert" className="text-xs rounded border border-amber-400 bg-amber-50 p-2 text-amber-900">You submitted this inspection, so someone else must review it.</p>}
+          {own && <p role="alert" className="text-xs rounded border border-warning/30 bg-warning-soft p-2 text-warning">You submitted this inspection, so someone else must review it.</p>}
           {i.verdict_reason && <p><span className="text-muted-foreground">Reason:</span> {i.verdict_reason}</p>}
           <p className="text-xs text-muted-foreground">Inspector: {nameOf(i.inspected_by)}</p>
 
@@ -190,7 +191,7 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
                 <p>Reported position: {Number(i.gps_lat).toFixed(5)}, {Number(i.gps_lng).toFixed(5)}{i.gps_accuracy_m != null ? ` · accuracy about ${Math.round(i.gps_accuracy_m)} m` : ''}</p>
                 {i.gps_flag === 'no_pin' && <p>The listing has no map pin, so the distance cannot be compared.</p>}
                 {i.gps_flag === 'within' && <p>{Math.round(i.gps_distance_m)} m from the listing pin (limit {i.gps_threshold_m} m).</p>}
-                {i.gps_flag === 'outside' && <p className="text-amber-800 font-semibold flex items-center gap-1"><AlertTriangle size={13} /> {Math.round(i.gps_distance_m)} m from the listing pin (limit {i.gps_threshold_m} m).</p>}
+                {i.gps_flag === 'outside' && <p className="text-warning font-semibold flex items-center gap-1"><AlertTriangle size={13} /> {Math.round(i.gps_distance_m)} m from the listing pin (limit {i.gps_threshold_m} m).</p>}
                 {!i.gps_flag && <p>Older inspection: no distance was calculated.</p>}
                 {i.gps_fix_at && <p>Device fix time: {when(i.gps_fix_at)} (device clock, not trusted)</p>}
               </>
@@ -207,9 +208,9 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
           )}
 
           {publicFields.length > 0 && (
-            <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs space-y-0.5">
-              <p className="font-semibold text-emerald-900">Published once this inspection has a public summary:</p>
-              {publicFields.map(([key, label]) => <p key={key}><span className="text-emerald-800">{label}:</span> {i[key]}</p>)}
+            <div className="rounded border border-success/30 bg-success-soft px-3 py-2 text-xs space-y-0.5">
+              <p className="font-semibold text-success">Published once this inspection has a public summary:</p>
+              {publicFields.map(([key, label]) => <p key={key}><span className="text-success">{label}:</span> {i[key]}</p>)}
             </div>
           )}
 
@@ -221,7 +222,7 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
                 <p className="text-xs text-muted-foreground">Legacy inspection — no file integrity hashes. These files cannot be reviewed one by one and their opening is not recorded.</p>
                 {(i.evidence_paths ?? []).length > 0 && (
                   <>
-                    <button onClick={showLegacy} className="min-h-11 text-xs text-primary font-medium hover:underline">View {i.evidence_paths.length} evidence file(s)</button>
+                    <button onClick={showLegacy} className="focus-ring min-h-11 text-xs text-primary font-medium hover:underline">View {i.evidence_paths.length} evidence file(s)</button>
                     <div className="flex flex-wrap gap-2">
                       {legacyUrls.map((u, idx) => <a key={idx} href={u} target="_blank" rel="noreferrer" className="text-xs border border-border rounded px-2 py-1 hover:bg-secondary">File {idx + 1}</a>)}
                     </div>
@@ -229,7 +230,7 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
                 )}
               </div>
             ) : !d ? (
-              <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 size={14} className="animate-spin" /> Loading…</p>
+              <LoadingState label="Loading..." />
             ) : d.files.length === 0 ? (
               <p className="text-xs text-muted-foreground">No files on record.</p>
             ) : (
@@ -244,11 +245,11 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
                         <b>{f.kind === 'video' ? 'Video' : 'Photo'}</b>
                         <span className="truncate max-w-[10rem]">{f.original_name ?? 'file'}</span>
                         <span className="text-muted-foreground">{mb(f.size_bytes)}</span>
-                        {f.phase === 'supplement' && <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold">Extra evidence</span>}
+                        {f.phase === 'supplement' && <span className="px-2 py-0.5 rounded-full bg-info-soft text-info font-semibold">Extra evidence</span>}
                         <span className={`px-2 py-0.5 rounded-full font-semibold ${statusTone(f.review_status)}`}>{f.review_status}</span>
                       </div>
                       <p className="text-muted-foreground">{methodLabel(f.capture_method)} · received {when(f.uploaded_at)} · fingerprint {String(f.sha256).slice(0, 12)}…</p>
-                      {dup > 0 && <p className="text-amber-800 font-semibold flex items-center gap-1"><AlertTriangle size={13} /> Identical to a file in {dup} other inspection(s). This can have an innocent cause. Compare before deciding.</p>}
+                      {dup > 0 && <p className="text-warning font-semibold flex items-center gap-1"><AlertTriangle size={13} /> Identical to a file in {dup} other inspection(s). This can have an innocent cause. Compare before deciding.</p>}
                       {f.review_note && <p>Note: {f.review_note}</p>}
                       {!own && (
                         <div className="flex flex-wrap gap-2">
@@ -260,7 +261,7 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
                       {canReview && !opened && f.review_status !== 'accepted' && <p className="text-muted-foreground">Open the file first. Accept unlocks after you have opened it.</p>}
                       {rejecting === f.id && (
                         <div className="space-y-2">
-                          <input className={field} maxLength={500} placeholder="Reason (required)" value={fileNote[f.id] ?? ''} onChange={(e) => setFileNote({ ...fileNote, [f.id]: e.target.value })} />
+                          <input className={field} maxLength={500} aria-label="Reason" placeholder="Reason (required)" value={fileNote[f.id] ?? ''} onChange={(e) => setFileNote({ ...fileNote, [f.id]: e.target.value })} />
                           <Button size="sm" disabled={busy} onClick={() => reviewFile(f.id, 'rejected')}>Confirm reject</Button>
                         </div>
                       )}
@@ -273,11 +274,11 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
 
           {/* Extra evidence */}
           {d && openRequest && (
-            <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 space-y-1">
+            <div className="rounded border border-warning/30 bg-warning-soft p-2 text-xs text-warning space-y-1">
               <p className="font-semibold">Waiting for extra evidence (asked {when(openRequest.requested_at)})</p>
               <p>{openRequest.reason}</p>
               {i.review_status === 'submitted' && !own && (
-                <button className="min-h-11 font-semibold underline" disabled={busy}
+                <button className="focus-ring min-h-11 font-semibold underline" disabled={busy}
                   onClick={() => { const r = window.prompt('Why cancel this request? (5+ characters)'); if (r) void run(() => supabase.rpc('admin_cancel_inspection_supplement', { p_request: openRequest.id, p_reason: r }), 'Request cancelled.') }}>
                   Cancel request
                 </button>
@@ -286,7 +287,7 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
           )}
           {d && hashed && i.review_status === 'submitted' && !own && !openRequest && i.job_id && (
             <div className="space-y-2">
-              <input className={field} maxLength={1000} placeholder="Ask the inspector for more evidence: what is needed? (10+ characters)" value={suppReason} onChange={(e) => setSuppReason(e.target.value)} />
+              <input className={field} maxLength={1000} aria-label="Ask the inspector for more evidence: what is needed? (10+ characters)" placeholder="Ask the inspector for more evidence: what is needed? (10+ characters)" value={suppReason} onChange={(e) => setSuppReason(e.target.value)} />
               <Button size="sm" variant="outline" disabled={busy || suppReason.trim().length < 10}
                 onClick={async () => { if (await run(() => supabase.rpc('admin_request_inspection_supplement', { p_inspection: i.id, p_reason: suppReason.trim() }), 'Request sent. The inspection stays under review.')) setSuppReason('') }}>
                 Request more evidence
@@ -298,14 +299,14 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
           {i.review_status === 'submitted' && !own && (
             <div className="space-y-2 pt-2 border-t border-border">
               {d && blockers.length > 0 && (
-                <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                <div role="alert" className="rounded border border-warning/30 bg-warning-soft p-2 text-xs text-warning">
                   <p className="font-semibold">Before you can approve:</p>
                   <ul className="list-disc pl-5">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
                 </div>
               )}
               {needsSecond && (
                 <div className="space-y-2">
-                  <input className={field} maxLength={1000} placeholder="No second inspector available? Record why (10+ characters)" value={waive} onChange={(e) => setWaive(e.target.value)} />
+                  <input className={field} maxLength={1000} aria-label="No second inspector available? Record why (10+ characters)" placeholder="No second inspector available? Record why (10+ characters)" value={waive} onChange={(e) => setWaive(e.target.value)} />
                   <Button size="sm" variant="outline" disabled={busy || waive.trim().length < 10}
                     onClick={async () => { if (await run(() => supabase.rpc('admin_waive_second_inspector', { p_inspection: i.id, p_reason: waive.trim() }), 'Waiver recorded.')) setWaive('') }}>
                     Record waiver
@@ -321,7 +322,7 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
               <div className="flex flex-wrap gap-2">
                 {i.verdict === 'pass'
                   ? <Button disabled={busy || (!!d && blockers.length > 0)} onClick={() => decide('approved')}>Approve</Button>
-                  : <p className="w-full text-xs text-amber-700">This inspection is not a PASS, so it cannot be approved. You can reject it or ask for another inspection.</p>}
+                  : <p className="w-full text-xs text-warning">This inspection is not a PASS, so it cannot be approved. You can reject it or ask for another inspection.</p>}
                 <Button variant="outline" disabled={busy} onClick={() => decide('reinspect')}>Another inspection</Button>
                 <Button variant="outline" className="text-destructive border-destructive" disabled={busy} onClick={() => decide('rejected')}>Reject</Button>
               </div>
@@ -514,23 +515,19 @@ export default function AdminInspectionsPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-      <h1 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2">
-        <ClipboardCheck size={22} /> Inspections
-      </h1>
-      <p className="text-sm text-muted-foreground mb-1">
-        Inspectors submit evidence. A different reviewer approves it. Inspectors are paid for completing an inspection, never for passing a property.
-      </p>
-      <p className="text-xs text-amber-700 mb-4">
+      <AdminPageHeader title="Inspections" description="Inspectors submit evidence. A different reviewer approves it. Inspectors are paid for completing an inspection, never for passing a property." />
+      <p className="text-xs text-warning mb-4">
         A physical inspection does not prove ownership, authority to rent, rental terms or availability. GPS and camera details are warning signs for you, never proof. Never describe them that way.
       </p>
 
-      {msg && <div className="mb-4 text-sm rounded-lg border border-border bg-secondary px-3 py-2">{msg}</div>}
+      {msg && <div role="status" className="mb-4 text-sm rounded-lg border border-border bg-secondary px-3 py-2">{msg}</div>}
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 overflow-x-auto" role="group" aria-label="Inspection views">
         {(['jobs', 'review', 'inspectors'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
+            aria-pressed={tab === t}
             className={`px-4 min-h-11 rounded-lg text-sm font-semibold capitalize ${
               tab === t ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground'
             }`}
@@ -550,12 +547,13 @@ export default function AdminInspectionsPage() {
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && search()}
                 placeholder="Search listing by title or location"
+                aria-label="Search listing by title or location"
                 className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm"
               />
               <Button onClick={search} aria-label="Search"><Search size={16} /></Button>
             </div>
             <div className="flex flex-wrap items-center gap-3 mb-2 text-sm">
-              <select value={reason} onChange={(e) => setReason(e.target.value)} className="px-2 py-1.5 rounded-lg border border-border bg-background">
+              <select value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason for the inspection" className="px-2 py-1.5 rounded-lg border border-border bg-background">
                 {REASONS.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
               </select>
               <label className="flex items-center gap-1.5">
@@ -590,6 +588,7 @@ export default function AdminInspectionsPage() {
                       <select
                         value={j.inspector_id ?? ''}
                         onChange={(e) => assign(j.id, e.target.value)}
+                        aria-label="Assign inspector"
                         className="px-2 py-1 rounded-lg border border-border bg-background text-xs"
                       >
                         <option value="">Assign inspector…</option>
@@ -636,16 +635,16 @@ export default function AdminInspectionsPage() {
             <p className="text-xs text-muted-foreground">
               Current: {threshold ?? '—'} m. A submission further than this from the listing pin is flagged for the reviewer. It is never blocked and never proves anyone was at the property. Allowed: 20 to 5000 m. Changes are recorded with your reason.
             </p>
-            <input value={thInput} onChange={(e) => setThInput(e.target.value)} inputMode="numeric" placeholder="New distance in metres" className={field} />
-            <input value={thReason} onChange={(e) => setThReason(e.target.value)} placeholder="Reason (required)" className={field} />
+            <input value={thInput} onChange={(e) => setThInput(e.target.value)} inputMode="numeric" aria-label="New distance in metres" placeholder="New distance in metres" className={field} />
+            <input value={thReason} onChange={(e) => setThReason(e.target.value)} aria-label="Reason for the change" placeholder="Reason (required)" className={field} />
             <Button variant="outline" onClick={saveThreshold} disabled={!thInput || !thReason.trim()}>Update distance</Button>
           </div>
 
           <div className="bg-card border border-border rounded-lg p-4 space-y-2">
             <p className="text-sm font-semibold flex items-center gap-2"><UserPlus size={15} /> Add an inspector</p>
             <p className="text-xs text-muted-foreground">They must already have an EboHomes account. Use the email they signed up with.</p>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className={field} />
-            <input value={areas} onChange={(e) => setAreas(e.target.value)} placeholder="Assigned areas, e.g. Abakaliki" className={field} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Inspector email" placeholder="Email" className={field} />
+            <input value={areas} onChange={(e) => setAreas(e.target.value)} aria-label="Assigned areas" placeholder="Assigned areas, e.g. Abakaliki" className={field} />
             <Button onClick={addInspector}>Add inspector</Button>
           </div>
           <div className="space-y-2">
@@ -666,4 +665,4 @@ export default function AdminInspectionsPage() {
       {dialog}
     </div>
   )
-  }
+      }
