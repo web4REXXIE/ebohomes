@@ -53,6 +53,7 @@ export default function VerifyLandlordsPage() {
   const [idUrl, setIdUrl] = useState('')
   const [selfieSignedUrl, setSelfieSignedUrl] = useState('')
   const [rejectReason, setRejectReason] = useState('')
+  const [actionError, setActionError] = useState('')
 
   const fetchLandlords = useCallback(async () => {
     setLoading(true)
@@ -96,6 +97,7 @@ export default function VerifyLandlordsPage() {
 
   useEffect(() => {
     setRejectReason('')
+    setActionError('')
     const loadDocUrl = async () => {
       setDocUrl('')
       if (!selected?.ownership_doc_url) return
@@ -133,14 +135,15 @@ export default function VerifyLandlordsPage() {
   }
 
   async function decide(id: string, decision: 'verify' | 'reject') {
+    setActionError('')
     const target = landlords.find((l) => l.id === id)
     if (!target || missingItems(target).length > 0) {
-      alert('This landlord has not submitted every required item.')
+      setActionError('This landlord has not submitted every required item.')
       return
     }
     const reason = rejectReason.trim()
     if (decision === 'reject' && !reason) {
-      alert('Please enter a rejection reason before rejecting.')
+      setActionError('Please enter a rejection reason before rejecting.')
       return
     }
     setUpdating(true)
@@ -151,7 +154,7 @@ export default function VerifyLandlordsPage() {
       p_reason: decision === 'reject' ? reason : null,
     })
     if (error) {
-      alert((decision === 'verify' ? 'Failed to verify: ' : 'Failed to reject: ') + error.message)
+      setActionError((decision === 'verify' ? 'Failed to verify: ' : 'Failed to reject: ') + error.message)
       setUpdating(false)
       return
     }
@@ -248,7 +251,7 @@ export default function VerifyLandlordsPage() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{l.full_name ?? 'Unnamed landlord'}</p>
                   <p className="text-xs text-muted-foreground truncate">{l.business_name ?? l.phone ?? ''}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Joined {new Date(l.created_at).toLocaleDateString()}
                   </p>
                 </div>
@@ -392,6 +395,11 @@ export default function VerifyLandlordsPage() {
                       className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
                     />
                   </label>
+                  {actionError && (
+                    <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">
+                      {actionError}
+                    </p>
+                  )}
                   <div className="flex flex-col sm:flex-row gap-3">
                     <button
                       onClick={() => handleVerify(selected.id)}
