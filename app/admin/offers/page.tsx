@@ -16,6 +16,7 @@ import {
   todayIso,
   validateOfferInput,
 } from '@/lib/rental-offer'
+import { useConfirm } from '@/components/confirm-dialog'
 
 type App = {
   id: string
@@ -96,6 +97,7 @@ function seedForm(o: Offer | null, l: Listing | undefined, app: App): Form {
 }
 
 export default function AdminOffersPage() {
+  const { confirm, dialog } = useConfirm()
   const [apps, setApps] = useState<App[]>([])
   const [offers, setOffers] = useState<Offer[]>([])
   const [listings, setListings] = useState<Record<string, Listing>>({})
@@ -198,7 +200,7 @@ export default function AdminOffersPage() {
       setError(Object.values(v.errors)[0])
       return
     }
-    if (!window.confirm('Send this offer? It replaces any open offer for this application.')) return
+    if (!(await confirm({ title: 'Send this offer?', message: 'Send this offer? It replaces any open offer for this application.', confirmLabel: 'Send offer' }))) return
     setBusyId(app.id)
     setError(null)
     setNotice(null)
@@ -235,7 +237,7 @@ export default function AdminOffersPage() {
       setError('Write a clear reason for withdrawing (at least 10 characters).')
       return
     }
-    if (!window.confirm('Withdraw this offer?')) return
+    if (!(await confirm({ title: 'Withdraw this offer?', message: 'Withdraw this offer?', confirmLabel: 'Withdraw offer', destructive: true }))) return
     setBusyId(app.id)
     setError(null)
     setNotice(null)
@@ -497,6 +499,7 @@ export default function AdminOffersPage() {
           })}
         </div>
       )}
+      {dialog}
     </div>
   )
                     }
