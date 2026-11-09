@@ -313,3 +313,49 @@ export default function AdminCasesPage() {
                     <div>
                       <dt className="text-xs uppercase tracking-wide text-muted-foreground">Deposit held</dt>
                       <dd className="font-bold text-foreground">{naira(r.deposit_held)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-muted-foreground">Deductions</dt>
+                      <dd className="font-bold text-foreground">{naira(r.deductions)}</dd>
+                    </div>
+                  </dl>
+                  {r.deduction_reason && <p className="bg-secondary rounded-md p-2 text-xs">{r.deduction_reason}</p>}
+                  {r.tenant_note && <p className="text-xs"><span className="font-semibold">Tenant:</span> {r.tenant_note}</p>}
+                  {r.refund_reference && <p className="text-xs">Landlord says paid: {r.refund_reference} on {fmtDate(r.refund_paid_on)}</p>}
+                  {['agreed', 'disputed'].includes(r.status) && (
+                    <div className="space-y-2">
+                      <input
+                        aria-label="Note (required to send back)"
+                        className={inp}
+                        placeholder="Note (required to send back)"
+                        value={f[r.id] ?? ''}
+                        onChange={(e) => set(r.id, e.target.value)}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        {r.status === 'agreed' && <button disabled={busy} className={btn} onClick={() => call('admin_review_settlement', { p_settlement: r.id, p_action: 'approve', p_note: f[r.id] ?? null }, 'Settlement approved.', 'Approve this settlement record? No money moves through EboHomes.')}>Approve record</button>}
+                        <button disabled={busy} className={btn2} onClick={() => call('admin_review_settlement', { p_settlement: r.id, p_action: 'reopen', p_note: f[r.id] ?? '' }, 'Sent back to the landlord.')}>Send back</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {tab === 'renewals' && (
+                <>
+                  <div className="flex justify-between gap-2">
+                    <p className="font-semibold text-foreground">{code(r)} · new rent {naira(r.new_rent)}</p>
+                    <Pill status={applied.has(r.id) ? 'applied' : r.status} text={applied.has(r.id) ? 'Applied' : label(r.status)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Until {fmtDate(r.new_end_date)} · offered {fmtDate(r.created_at)}</p>
+                  {r.status === 'accepted' && !applied.has(r.id) && (
+                    <button disabled={busy} className={btn} onClick={() => call('admin_apply_renewal', { p_renewal: r.id }, 'Renewal applied to the tenancy.', 'Update the tenancy rent and end date to match this accepted renewal?')}>Apply to tenancy</button>
+                  )}
+                </>
+              )}
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
