@@ -12,6 +12,7 @@ import {
   type CaseStatus, type Overview, type RangePreset,
 } from '@/lib/trust-ops'
 import { SEVERITY_INFO, CATEGORY_INFO, type RiskSeverity, type RiskCategory } from '@/lib/risk-alerts'
+import { useConfirm } from '@/components/confirm-dialog'
 
 const field = 'w-full min-h-11 rounded-lg border border-border bg-input px-3 py-2 text-base'
 const btn = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold disabled:opacity-50'
@@ -574,6 +575,7 @@ function ReportsTab() {
 
 // ---------------------------------------------------------------- who decides what + permissions
 function RulesTab({ access, onChanged }: { access: Access | null; onChanged: () => void }) {
+  const { confirm, dialog } = useConfirm()
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null)
@@ -581,7 +583,7 @@ function RulesTab({ access, onChanged }: { access: Access | null; onChanged: () 
   const toggle = async () => {
     if (!access) return
     const next = !access.enforced
-    if (!window.confirm(next ? 'Turn the role requirement ON? Only reviewers and super admins will be able to work on investigation cases.' : 'Turn the role requirement OFF? Every administrator will be able to work on investigation cases again.')) return
+    if (!(await confirm({ title: next ? 'Turn role requirement on?' : 'Turn role requirement off?', message: next ? 'Turn the role requirement ON? Only reviewers and super admins will be able to work on investigation cases.' : 'Turn the role requirement OFF? Every administrator will be able to work on investigation cases again.', confirmLabel: next ? 'Turn on' : 'Turn off' }))) return
     setBusy(true); setMsg(null)
     const { error } = await supabase.rpc('admin_trust_set_enforcement', { p_on: next, p_reason: reason.trim() })
     setBusy(false)
@@ -626,6 +628,7 @@ function RulesTab({ access, onChanged }: { access: Access | null; onChanged: () 
           </>
         )}
       </section>
+      {dialog}
     </div>
   )
         }
