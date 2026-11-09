@@ -9,6 +9,7 @@ import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { ApplicantFacts } from '@/components/application-ui'
 import { ApplicationDocuments } from '@/components/application-documents'
 import { fmtDate } from '@/lib/case-status'
+import { useConfirm } from '@/components/confirm-dialog'
 
 type App = {
   id: string
@@ -155,6 +156,7 @@ function CorrectPanel({
   onDone: (msg: string) => void
   onError: (msg: string) => void
 }) {
+  const { confirm, dialog } = useConfirm()
   const options = CORRECTIONS[app.status] ?? []
   const [target, setTarget] = useState(options[0]?.[0] ?? '')
   const [reason, setReason] = useState('')
@@ -168,7 +170,7 @@ function CorrectPanel({
       onError(`Write a clear reason for the correction (at least ${MIN_REASON} characters).`)
       return
     }
-    if (!window.confirm('Correct this decision? The reason is recorded in the history.')) return
+    if (!(await confirm({ title: 'Correct this decision?', message: 'Correct this decision? The reason is recorded in the history.', confirmLabel: 'Correct decision' }))) return
     setBusy(true)
     const { error } = await supabase.rpc('eb_admin_override_application', {
       p_application: app.id,
@@ -224,11 +226,13 @@ function CorrectPanel({
           {busy && <Loader2 size={14} className="animate-spin" aria-hidden />} Save correction
         </button>
       </div>
+      {dialog}
     </details>
   )
 }
 
 export default function AdminApplicationsPage() {
+  const { confirm, dialog } = useConfirm()
   const [apps, setApps] = useState<App[]>([])
   const [names, setNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
@@ -286,7 +290,7 @@ export default function AdminApplicationsPage() {
         : action === 'reject'
           ? 'Decline this application? The tenant will be told.'
           : 'Send this question to the tenant?'
-    if (!window.confirm(confirmText)) return
+    if (!(await confirm({ title: action === 'approve' ? 'Approve application?' : action === 'reject' ? 'Decline application?' : 'Send question?', message: confirmText, confirmLabel: action === 'approve' ? 'Approve' : action === 'reject' ? 'Decline' : 'Send question', destructive: action === 'reject' }))) return
 
     setBusyId(app.id)
     setError(null)
@@ -516,6 +520,7 @@ export default function AdminApplicationsPage() {
           })}
         </div>
       )}
+      {dialog}
     </div>
   )
                           }
