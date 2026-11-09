@@ -1,3 +1,5 @@
+import { noindexHeaderRules } from './lib/private-routes.mjs'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
@@ -17,6 +19,8 @@ const nextConfig = {
           { key: 'Service-Worker-Allowed', value: '/' },
         ],
       },
+      // Stage 19a: private and signed-in pages are kept out of search results. See lib/private-routes.mjs.
+      ...noindexHeaderRules(),
     ]
   },
 }
