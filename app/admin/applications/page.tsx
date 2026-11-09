@@ -473,4 +473,49 @@ export default function AdminApplicationsPage() {
                         <button
                           onClick={() => decide(a, 'approve')}
                           disabled={busyId !== null}
-                          className={`${btnBase} bg-primary text-primary-f
+                          className={`${btnBase} bg-primary text-primary-foreground`}
+                        >
+                          {busyId === a.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <CheckCircle2 size={14} aria-hidden />} Approve
+                        </button>
+                      )}
+                      {a.status === 'pending' && (
+                        <button
+                          onClick={() => decide(a, 'request_info')}
+                          disabled={busyId !== null}
+                          className={`${btnBase} border border-border`}
+                        >
+                          <HelpCircle size={14} aria-hidden /> Ask tenant a question
+                        </button>
+                      )}
+                      <button
+                        onClick={() => decide(a, 'reject')}
+                        disabled={busyId !== null}
+                        className={`${btnBase} border border-red-300 text-red-800`}
+                      >
+                        <XCircle size={14} aria-hidden /> Decline
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <CorrectPanel
+                  key={`${a.id}-${a.status}`}
+                  app={a}
+                  onError={(m) => {
+                    setNotice(null)
+                    setError(m)
+                  }}
+                  onDone={async (m) => {
+                    setError(null)
+                    setNotice(m)
+                    await load()
+                  }}
+                />
+              </section>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+                          }
