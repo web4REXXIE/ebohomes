@@ -9,7 +9,7 @@ async function load(path) {
   return import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'))
 }
 
-const tenant = readFileSync('app/home/layout.tsx', 'utf8')
+const tenant = readFileSync('components/tenant-account-shell.tsx', 'utf8')
 const landlord = readFileSync('app/dashboard/layout.tsx', 'utf8')
 const shell = readFileSync('components/account-shell.tsx', 'utf8')
 const links = await load('lib/dashboard-links.ts')
@@ -48,7 +48,7 @@ const tenantHrefs = hrefs(tenant)
 const landlordHrefs = hrefs(landlord)
 assert.ok(tenantHrefs.every((h) => !h.startsWith('/dashboard')), 'tenant menu has no landlord pages')
 assert.ok(!landlordHrefs.includes('/home') && !landlordHrefs.includes('/saved'), 'landlord menu has no tenant pages')
-assert.equal(landlordHrefs.length, 15, 'landlord menu still has its 15 destinations')
+assert.equal(landlordHrefs.length, 16, 'landlord menu has its 15 destinations plus Notifications')
 assert.equal(tenantHrefs.length, 11, 'tenant menu still has its 11 destinations')
 
 // Drift guard: every link in the shared list (header drop-down and bottom bar) is in that role's menu.
