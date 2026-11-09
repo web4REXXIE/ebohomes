@@ -67,7 +67,7 @@ export default function EditListingPage() {
 
       const { data, error } = await supabase
         .from('listings')
-        .select('id, location_text, property_type, bedrooms, price_monthly, description, availability_date')
+        .select('id, location_text, property_type, bedrooms, price_monthly, description, availability_date, contact_info')
         .eq('id', id)
         .eq('landlord_id', user.id)
         .single();
@@ -91,7 +91,9 @@ export default function EditListingPage() {
         bedrooms: data.bedrooms ? String(data.bedrooms) : '',
         monthlyRent: data.price_monthly ? String(data.price_monthly) : '',
         description: data.description || '',
-        phoneNumber: contactRow?.contact_info ?? '',
+        // listing_contacts is not created by any migration in this repo, so it may be empty or missing.
+        // The create page and this page both save the number to listings.contact_info, so fall back to it.
+        phoneNumber: contactRow?.contact_info ?? data.contact_info ?? '',
         availabilityDate: data.availability_date || '',
       });
 
