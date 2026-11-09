@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getPaymentState, PAYMENT_STATE_LABEL, type PaymentState } from '@/lib/payment-status'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
+import { useConfirm } from '@/components/confirm-dialog'
 
 type Payment = {
   id: string
@@ -64,6 +65,7 @@ function friendlyError(err: { message?: string; code?: string }): string {
 }
 
 export default function AdminPaymentsPage() {
+  const { confirm, dialog } = useConfirm()
   const [access, setAccess] = useState<'checking' | 'ok' | 'denied'>('checking')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -192,9 +194,9 @@ export default function AdminPaymentsPage() {
     await loadPayments()
   }
 
-  const onVerify = (p: Payment) => {
+  const onVerify = async (p: Payment) => {
     if (busyRef.current) return
-    if (!window.confirm(`Verify this ${money(p.amount)} payment? Only do this after checking the money was really paid.`)) return
+    if (!(await confirm({ title: 'Verify this payment?', message: `Verify this ${money(p.amount)} payment? Only do this after checking the money was really paid.`, confirmLabel: 'Verify payment' }))) return
     review(p.id, 'confirmed', null)
   }
 
@@ -419,6 +421,7 @@ export default function AdminPaymentsPage() {
           })}
         </div>
       )}
+      {dialog}
     </div>
   )
 }
