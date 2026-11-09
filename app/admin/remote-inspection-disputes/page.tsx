@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { AdminPageHeader, EmptyState, ErrorState, LoadingState } from '@/components/admin-ui'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { Loader2, Scale } from 'lucide-react'
 import { friendlyError } from '@/lib/remote-inspection'
 
 const field = 'w-full px-3 py-2 rounded-lg border border-border bg-background text-sm'
@@ -55,13 +55,10 @@ export default function RemoteInspectionDisputesPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2"><Scale size={20} /> Remote report disputes</h1>
-        <p className="text-sm text-muted-foreground">Decide whether a released report stands, needs another visit, or is withdrawn. Nothing is charged to a tenant. A payout still waiting is cancelled if the report does not stand.</p>
-      </div>
-      {msg && <div role={msg.ok ? 'status' : 'alert'} className={`text-sm rounded-lg border px-3 py-2 ${msg.ok ? 'border-border bg-secondary' : 'border-destructive/40 text-destructive'}`}>{msg.text}</div>}
-      {loading && <Loader2 className="animate-spin text-muted-foreground" aria-label="Loading" />}
-      {!loading && rows.length === 0 && <p className="text-sm text-muted-foreground">No open disputes.</p>}
+      <AdminPageHeader title="Remote report disputes" description="Decide whether a released report stands, needs another visit, or is withdrawn. Nothing is charged to a tenant. A payout still waiting is cancelled if the report does not stand." />
+      {msg && (msg.ok ? <div role="status" className="rounded-lg border border-border bg-secondary px-3 py-2 text-sm">{msg.text}</div> : <ErrorState message={msg.text} />)}
+      {loading && <LoadingState label="Loading disputes..." />}
+      {!loading && rows.length === 0 && <EmptyState title="No open disputes" />}
 
       {rows.map((r) => (
         <div key={r.id} className="bg-card border border-border rounded-lg p-3 text-sm space-y-2">
@@ -71,10 +68,10 @@ export default function RemoteInspectionDisputesPage() {
             {r.payout_status ? ` · payout ${r.payout_status}` : ''}
           </p>
           <p>{r.reason}</p>
-          {r.involved ? <p className="text-xs text-amber-800">You are part of this request, so another administrator must decide.</p> : (
+          {r.involved ? <p className="text-xs text-warning">You are part of this request, so another administrator must decide.</p> : (
             <div className="space-y-2 border-t border-border pt-2">
-              <input className={field} maxLength={500} placeholder="Internal reason (required). The tenant never sees it." value={note[r.id] ?? ''} onChange={(e) => setNote({ ...note, [r.id]: e.target.value })} />
-              <input className={field} maxLength={500} placeholder="Message to the tenant (optional)" value={tell[r.id] ?? ''} onChange={(e) => setTell({ ...tell, [r.id]: e.target.value })} />
+              <input className={field} maxLength={500} aria-label="Internal reason. The tenant never sees it." placeholder="Internal reason (required). The tenant never sees it." value={note[r.id] ?? ''} onChange={(e) => setNote({ ...note, [r.id]: e.target.value })} />
+              <input className={field} maxLength={500} aria-label="Message to the tenant" placeholder="Message to the tenant (optional)" value={tell[r.id] ?? ''} onChange={(e) => setTell({ ...tell, [r.id]: e.target.value })} />
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" disabled={busy} onClick={() => resolve(r, 'report_stands')}>Report stands</Button>
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => resolve(r, 'another_visit')}>Another visit</Button>
@@ -88,8 +85,8 @@ export default function RemoteInspectionDisputesPage() {
       <div className="bg-card border border-border rounded-lg p-3 text-sm space-y-2">
         <p className="font-semibold">Open a dispute yourself</p>
         <p className="text-xs text-muted-foreground">For example, suspected fake evidence or a complaint received elsewhere. The tenant is not told that you opened it.</p>
-        <input className={field} placeholder="Request reference, for example EBO-RI-000123" value={raiseRef} onChange={(e) => setRaiseRef(e.target.value)} />
-        <input className={field} maxLength={1000} placeholder="Reason (10+ characters)" value={raiseReason} onChange={(e) => setRaiseReason(e.target.value)} />
+        <input className={field} aria-label="Request reference, for example EBO-RI-000123" placeholder="Request reference, for example EBO-RI-000123" value={raiseRef} onChange={(e) => setRaiseRef(e.target.value)} />
+        <input className={field} maxLength={1000} aria-label="Reason (10+ characters)" placeholder="Reason (10+ characters)" value={raiseReason} onChange={(e) => setRaiseReason(e.target.value)} />
         <Button size="sm" variant="outline" disabled={busy || raiseReason.trim().length < 10} onClick={raise}>Open dispute</Button>
       </div>
     </div>
