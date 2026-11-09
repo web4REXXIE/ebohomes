@@ -3,16 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, AlertTriangle, FileText, Upload, ShieldCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { AdminPageHeader, EmptyState, ErrorState, LoadingState, StatusChip, type AdminState } from '@/components/admin-ui'
+import { Pagination, SearchBox, usePaged } from '@/components/list-controls'
 import { ADMIN_STATUS_LABEL, PROOF_ACCEPT, PROOF_BUCKET, validatePaid, validatePrepare, validateProofMeta, type PayoutStatus } from '@/lib/payout'
 
 const naira = (n: number | string | null) => (n == null ? 'n/a' : '\u20A6' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 }))
 const when = (s?: string | null) => (s ? new Date(s).toLocaleString('en-NG') : 'n/a')
 const field = 'w-full min-h-11 rounded-lg border border-border bg-input px-3 py-2 text-base'
 const FILTERS = [{ key: 'candidates', label: 'Ready to prepare' }, { key: 'progress', label: 'In progress' }, { key: 'done', label: 'Paid' }]
-const tone: Record<string, string> = {
-  pending: 'border-amber-300 bg-amber-50 text-amber-900', approved: 'border-sky-300 bg-sky-50 text-sky-900',
-  paid: 'border-emerald-300 bg-emerald-50 text-emerald-900', confirmed: 'border-emerald-300 bg-emerald-50 text-emerald-900',
-  disputed: 'border-red-300 bg-red-50 text-red-900', cancelled: 'border-slate-300 bg-slate-100 text-slate-700',
+// One fixed state per payout status. The chip always shows the status as text with an icon.
+const STATE: Record<string, AdminState> = {
+  pending: 'pending', approved: 'info', paid: 'success', confirmed: 'success', disputed: 'danger', cancelled: 'neutral',
 }
 
 async function api(path: string, init?: RequestInit) {
@@ -27,6 +28,7 @@ export default function AdminPayouts() {
   const [items, setItems] = useState<any[] | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [q, setQ] = useState('')
 
   const load = useCallback(async () => {
     setItems(null); setErr(null)
@@ -36,37 +38,45 @@ export default function AdminPayouts() {
   }, [filter])
   useEffect(() => { load() }, [load])
 
+  // Search only narrows what is shown. The full list is still loaded.
+  const needle = q.trim().toLowerCase()
+  const shown = (items ?? []).filter((x) =>
+    !needle || [x.landlord_name, x.tenancy_code, x.tenant_name, x.payout_code].some((v) => String(v ?? '').toLowerCase().includes(needle)))
+  const paged = usePaged(shown, 25)
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <h1 className="text-xl font-bold text-foreground">Landlord payouts</h1>
-      <p className="rounded-lg bg-secondary p-3 text-xs text-muted-foreground">One admin prepares, a different admin approves. Mark a payout paid only after you have sent the transfer and uploaded the bank proof.</p>
-      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist">
+      <AdminPageHeader title="Landlord payouts" description="One admin prepares, a different admin approves. Mark a payout paid only after you have sent the transfer and uploaded the bank proof." />
+      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Payout stage">
         {FILTERS.map((f) => (
-          <button key={f.key} role="tab" aria-selected={filter === f.key} onClick={() => { setFilter(f.key); setOpenId(null) }}
-            className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${filter === f.key ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card'}`}>{f.label}</button>))}
+          <button key={f.key} role="tab" aria-selected={filter === f.key} onClick={() => { setFilter(f.key); setOpenId(null); paged.setPage(1) }}
+            className={`focus-ring min-h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${filter === f.key ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card'}`}>{f.label}</button>))}
       </div>
-      {err && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">{err}</p>}
-      {items === null ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" aria-hidden /> Loading...</p>
-        : items.length === 0 ? <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">Nothing here.</p>
+      <SearchBox id="payout-search" label="Search payouts" value={q} onChange={(v) => { setQ(v); paged.setPage(1) }} placeholder="Search by landlord, tenant or tenancy code" />
+      {err && <ErrorState message={err} onRetry={load} />}
+      {items === null ? <LoadingState label="Loading payouts..." />
+        : items.length === 0 ? (err ? null : <EmptyState title="Nothing here" text="No payouts at this stage." />)
+        : shown.length === 0 ? <EmptyState title="No matches" text="No payout matches your search." />
         : filter === 'candidates' ? (
-          <ul className="space-y-2">{items.map((c) => (
+          <ul className="space-y-2">{paged.slice.map((c) => (
             <li key={c.payment_id} className="rounded-xl border border-border bg-card">
-              <button className="flex w-full min-h-14 flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpenId(openId === c.payment_id ? null : c.payment_id)} aria-expanded={openId === c.payment_id}>
+              <button className="focus-ring flex w-full min-h-14 flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpenId(openId === c.payment_id ? null : c.payment_id)} aria-expanded={openId === c.payment_id}>
                 <span><b>{c.landlord_name}</b> · {c.tenancy_code} · {c.type} · {naira(c.amount)}
-                  {!c.has_account && <AlertTriangle size={14} className="ml-1 inline text-amber-700" aria-label="Landlord has no approved payout account" />}</span>
+                  {!c.has_account && <AlertTriangle size={14} className="ml-1 inline text-warning" aria-label="Landlord has no approved payout account" />}</span>
                 <span className="text-xs text-muted-foreground">Tenant: {c.tenant_name}</span>
               </button>
               {openId === c.payment_id && <Prepare c={c} onDone={() => { setOpenId(null); load() }} />}
             </li>))}</ul>
         ) : (
-          <ul className="space-y-2">{items.map((p) => (
+          <ul className="space-y-2">{paged.slice.map((p) => (
             <li key={p.id} className="rounded-xl border border-border bg-card">
-              <button className="flex w-full min-h-14 flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpenId(openId === p.id ? null : p.id)} aria-expanded={openId === p.id}>
+              <button className="focus-ring flex w-full min-h-14 flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpenId(openId === p.id ? null : p.id)} aria-expanded={openId === p.id}>
                 <span><b>{p.landlord_name}</b> · {p.tenancy_code} · {naira(p.amount)}</span>
-                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${tone[p.status]}`}>{ADMIN_STATUS_LABEL[p.status as PayoutStatus]}</span>
+                <StatusChip state={STATE[p.status] ?? 'neutral'}>{ADMIN_STATUS_LABEL[p.status as PayoutStatus]}</StatusChip>
               </button>
               {openId === p.id && <PayoutRow p={p} onChanged={() => { setOpenId(null); load() }} />}
             </li>))}</ul>)}
+      <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={paged.pageSize} onPage={(n) => { setOpenId(null); paged.setPage(n) }} noun="payouts" />
     </div>
   )
 }
