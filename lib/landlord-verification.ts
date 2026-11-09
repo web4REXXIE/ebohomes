@@ -129,6 +129,17 @@ export function landlordVerificationDisplay(
   // 2. Anything that claims or contradicts an outcome but did not match above is not trusted.
   const recognisedNoDecision = status === '' || status === 'pending'
   if (p.verified === true || !recognisedNoDecision) {
+    if (status === 'approved') {
+      return {
+        state: 'unknown',
+        label: 'Status unavailable',
+        detail: 'Your account shows the status "approved", which is not an EboHomes verification result this page can confirm. Contact EboHomes to check it. Nothing is lost: your details are still on file.',
+        tone: 'grey',
+        missing: [],
+        actionLabel: 'Open Get Verified',
+        needsAction: false,
+      }
+    }
     return {
       state: 'unknown',
       label: 'Status unavailable',
