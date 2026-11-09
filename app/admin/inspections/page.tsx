@@ -167,8 +167,8 @@ function InspectionCard({ i, me, nameOf, onChanged }: {
           <p className="font-semibold truncate">{i.listing?.title ?? 'Listing'}</p>
           <p className="text-xs text-muted-foreground">{i.listing?.location_text} · {when(i.inspected_at)}</p>
           <div className="flex flex-wrap gap-1 mt-1">
-            {!hashed && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">Legacy inspection — no file integrity hashes</span>}
-            {i.gps_flag === 'outside' && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">GPS far from pin</span>}
+            {!hashed && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">Legacy inspection — no file integrity hashes</span>}
+            {i.gps_flag === 'outside' && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">GPS far from pin</span>}
           </div>
         </div>
         <span className={`text-xs font-bold uppercase px-2 py-1 rounded-full h-fit shrink-0 ${
@@ -663,4 +663,4 @@ export default function AdminInspectionsPage() {
       )}
     </div>
   )
-}
+  }
