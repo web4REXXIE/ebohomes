@@ -8,6 +8,7 @@ import { TONE_CLASS, staffNext, viewingTone } from '@/lib/viewing-status'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { History, StatusBadge } from '@/components/viewings-manager'
 import Link from 'next/link'
+import { useConfirm } from '@/components/confirm-dialog'
 
 const TABS: [string, string, (v: any) => boolean][] = [
   ['respond', 'Needs response', (v) => v.status === 'requested'],
@@ -22,6 +23,7 @@ const btnP = 'min-h-11 px-4 py-2 rounded-md bg-primary text-primary-foreground t
 const btnS = 'min-h-11 px-4 py-2 rounded-md border border-border text-sm font-semibold disabled:opacity-50'
 
 export default function AdminViewingsPage() {
+  const { confirm, dialog } = useConfirm()
   const [tab, setTab] = useState('respond')
   const [rows, setRows] = useState<any[]>([])
   const [events, setEvents] = useState<Record<string, any[]>>({})
@@ -66,7 +68,7 @@ export default function AdminViewingsPage() {
 
   const call = async (fn: string, args: Record<string, any>, ok: string, confirmText?: string) => {
     if (busy) return
-    if (confirmText && !window.confirm(confirmText)) return
+    if (confirmText && !(await confirm({ message: confirmText, destructive: /^(cancel|reject|close|decline|withdraw)/i.test(confirmText) }))) return
     setBusy(true)
     setMsg(null)
     const { error } = await supabase.rpc(fn, args)
@@ -193,6 +195,7 @@ export default function AdminViewingsPage() {
           })}
         </div>
       )}
+      {dialog}
     </div>
   )
-}
+                                    }
