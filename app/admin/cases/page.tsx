@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fmtDate, fmtDateTime, label, naira, toIso } from '@/lib/case-status'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
+import { useConfirm } from '@/components/confirm-dialog'
 
 const TABS = [
   ['legacy', 'Old decisions'],
@@ -43,6 +44,7 @@ function Pill({ status, text }: { status: string | null | undefined; text: strin
 }
 
 export default function AdminCasesPage() {
+  const { confirm, dialog } = useConfirm()
   const [tab, setTab] = useState<Tab>('legacy')
   const [rows, setRows] = useState<any[]>([])
   const [codes, setCodes] = useState<Record<string, string>>({})
@@ -102,7 +104,7 @@ export default function AdminCasesPage() {
 
   const call = async (fn: string, args: Record<string, any>, ok: string, confirmText?: string) => {
     if (busy) return
-    if (confirmText && !window.confirm(confirmText)) return
+    if (confirmText && !(await confirm({ message: confirmText, destructive: /^(cancel|reject|close|decline|withdraw)/i.test(confirmText) }))) return
     setBusy(true)
     setMsg(null)
     const { error } = await supabase.rpc(fn, args)
@@ -356,6 +358,7 @@ export default function AdminCasesPage() {
           ))}
         </div>
       )}
+      {dialog}
     </div>
   )
 }
