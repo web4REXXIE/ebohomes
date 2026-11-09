@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { Loader2, MapPin } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -24,14 +26,21 @@ const PROPERTY_TYPES = [
   'Event Center',
 ];
 
+const inputCls = 'focus-ring w-full min-h-12 rounded-lg border border-border bg-input px-3 py-2.5 text-base';
+const labelCls = 'mb-1 block text-sm font-semibold text-foreground';
+
+type Errors = Partial<Record<'location' | 'propertyType' | 'bedrooms' | 'monthlyRent' | 'phoneNumber', string>>;
+
 export default function EditListingPage() {
   const router = useRouter();
   const params = useParams();
   const id = params.id as string;
 
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [errors, setErrors] = useState<Errors>({});
   const [showMap, setShowMap] = useState(false);
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -51,6 +60,7 @@ export default function EditListingPage() {
 
       if (!user) {
         setMessage('You must be logged in to edit a listing.');
+        setLoadFailed(true);
         setLoading(false);
         return;
       }
@@ -70,6 +80,7 @@ export default function EditListingPage() {
 
       if (error || !data) {
         setMessage('Could not load this listing.');
+        setLoadFailed(true);
         setLoading(false);
         return;
       }
@@ -97,10 +108,30 @@ export default function EditListingPage() {
     fetchListing();
   }, [id]);
 
+  const set = (k: keyof typeof formData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setFormData((p) => ({ ...p, [k]: e.target.value }));
+
+  const validate = (): Errors => {
+    const e: Errors = {};
+    if (!formData.location.trim()) e.location = 'Enter the neighbourhood or area.';
+    if (!formData.propertyType) e.propertyType = 'Choose a property type.';
+    if (!formData.bedrooms) e.bedrooms = 'Choose the number of bedrooms.';
+    if (!formData.monthlyRent || !(Number(formData.monthlyRent) > 0)) e.monthlyRent = 'Enter the monthly rent.';
+    if (!formData.phoneNumber.trim()) e.phoneNumber = 'Enter a phone number.';
+    return e;
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
+    if (saving) return;
     setMessage('');
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length > 0) {
+      setMessage('Please fix the highlighted fields.');
+      return;
+    }
+    setSaving(true);
 
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -137,138 +168,124 @@ export default function EditListingPage() {
     router.push('/dashboard');
   };
 
-  if (loading) return <div style={{ padding: 40 }}>Loading...</div>;
+  const fieldErr = (k: keyof Errors) =>
+    errors[k] ? <p id={`edit-${k}-err`} role="alert" className="mt-1 text-xs font-medium text-danger">{errors[k]}</p> : null;
+  const aria = (k: keyof Errors) => ({ 'aria-invalid': !!errors[k], 'aria-describedby': errors[k] ? `edit-${k}-err` : undefined });
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
+        <Loader2 className="animate-spin text-primary" size={28} aria-hidden />
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="mx-auto max-w-xl space-y-3 p-4">
+        <h1 className="text-xl font-bold text-foreground">Edit listing</h1>
+        <p role="alert" className="rounded-card border border-danger/30 bg-danger-soft p-3 text-sm font-medium text-danger">{message}</p>
+        <Link href="/dashboard/listings" className="focus-ring flex min-h-12 items-center justify-center rounded-button bg-primary px-4 font-bold text-primary-foreground">Back to My Properties</Link>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
-      <h1 style={{ marginBottom: 20 }}>Edit Listing</h1>
+    <div className="mx-auto max-w-xl p-4 sm:p-6">
+      <h1 className="text-xl font-bold text-foreground">Edit listing</h1>
+      <p className="mb-4 text-sm text-muted-foreground">Update the details tenants see. Photos are not changed here.</p>
 
-      <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <label style={labelStyle}>Neighborhood/Area</label>
-          <input
-            value={formData.location}
-            onChange={(e) => setFormData((p) => ({ ...p, location: e.target.value }))}
-            style={inputStyle}
-            required
-          />
-        </div>
+      <form onSubmit={handleSave} noValidate className="space-y-4">
+        <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Property details">
+          <div>
+            <label htmlFor="edit-type" className={labelCls}>Property type</label>
+            <select id="edit-type" value={formData.propertyType} onChange={set('propertyType')} className={inputCls} {...aria('propertyType')}>
+              <option value="">Select type</option>
+              {PROPERTY_TYPES.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+            {fieldErr('propertyType')}
+          </div>
 
-        <div>
-          <label style={labelStyle}>Map location</label>
-          <button
-            type="button"
-            onClick={() => setShowMap(true)}
-            style={{
-              width: '100%', padding: 14, borderRadius: 8, cursor: 'pointer',
-              border: '2px dashed #d1d5db', background: '#fff', color: '#16a34a',
-              fontWeight: 700, fontSize: 14,
-            }}
-          >
-            {pin ? 'Pin set. Tap to change it' : 'Drop a pin on the map'}
-          </button>
-          {pin && (
-            <p style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
-              Pin: {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}
-            </p>
-          )}
-        </div>
+          <div>
+            <label htmlFor="edit-beds" className={labelCls}>Bedrooms</label>
+            <select id="edit-beds" value={formData.bedrooms} onChange={set('bedrooms')} className={inputCls} {...aria('bedrooms')}>
+              <option value="">Select bedrooms</option>
+              {[1, 2, 3, 4, 5, 6, 7].map((num) => (
+                <option key={num} value={num}>{num}</option>
+              ))}
+            </select>
+            {fieldErr('bedrooms')}
+          </div>
 
-        <div>
-          <label style={labelStyle}>Property Type</label>
-          <select
-            value={formData.propertyType}
-            onChange={(e) => setFormData((p) => ({ ...p, propertyType: e.target.value }))}
-            style={inputStyle}
-            required
-          >
-            <option value="">Select type</option>
-            {PROPERTY_TYPES.map((type) => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </div>
+          <div>
+            <label htmlFor="edit-desc" className={labelCls}>Description</label>
+            <textarea id="edit-desc" value={formData.description} onChange={set('description')} rows={5} className={`${inputCls} resize-y`} />
+          </div>
+        </section>
 
-        <div>
-          <label style={labelStyle}>Bedrooms</label>
-          <select
-            value={formData.bedrooms}
-            onChange={(e) => setFormData((p) => ({ ...p, bedrooms: e.target.value }))}
-            style={inputStyle}
-            required
-          >
-            <option value="">Select bedrooms</option>
-            {[1, 2, 3, 4, 5, 6, 7].map((num) => (
-              <option key={num} value={num}>{num}</option>
-            ))}
-          </select>
-        </div>
+        <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Location">
+          <div>
+            <label htmlFor="edit-location" className={labelCls}>Neighbourhood / area</label>
+            <input id="edit-location" value={formData.location} onChange={set('location')} className={inputCls} autoComplete="off" {...aria('location')} />
+            {fieldErr('location')}
+          </div>
 
-        <div>
-          <label style={labelStyle}>Monthly Rent (₦)</label>
-          <input
-            type="number"
-            value={formData.monthlyRent}
-            onChange={(e) => setFormData((p) => ({ ...p, monthlyRent: e.target.value }))}
-            style={inputStyle}
-            required
-          />
-        </div>
+          <div>
+            <span className={labelCls}>Map location</span>
+            <button
+              type="button"
+              onClick={() => setShowMap(true)}
+              className="focus-ring flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-card px-3 font-bold text-primary"
+            >
+              <MapPin size={16} aria-hidden />
+              {pin ? 'Pin set. Tap to change it' : 'Drop a pin on the map'}
+            </button>
+            {pin && (
+              <p className="mt-1.5 text-xs text-muted-foreground">Pin: {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}</p>
+            )}
+          </div>
+        </section>
 
-        <div>
-          <label style={labelStyle}>Description</label>
-          <textarea
-            value={formData.description}
-            onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
-            rows={4}
-            style={{ ...inputStyle, resize: 'none' }}
-          />
-        </div>
+        <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Price and contact">
+          <div>
+            <label htmlFor="edit-rent" className={labelCls}>Monthly rent (₦)</label>
+            <input id="edit-rent" type="number" inputMode="numeric" min={0} value={formData.monthlyRent} onChange={set('monthlyRent')} className={inputCls} {...aria('monthlyRent')} />
+            {fieldErr('monthlyRent')}
+          </div>
 
-        <div>
-          <label style={labelStyle}>Phone Number</label>
-          <input
-            type="tel"
-            value={formData.phoneNumber}
-            onChange={(e) => setFormData((p) => ({ ...p, phoneNumber: e.target.value }))}
-            style={inputStyle}
-            required
-          />
-        </div>
+          <div>
+            <label htmlFor="edit-phone" className={labelCls}>Phone number</label>
+            <input id="edit-phone" type="tel" autoComplete="tel" value={formData.phoneNumber} onChange={set('phoneNumber')} className={inputCls} {...aria('phoneNumber')} />
+            {fieldErr('phoneNumber')}
+          </div>
 
-        <div>
-          <label style={labelStyle}>Availability Date</label>
-          <input
-            type="date"
-            value={formData.availabilityDate}
-            onChange={(e) => setFormData((p) => ({ ...p, availabilityDate: e.target.value }))}
-            style={inputStyle}
-          />
-        </div>
+          <div>
+            <label htmlFor="edit-date" className={labelCls}>Availability date</label>
+            <input id="edit-date" type="date" value={formData.availabilityDate} onChange={set('availabilityDate')} className={inputCls} />
+          </div>
+        </section>
 
-        {message && <p style={{ color: '#dc2626', fontSize: 13 }}>{message}</p>}
-
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button
-            type="submit"
-            disabled={saving}
-            style={{
-              flex: 1, padding: 12, background: '#16a34a', color: '#fff',
-              border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer',
-            }}
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push('/dashboard')}
-            style={{
-              flex: 1, padding: 12, background: '#f3f4f6', border: 'none',
-              borderRadius: 8, fontWeight: 700, cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
+        <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 -mx-4 space-y-2 border-t border-border bg-card px-4 py-3 sm:-mx-6 sm:px-6 md:bottom-0">
+          {message && <p role="alert" className="rounded-lg border border-danger/30 bg-danger-soft p-2.5 text-sm font-medium text-danger">{message}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="focus-ring flex min-h-12 flex-1 items-center justify-center gap-2 rounded-button bg-primary px-4 font-bold text-primary-foreground disabled:opacity-60"
+            >
+              {saving ? <><Loader2 size={16} className="animate-spin" aria-hidden /> Saving...</> : 'Save changes'}
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => router.push('/dashboard')}
+              className="focus-ring min-h-12 flex-1 rounded-button border border-border bg-card px-4 font-semibold text-foreground disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </form>
 
@@ -285,12 +302,3 @@ export default function EditListingPage() {
     </div>
   );
 }
-
-const labelStyle: React.CSSProperties = {
-  fontWeight: 700, fontSize: 13, color: '#374151', display: 'block', marginBottom: 4,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '11px 14px', borderRadius: 8,
-  border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', boxSizing: 'border-box',
-};
