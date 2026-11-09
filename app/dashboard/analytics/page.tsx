@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { Eye, Heart, FileText, MessageSquare, Home, ShieldCheck, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { listingStatusInfo } from '@/lib/listing-status'
@@ -64,16 +65,20 @@ export default function LandlordAnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [listings, setListings] = useState<ListingPerf[]>([])
-  const [totalViews, setTotalViews] = useState(0)
-  const [totalSaves, setTotalSaves] = useState(0)
-  const [totalApplications, setTotalApplications] = useState(0)
-  const [totalMessages, setTotalMessages] = useState(0)
+  const [reloadKey, setReloadKey] = useState(0)
+  // null means that number could not be loaded. It shows a dash, never a misleading 0.
+  const [totalViews, setTotalViews] = useState<number | null>(0)
+  const [totalSaves, setTotalSaves] = useState<number | null>(0)
+  const [totalApplications, setTotalApplications] = useState<number | null>(0)
+  const [totalMessages, setTotalMessages] = useState<number | null>(0)
+  const [partial, setPartial] = useState(false)
   const [applicationBreakdown, setApplicationBreakdown] = useState({ pending: 0, approved: 0, rejected: 0 })
   const [viewsByDay, setViewsByDay] = useState<{ day: string; count: number }[]>([])
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([])
 
   useEffect(() => {
     const load = async () => {
+      setPartial(false)
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -101,7 +106,7 @@ export default function LandlordAnalyticsPage() {
 
       const listingIds = myListings.map((l) => l.id)
 
-      const [{ data: views }, { data: saves }, { data: applications }, { count: messageCount }] = await Promise.all([
+      const [{ data: views, error: viewsErr }, { data: saves, error: savesErr }, { data: applications, error: appsErr }, { count: messageCount, error: msgErr }] = await Promise.all([
         supabase.from('property_views').select('listing_id, created_at').in('listing_id', listingIds),
         supabase.from('saved_properties').select('listing_id').in('listing_id', listingIds),
         supabase.from('applications').select('id, listing_id, tenant_id, status, created_at').eq('landlord_id', user.id),
@@ -120,10 +125,11 @@ export default function LandlordAnalyticsPage() {
       perf.sort((a, b) => b.views - a.views)
       setListings(perf)
 
-      setTotalViews(views?.length ?? 0)
-      setTotalSaves(saves?.length ?? 0)
-      setTotalApplications(applications?.length ?? 0)
-      setTotalMessages(messageCount ?? 0)
+      setTotalViews(viewsErr ? null : views?.length ?? 0)
+      setTotalSaves(savesErr ? null : saves?.length ?? 0)
+      setTotalApplications(appsErr ? null : applications?.length ?? 0)
+      setTotalMessages(msgErr ? null : messageCount ?? 0)
+      setPartial(Boolean(viewsErr || savesErr || appsErr || msgErr))
 
       setApplicationBreakdown({
         pending: applications?.filter((a) => a.status === 'pending').length ?? 0,
@@ -164,7 +170,7 @@ export default function LandlordAnalyticsPage() {
     }
 
     load()
-  }, [])
+  }, [reloadKey])
 
   if (loading) {
     return (
@@ -184,9 +190,16 @@ export default function LandlordAnalyticsPage() {
     return (
       <div className="p-6">
         <h1 className="mb-1 text-xl font-bold text-foreground">Analytics</h1>
-        <p role="alert" className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-900">
-          We could not load your analytics. Please refresh the page.
+        <p role="alert" className="mt-4 rounded-card border border-danger/30 bg-danger-soft p-3 text-sm font-medium text-danger">
+          We could not load your analytics.
         </p>
+        <button
+          type="button"
+          onClick={() => { setFailed(false); setLoading(true); setReloadKey((k) => k + 1) }}
+          className="focus-ring mt-3 inline-flex min-h-12 items-center justify-center gap-2 rounded-button bg-primary px-5 font-bold text-primary-foreground"
+        >
+          <RefreshCw size={16} aria-hidden /> Try again
+        </button>
       </div>
     )
   }
@@ -217,21 +230,25 @@ export default function LandlordAnalyticsPage() {
   const viewsLast14 = viewsByDay.reduce((sum, d) => sum + d.count, 0)
 
   // --- Donut geometry ---
-  const appTotal = applicationBreakdown.pending + applicationBreakdown.approved + applicationBreakdown.rejected
+  const knownApps = applicationBreakdown.pending + applicationBreakdown.approved + applicationBreakdown.rejected
+  // Applications in other recorded states (for example waiting for the tenant, or withdrawn).
+  const otherApps = Math.max((totalApplications ?? 0) - knownApps, 0)
+  const appTotal = knownApps + otherApps
   const radius = 60
   const circumference = 2 * Math.PI * radius
   const segments = [
     { label: 'Approved', value: applicationBreakdown.approved, color: '#16a34a' },
     { label: 'With EboHomes', value: applicationBreakdown.pending, color: '#f59e0b' },
     { label: 'Declined', value: applicationBreakdown.rejected, color: '#ef4444' },
+    { label: 'Other', value: otherApps, color: '#6b7280' },
   ]
   let cumulative = 0
 
   const statCards = [
-    { label: 'Total views', value: totalViews, icon: Eye, color: '#2563eb', bg: '#2563eb1a' },
-    { label: 'Saves', value: totalSaves, icon: Heart, color: '#e11d48', bg: '#e11d481a' },
-    { label: 'Applications', value: totalApplications, icon: FileText, color: '#d97706', bg: '#d977061a' },
-    { label: 'Messages received', value: totalMessages, icon: MessageSquare, color: '#7c3aed', bg: '#7c3aed1a' },
+    { label: 'Total views', value: totalViews, icon: Eye, tone: 'bg-info-soft text-info' },
+    { label: 'Saves', value: totalSaves, icon: Heart, tone: 'bg-danger-soft text-danger' },
+    { label: 'Applications', value: totalApplications, icon: FileText, tone: 'bg-warning-soft text-warning' },
+    { label: 'Messages received', value: totalMessages, icon: MessageSquare, tone: 'bg-primary/10 text-primary' },
   ]
 
   return (
@@ -239,22 +256,30 @@ export default function LandlordAnalyticsPage() {
       <h1 className="mb-1 text-xl font-bold text-foreground">Analytics</h1>
       <p className="mb-6 text-sm text-muted-foreground">How your properties are performing.</p>
 
+      {partial && (
+        <p role="status" className="mb-4 rounded-card border border-warning/30 bg-warning-soft p-3 text-sm font-medium text-warning">
+          Some numbers could not be loaded and show a dash. Reload the page to try again.
+        </p>
+      )}
+
       {/* Stat cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {statCards.map((card) => (
-          <div key={card.label} className="rounded-xl border border-border bg-card p-4">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg" style={{ backgroundColor: card.bg }}>
-              <card.icon size={16} style={{ color: card.color }} aria-hidden />
+          <div key={card.label} className="rounded-card border border-border bg-card p-4 shadow-rest">
+            <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-full ${card.tone}`}>
+              <card.icon size={16} aria-hidden />
             </div>
-            <p className="text-2xl font-bold leading-tight text-foreground">{card.value}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{card.label}</p>
+            <p className="text-2xl font-extrabold leading-tight text-foreground">
+              {card.value === null ? (<><span aria-hidden>—</span><span className="sr-only">Not available</span></>) : card.value}
+            </p>
+            <p className="mt-0.5 text-sm font-semibold text-foreground">{card.label}</p>
           </div>
         ))}
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Area chart */}
-        <div className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
+        <div className="rounded-card border border-border bg-card p-5 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-foreground">Views in the last 14 days</h2>
             <span className="rounded-full bg-secondary px-2 py-1 text-xs text-muted-foreground">Daily</span>
@@ -278,7 +303,7 @@ export default function LandlordAnalyticsPage() {
               viewsByDay[i].count > 0 ? <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="var(--primary, #16a34a)" /> : null
             )}
           </svg>
-          <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+          <div className="mt-1 flex justify-between text-xs text-muted-foreground">
             <span>{viewsByDay[0]?.day}</span>
             <span>{viewsByDay[viewsByDay.length - 1]?.day}</span>
           </div>
@@ -286,7 +311,7 @@ export default function LandlordAnalyticsPage() {
         </div>
 
         {/* Donut chart */}
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-card border border-border bg-card p-5">
           <h2 className="mb-4 text-sm font-semibold text-foreground">Applications</h2>
           {appTotal === 0 ? (
             <p className="py-8 text-center text-xs text-muted-foreground">No applications yet.</p>
@@ -322,7 +347,7 @@ export default function LandlordAnalyticsPage() {
                 </svg>
                 <div className="absolute flex flex-col items-center">
                   <span className="text-2xl font-bold text-foreground">{appTotal}</span>
-                  <span className="text-[11px] text-muted-foreground">Total</span>
+                  <span className="text-xs text-muted-foreground">Total</span>
                 </div>
               </div>
               <ul className="space-y-1.5">
@@ -362,15 +387,15 @@ export default function LandlordAnalyticsPage() {
                 </div>
                 <dl className="grid grid-cols-3 gap-2 rounded-lg bg-secondary/60 p-3 text-center">
                   <div>
-                    <dt className="text-[11px] text-muted-foreground">Views</dt>
+                    <dt className="text-xs text-muted-foreground">Views</dt>
                     <dd className="text-base font-bold text-foreground">{l.views}</dd>
                   </div>
                   <div>
-                    <dt className="text-[11px] text-muted-foreground">Saves</dt>
+                    <dt className="text-xs text-muted-foreground">Saves</dt>
                     <dd className="text-base font-bold text-foreground">{l.saves}</dd>
                   </div>
                   <div>
-                    <dt className="text-[11px] text-muted-foreground">Applications</dt>
+                    <dt className="text-xs text-muted-foreground">Applications</dt>
                     <dd className="text-base font-bold text-foreground">{l.applications}</dd>
                   </div>
                 </dl>
@@ -413,7 +438,7 @@ export default function LandlordAnalyticsPage() {
         </div>
 
         {/* Recent activity */}
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className="rounded-card border border-border bg-card p-5">
           <h2 className="mb-4 text-sm font-semibold text-foreground">Recent applications</h2>
           {recentActivity.length === 0 ? (
             <p className="py-8 text-center text-xs text-muted-foreground">No recent applications.</p>
