@@ -262,12 +262,12 @@ export default function AdminMessagesPage() {
                         <p className="text-sm font-semibold text-foreground truncate">
                           {pA?.full_name ?? 'Unknown'} <span className="text-muted-foreground font-normal">↔</span> {pB?.full_name ?? 'Unknown'}
                         </p>
-                        <span className="text-[10px] text-muted-foreground shrink-0">{formatTime(c.lastMessage.created_at)}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{formatTime(c.lastMessage.created_at)}</span>
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{c.lastMessage.message}</p>
                     </div>
                     {c.unreadCount > 0 && (
-                      <span className="bg-primary text-primary-foreground text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-1">
+                      <span className="bg-primary text-primary-foreground text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-1">
                         {c.unreadCount}
                       </span>
                     )}
@@ -313,8 +313,8 @@ export default function AdminMessagesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                           <span className="text-xs font-semibold text-foreground">{sender?.full_name ?? 'Unknown'}</span>
-                          <span className="text-[10px] text-muted-foreground">{formatTime(m.created_at)}</span>
-                          {!m.read_at && <span className="text-[9px] text-primary font-medium">unread</span>}
+                          <span className="text-xs text-muted-foreground">{formatTime(m.created_at)}</span>
+                          {!m.read_at && <span className="text-xs text-primary font-medium">unread</span>}
                         </div>
                         <div className="bg-secondary rounded-xl rounded-tl-sm px-3 py-2 text-sm text-foreground inline-block max-w-[85%]">
                           {m.message}
