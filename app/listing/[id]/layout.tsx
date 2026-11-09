@@ -1,17 +1,40 @@
+import { cache } from "react"
 import type { Metadata } from "next"
 import { createClient } from "@supabase/supabase-js"
 import { isValidListingId } from "@/lib/listing-id"
 import { cleanMediaUrls } from "@/lib/property-media"
 import { watermarkedUrl } from "@/lib/watermark"
+import { buildListingJsonLd, serializeJsonLd } from "@/lib/listing-jsonld"
 
 // The listing page itself lives in page.tsx (a client component). This layout only adds the
 // per-listing metadata and renders its children. It reads the same public listing row the page
 // reads, with the public anon key, so Row Level Security decides what is visible. Only listings
 // that are approved are described; anything else gets a generic, non-indexed result.
+// Stage 19a: approved listings also get JSON-LD structured data, built from the same row. The row is read once
+// per request (React cache) and shared by the metadata and the layout.
 
 type Params = Promise<{ id: string }>
 
 const FALLBACK: Metadata = { title: "Property listing", robots: { index: false, follow: true } }
+
+const SITE = (process.env.NEXT_PUBLIC_SITE_URL || "https://ebohomes.vercel.app").replace(/\/+$/, "")
+
+const loadListing = cache(async (id: string) => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !anon) return null
+  try {
+    const db = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } })
+    const { data, error } = await db
+      .from("listings")
+      .select("id, title, description, location_text, price_monthly, property_type, bedrooms, bathrooms, photos, status")
+      .eq("id", id)
+      .maybeSingle()
+    return error ? null : data
+  } catch {
+    return null
+  }
+})
 
 function naira(value: unknown): string | null {
   const n = typeof value === "number" ? value : Number(value)
@@ -29,19 +52,9 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { id } = await params
   if (!isValidListingId(id)) return FALLBACK
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !anon) return FALLBACK
-
   try {
-    const db = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } })
-    const { data, error } = await db
-      .from("listings")
-      .select("title, description, location_text, price_monthly, property_type, bedrooms, photos, status")
-      .eq("id", id)
-      .maybeSingle()
-
-    if (error || !data || data.status !== "approved") return FALLBACK
+    const data = await loadListing(id)
+    if (!data || data.status !== "approved") return FALLBACK
 
     const title = shorten(String(data.title ?? "Property for rent"), 70)
     const rent = naira(data.price_monthly)
@@ -70,6 +83,25 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   }
 }
 
-export default function ListingLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+export default async function ListingLayout({ children, params }: { children: React.ReactNode; params: Params }) {
+  const { id } = await params
+  const data = isValidListingId(id) ? await loadListing(id) : null
+  // Structured data only for an approved listing, and only from fields the listing page shows.
+  const jsonLd =
+    data && data.status === "approved"
+      ? buildListingJsonLd(
+          data,
+          SITE,
+          cleanMediaUrls(data.photos)
+            .filter((p) => /^https:\/\//i.test(p))
+            .slice(0, 6)
+            .map((p) => watermarkedUrl(p, 1600)),
+        )
+      : null
+  return (
+    <>
+      {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />}
+      {children}
+    </>
+  )
 }
