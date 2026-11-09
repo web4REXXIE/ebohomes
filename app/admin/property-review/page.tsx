@@ -8,6 +8,7 @@ import { getOwnershipSignedUrl } from '@/lib/ownership-docs'
 import { Button } from '@/components/ui/button'
 import { authorityStatusInfo, isAuthorityReviewed } from '@/lib/listing-authority'
 import { AdminLocationPanel } from '@/components/admin-location-panel'
+import { useConfirm } from '@/components/confirm-dialog'
 
 const CHECKLIST = [
   'Property photos are clear and real',
@@ -18,6 +19,7 @@ const CHECKLIST = [
 ]
 
 export default function PropertyReviewPage() {
+  const { confirm, dialog } = useConfirm()
   const [listings, setListings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'pending' | 'inspection_required' | 'approved' | 'suspended' | 'rejected'>('pending')
@@ -186,7 +188,7 @@ export default function PropertyReviewPage() {
   }
 
   const handleReinstate = async (id: string) => {
-    if (!window.confirm('Reinstate this listing and put it back in review?')) return
+    if (!(await confirm({ title: 'Reinstate listing?', message: 'Reinstate this listing and put it back in review?', confirmLabel: 'Reinstate' }))) return
     const l = listings.find((x) => x.id === id)
     if (l) await reviewListing(l, 'reinstate', null)
   }
@@ -543,6 +545,7 @@ export default function PropertyReviewPage() {
           )}
         </div>
       )}
+      {dialog}
     </div>
   )
 }
