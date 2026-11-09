@@ -12,7 +12,8 @@ for (const p of pages) {
 const apps = readFileSync('app/admin/applications/page.tsx', 'utf8')
 assert.match(apps, /rpc\('admin_decide_application'/)
 assert.match(apps, /rpc\('eb_admin_override_application'/)
-assert.match(apps, /window\.confirm\(confirmText\)/)
+assert.match(apps, /await confirm\(\{ title: action === 'approve' \? 'Approve application\?'/)
+assert.doesNotMatch(apps, /window\.confirm\(/)
 
 const cases = readFileSync('app/admin/cases/page.tsx', 'utf8')
 for (const fn of ['admin_review_legacy_decision', 'schedule_viewing', 'complete_viewing', 'cancel_viewing', 'record_signed_agreement', 'maintenance_action', 'admin_update_dispute', 'admin_review_settlement', 'admin_apply_renewal']) {
