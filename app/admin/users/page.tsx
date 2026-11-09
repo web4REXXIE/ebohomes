@@ -371,11 +371,11 @@ export default function ManageUsersPage() {
                     </div>
                     <dl className="grid grid-cols-2 gap-3 rounded-lg bg-secondary/60 p-3 text-sm">
                       <div>
-                        <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Joined</dt>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">Joined</dt>
                         <dd className="font-medium text-foreground">{fmtDate(u.created_at)}</dd>
                       </div>
                       <div>
-                        <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Last active</dt>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">Last active</dt>
                         <dd className="font-medium text-foreground">{u.last_active ? fmtDateTime(u.last_active) : '—'}</dd>
                       </div>
                     </dl>
@@ -464,4 +464,4 @@ export default function ManageUsersPage() {
       </div>
     </div>
   )
-}
+                                                                        }
