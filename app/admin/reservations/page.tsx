@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fmtDate, naira } from '@/lib/case-status'
 import { PENDING_LABEL, isReservationOverdue, reservationTimeLeft, validateExtendHours, validateReason } from '@/lib/tenancy-reservation'
+import { useConfirm } from '@/components/confirm-dialog'
 
 type Offer = {
   id: string
@@ -34,6 +35,7 @@ const btn = 'inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 text-sm f
 const field = 'w-full min-h-11 rounded-md border border-border bg-input px-3 py-2 text-sm font-normal'
 
 export default function AdminReservationsPage() {
+  const { confirm, dialog } = useConfirm()
   const [ready, setReady] = useState<Offer[]>([])
   const [pending, setPending] = useState<Ten[]>([])
   const [titles, setTitles] = useState<Record<string, string>>({})
@@ -97,7 +99,7 @@ export default function AdminReservationsPage() {
 
   async function run(key: string, fn: string, args: Record<string, unknown>, ok: string, confirmText: string) {
     if (busy) return
-    if (!window.confirm(confirmText)) return
+    if (!(await confirm({ message: confirmText, destructive: /^(cancel|reject|close|decline|withdraw)/i.test(confirmText) }))) return
     setBusy(key)
     setError(null)
     setNotice(null)
@@ -221,6 +223,7 @@ export default function AdminReservationsPage() {
           })}
         </div>
       )}
+      {dialog}
     </div>
   )
 }
