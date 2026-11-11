@@ -11,11 +11,13 @@ import dynamic from 'next/dynamic'
 import { computeImageHash, computeVideoHashes } from '@/lib/image-hash'
 import { getDeviceId } from '@/lib/device-id'
 import { cleanDescription } from '@/lib/clean-description'
+import { VerificationModal, useListingVerification } from '@/components/listing-verification-gate'
 
 // Stage 16 Part 2: presentation changes only.
 // The listing insert, the Cloudinary and storage uploads, the hashes and the redirect are the same as before.
 // New: readable step labels on phones, sticky Back/Continue bar, inline messages instead of browser pop-ups,
 // keyboard-reachable upload boxes, and a fuller review step.
+// New: an unverified landlord can always tap Next on step 1. A popup then sends them to the verification page.
 
 const LocationPickerModal = dynamic(
   () => import('@/components/location-picker-modal').then((mod) => ({ default: mod.LocationPickerModal })),
@@ -170,6 +172,10 @@ export default function ListPropertyPage() {
   const [submitError, setSubmitError] = useState('')
   const [authChecked, setAuthChecked] = useState(false)
 
+  // Verification: only a verified landlord can move past step 1.
+  const { loading: verifLoading, canList, display: verifDisplay } = useListingVerification()
+  const [showVerifyModal, setShowVerifyModal] = useState(false)
+
   const headingRef = useRef<HTMLHeadingElement>(null)
   const firstRender = useRef(true)
 
@@ -309,6 +315,13 @@ export default function ListPropertyPage() {
   const missing4 = [!formData.monthlyRent && 'monthly rent', !formData.phoneNumber && 'phone number'].filter(Boolean) as string[]
 
   const handleSubmit = async () => {
+    // Safety net: an unverified account never reaches the insert from this screen.
+    if (!canList) {
+      setShowVerifyModal(true)
+      setStep(1)
+      return
+    }
+
     setSubmitting(true)
     setSubmitError('')
     const { data: userData } = await supabase.auth.getUser()
@@ -561,10 +574,18 @@ export default function ListPropertyPage() {
                 </div>
               </fieldset>
 
+              {/* Unverified landlords can always tap Next. The popup then explains and links to verification. */}
               <StepActions
-                onNext={() => setStep(2)}
+                onNext={() => {
+                  if (verifLoading) return
+                  if (!canList) {
+                    setShowVerifyModal(true)
+                    return
+                  }
+                  setStep(2)
+                }}
                 nextLabel="Next: Photos →"
-                nextDisabled={!canContinueStep1}
+                nextDisabled={canList ? !canContinueStep1 : false}
                 missing={missing1}
               />
             </section>
@@ -925,6 +946,12 @@ export default function ListPropertyPage() {
       </main>
 
       <Footer />
+
+      {/* Verification popup for unverified landlords */}
+      {showVerifyModal && verifDisplay && !canList && (
+        <VerificationModal display={verifDisplay} onClose={() => setShowVerifyModal(false)} />
+      )}
+
       {/* Map Modal */}
       {showMapModal && (
         <LocationPickerModal
@@ -942,4 +969,4 @@ export default function ListPropertyPage() {
       )}
     </div>
   )
-}
+                    }
