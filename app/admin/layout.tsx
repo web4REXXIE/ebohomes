@@ -9,8 +9,9 @@ import {
 import { supabase } from '@/lib/supabase'
 import { AccountShell, navItemClass, type AccountNavGroup } from '@/components/account-shell'
 
-// Stage 18: the same 36 admin destinations as before, regrouped by the job they belong to.
-// Nothing was removed, renamed or added. Stage 17's shared shell draws the sidebar and the phone menu.
+// Stage 18: the same admin destinations as before, regrouped by the job they belong to.
+// New: "Verify Tenants" sits next to "Verify Landlords". Nothing else was removed, renamed or added.
+// Stage 17's shared shell draws the sidebar and the phone menu.
 // The access check below is unchanged: only a profile with role 'admin' gets in.
 const NAV_GROUPS: AccountNavGroup[] = [
   { title: null, items: [{ href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true }] },
@@ -29,6 +30,7 @@ const NAV_GROUPS: AccountNavGroup[] = [
   ] },
   { title: 'Verification and trust', items: [
     { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
+    { href: '/admin/verify-tenants', label: 'Verify Tenants', icon: ShieldCheck },
     { href: '/admin/operations', label: 'Trust Operations', icon: ShieldCheck },
     { href: '/admin/risk', label: 'Risk Alerts', icon: ShieldAlert },
     { href: '/admin/cases', label: 'Cases', icon: ClipboardList },
