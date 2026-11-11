@@ -3,10 +3,17 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bell, Loader2, Trash2 } from 'lucide-react'
+import { Bell, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
+
+// Property alerts.
+// Same as before: list, pause/turn on, delete with confirmation. Alerts are delivered as in-app notifications
+// when EboHomes approves a matching property. Nothing else is promised.
+// New: "Create an alert" form on this page (location, property type, monthly budget, bedrooms), so a tenant
+// can set an alert without running a search first. No email, WhatsApp or frequency options are shown,
+// because EboHomes does not send those.
 
 type Alert = {
   id: string
@@ -20,9 +27,41 @@ type Alert = {
   created_at: string | null
 }
 
+// Property type values must match what is stored in listings.property_type (same list as /list-property and /search).
+const PROPERTY_TYPES = [
+  'Flat / Apartment',
+  'Bungalow',
+  'Duplex',
+  'Self Contain',
+  'Penthouse',
+  'Hostel',
+  'Office',
+  'Shop / Mall',
+  'Warehouse',
+  'Land / Plot',
+  'Event Center',
+]
+
+const QUICK_LOCATIONS = ['Abakaliki', 'Afikpo']
+const BEDROOM_OPTIONS: { label: string; value: number | null }[] = [
+  { label: 'Any', value: null },
+  { label: '1', value: 1 },
+  { label: '2', value: 2 },
+  { label: '3', value: 3 },
+  { label: '4+', value: 4 },
+]
+
 const naira = (n: number) => `₦${Number(n).toLocaleString('en-NG')}`
 
-function summary(a: Alert): string {
+type Criteria = {
+  location: string | null
+  property_type: string | null
+  min_price: number | null
+  max_price: number | null
+  bedrooms: number | null
+}
+
+function summary(a: Criteria): string {
   const parts: string[] = []
   if (a.location) parts.push(a.location)
   if (a.property_type) parts.push(a.property_type)
@@ -33,6 +72,19 @@ function summary(a: Alert): string {
   return parts.length ? parts.join(' · ') : 'Any new property'
 }
 
+// "1,500,000" or "1500000" -> 1500000. Empty or invalid -> null.
+function parseMoney(text: string): number | null {
+  const digits = text.replace(/[^\d]/g, '')
+  if (!digits) return null
+  const n = Number(digits)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+const chipBase =
+  'inline-flex min-h-11 items-center justify-center rounded-full border px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
+const chipOn = 'border-primary bg-primary text-primary-foreground'
+const chipOff = 'border-border bg-card text-foreground hover:bg-secondary'
+
 export default function AlertsPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -40,6 +92,16 @@ export default function AlertsPage() {
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState('')
   const [confirmId, setConfirmId] = useState('')
+
+  // Create form
+  const [showForm, setShowForm] = useState(false)
+  const [location, setLocation] = useState('')
+  const [propertyType, setPropertyType] = useState('')
+  const [minText, setMinText] = useState('')
+  const [maxText, setMaxText] = useState('')
+  const [bedrooms, setBedrooms] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [formMessage, setFormMessage] = useState('')
 
   const load = async () => {
     const { data: auth } = await supabase.auth.getUser()
@@ -87,6 +149,67 @@ export default function AlertsPage() {
     setAlerts((list) => list.filter((x) => x.id !== id))
   }
 
+  const resetForm = () => {
+    setLocation('')
+    setPropertyType('')
+    setMinText('')
+    setMaxText('')
+    setBedrooms(null)
+    setFormMessage('')
+  }
+
+  const minPrice = parseMoney(minText)
+  const maxPrice = parseMoney(maxText)
+  const draft: Criteria = {
+    location: location.trim() || null,
+    property_type: propertyType || null,
+    min_price: minPrice,
+    max_price: maxPrice,
+    bedrooms,
+  }
+
+  const createAlert = async () => {
+    setFormMessage('')
+    if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
+      setFormMessage('The lowest budget is higher than the highest budget. Please check the amounts.')
+      return
+    }
+
+    setSaving(true)
+    const { data: auth } = await supabase.auth.getUser()
+    if (!auth?.user) {
+      router.replace('/login?redirect=/alerts')
+      return
+    }
+
+    // Do not save the same alert twice.
+    let q = supabase.from('property_alerts').select('id').eq('user_id', auth.user.id)
+    for (const [key, value] of Object.entries(draft)) {
+      q = value === null ? q.is(key, null) : q.eq(key, value)
+    }
+    const { data: existing } = await q.limit(1)
+    if (existing && existing.length > 0) {
+      setSaving(false)
+      setFormMessage('You already have an alert with these details.')
+      return
+    }
+
+    const { error: err } = await supabase.from('property_alerts').insert({
+      user_id: auth.user.id,
+      label: summary(draft),
+      ...draft,
+    })
+    setSaving(false)
+    if (err) {
+      setFormMessage('Could not save the alert. Please try again.')
+      return
+    }
+
+    resetForm()
+    setShowForm(false)
+    await load()
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
@@ -101,22 +224,224 @@ export default function AlertsPage() {
 
           {error && <p role="alert" className="text-sm font-medium text-destructive">{error}</p>}
 
+          {!showForm && (
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+              className="focus-ring inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              <Plus size={18} aria-hidden /> Create an alert
+            </button>
+          )}
+
+          {showForm && (
+            <section
+              aria-labelledby="new-alert-heading"
+              className="space-y-5 rounded-card border border-border bg-card p-4 shadow-rest sm:p-6"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 id="new-alert-heading" className="text-lg font-bold text-foreground">
+                    Create a property alert
+                  </h2>
+                  <p className="text-sm text-muted-foreground">Leave anything blank to match any value.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetForm()
+                    setShowForm(false)
+                  }}
+                  aria-label="Close"
+                  className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary"
+                >
+                  <X size={20} aria-hidden />
+                </button>
+              </div>
+
+              {/* Location */}
+              <fieldset>
+                <legend className="mb-2 text-sm font-semibold text-foreground">Preferred location</legend>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_LOCATIONS.map((l) => {
+                    const on = location.trim().toLowerCase() === l.toLowerCase()
+                    return (
+                      <button
+                        key={l}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setLocation(on ? '' : l)}
+                        className={`${chipBase} ${on ? chipOn : chipOff}`}
+                      >
+                        {l}
+                      </button>
+                    )
+                  })}
+                </div>
+                <label htmlFor="alert-location" className="sr-only">
+                  Or type an area or town
+                </label>
+                <input
+                  id="alert-location"
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Or type an area or town"
+                  autoComplete="off"
+                  className="mt-3 min-h-12 w-full rounded-lg border border-border bg-background px-3 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                />
+              </fieldset>
+
+              {/* Property type */}
+              <fieldset>
+                <legend className="mb-2 text-sm font-semibold text-foreground">Property type</legend>
+                <div className="flex flex-wrap gap-2">
+                  {PROPERTY_TYPES.map((t) => {
+                    const on = propertyType === t
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setPropertyType(on ? '' : t)}
+                        className={`${chipBase} ${on ? chipOn : chipOff}`}
+                      >
+                        {t}
+                      </button>
+                    )
+                  })}
+                </div>
+              </fieldset>
+
+              {/* Budget */}
+              <fieldset>
+                <legend className="mb-2 text-sm font-semibold text-foreground">
+                  Rent budget <span className="font-normal text-muted-foreground">(per month, in naira)</span>
+                </legend>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label htmlFor="alert-min" className="sr-only">
+                      Lowest monthly rent
+                    </label>
+                    <input
+                      id="alert-min"
+                      type="text"
+                      inputMode="numeric"
+                      value={minText}
+                      onChange={(e) => setMinText(e.target.value)}
+                      placeholder="Min"
+                      className="min-h-12 w-full rounded-lg border border-border bg-background px-3 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    />
+                  </div>
+                  <span aria-hidden className="text-muted-foreground">
+                    to
+                  </span>
+                  <div className="flex-1">
+                    <label htmlFor="alert-max" className="sr-only">
+                      Highest monthly rent
+                    </label>
+                    <input
+                      id="alert-max"
+                      type="text"
+                      inputMode="numeric"
+                      value={maxText}
+                      onChange={(e) => setMaxText(e.target.value)}
+                      placeholder="Max"
+                      className="min-h-12 w-full rounded-lg border border-border bg-background px-3 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    />
+                  </div>
+                </div>
+                {(minPrice != null || maxPrice != null) && (
+                  <p className="mt-2 text-xs text-muted-foreground" role="status">
+                    {minPrice != null && `${naira(minPrice)} a month is ${naira(minPrice * 12)} a year`}
+                    {minPrice != null && maxPrice != null && ' · '}
+                    {maxPrice != null && `${naira(maxPrice)} a month is ${naira(maxPrice * 12)} a year`}
+                  </p>
+                )}
+              </fieldset>
+
+              {/* Bedrooms */}
+              <fieldset>
+                <legend className="mb-2 text-sm font-semibold text-foreground">Bedrooms</legend>
+                <div className="flex flex-wrap gap-2">
+                  {BEDROOM_OPTIONS.map((b) => {
+                    const on = bedrooms === b.value
+                    return (
+                      <button
+                        key={b.label}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setBedrooms(b.value)}
+                        className={`${chipBase} min-w-14 ${on ? chipOn : chipOff}`}
+                      >
+                        {b.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </fieldset>
+
+              <div className="rounded-lg bg-secondary p-3 text-sm text-foreground">
+                <p className="font-semibold">This alert will match</p>
+                <p className="text-muted-foreground">{summary(draft)}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  You will be notified in EboHomes when a matching property is approved.
+                </p>
+              </div>
+
+              {formMessage && (
+                <p role="alert" className="text-sm font-medium text-destructive">
+                  {formMessage}
+                </p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetForm()
+                    setShowForm(false)
+                  }}
+                  className="focus-ring min-h-12 flex-1 rounded-lg border border-border bg-background text-sm font-semibold text-foreground hover:bg-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={createAlert}
+                  disabled={saving}
+                  className="focus-ring inline-flex min-h-12 flex-[1.4] items-center justify-center gap-2 rounded-lg bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" aria-hidden /> Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Bell size={16} aria-hidden /> Create alert
+                    </>
+                  )}
+                </button>
+              </div>
+            </section>
+          )}
+
           {loading && (
             <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground" role="status">
               <Loader2 size={16} className="animate-spin" aria-hidden /> Loading your alerts...
             </div>
           )}
 
-          {!loading && alerts.length === 0 && !error && (
+          {!loading && alerts.length === 0 && !error && !showForm && (
             <div className="rounded-card border border-border bg-card p-8 text-center">
               <Bell size={32} className="mx-auto mb-3 text-muted-foreground" aria-hidden />
               <p className="mb-1 font-semibold text-foreground">No alerts yet</p>
               <p className="mb-5 text-sm text-muted-foreground">
-                Search for a property, then tap Set alert to be told when a match is listed.
+                Tap Create an alert above, or search for a property and tap Set alert.
               </p>
               <Link
                 href="/search"
-                className="focus-ring inline-flex min-h-12 items-center justify-center rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground"
+                className="focus-ring inline-flex min-h-12 items-center justify-center rounded-lg border border-border bg-background px-5 text-sm font-semibold text-foreground hover:bg-secondary"
               >
                 Search properties
               </Link>
