@@ -29,10 +29,11 @@ import {
   PropertyDescription,
   PropertyAmenities,
 } from '@/components/property-details'
-import { displayTitle } from '@/lib/property-display'
+import { displayTitle, amenityLabels, toMoney } from '@/lib/property-display'
 import { cleanMediaUrls } from '@/lib/property-media'
 import { isValidListingId } from '@/lib/listing-id'
 import { PropertyVideo } from '@/components/property-video'
+import { PropertySectionNav, type SectionNavItem } from '@/components/property-section-nav'
 import { PropertyTrust } from '@/components/property-trust'
 import { RemoteInspectionEntry } from '@/components/remote-inspection-entry'
 import { identityState } from '@/lib/property-trust'
@@ -732,6 +733,18 @@ export default function ListingDetailPage() {
     viewing: myViewing,
   })
 
+  // Jump-to pills: only sections that really have content on this listing.
+  const navItems: SectionNavItem[] = [
+    ...(cleanedDescription ? [{ id: 'about', label: 'About' }] : []),
+    ...(amenityLabels(listing.amenities).length > 0 ? [{ id: 'amenities', label: 'Amenities' }] : []),
+    { id: 'trust', label: 'Verification' },
+    { id: 'location', label: 'Location' },
+  ]
+
+  const rentNumber = toMoney(listing.price_monthly)
+  const barPriceText =
+    rentNumber !== null && rentNumber > 0 ? `₦${rentNumber.toLocaleString('en-NG')}` : null
+
   /* ---------------- Main render ---------------- */
 
   return (
@@ -864,6 +877,8 @@ export default function ListingDetailPage() {
               />
             </div>
 
+            <PropertySectionNav items={navItems} className="mb-6" />
+
             <PropertyVideo
               key={String(listing.video_url ?? '')}
               url={listing.video_url}
@@ -872,9 +887,13 @@ export default function ListingDetailPage() {
               className="mb-6"
             />
 
-            <PropertyDescription text={cleanedDescription} className="mb-6" />
+            <div id="about" className="scroll-mt-32">
+              <PropertyDescription text={cleanedDescription} className="mb-6" />
+            </div>
 
-            <PropertyAmenities amenities={listing.amenities} className="mb-6" />
+            <div id="amenities" className="scroll-mt-32">
+              <PropertyAmenities amenities={listing.amenities} className="mb-6" />
+            </div>
 
             <PropertyTrust
               trust={trust}
@@ -894,11 +913,13 @@ export default function ListingDetailPage() {
               className="mb-6"
             />
 
-            <ListingLocation
-              listingId={listing.id}
-              title={displayTitle(listing)}
-              address={listing.location_text}
-            />
+            <div id="location" className="scroll-mt-32">
+              <ListingLocation
+                listingId={listing.id}
+                title={displayTitle(listing)}
+                address={listing.location_text}
+              />
+            </div>
 
             {/* Safety tip */}
             <div className="mt-6 rounded-card border border-warning/25 bg-warning-soft p-card">
@@ -1014,6 +1035,7 @@ export default function ListingDetailPage() {
       <PropertyActionsBar
         actions={actions}
         onChat={() => openEboHomesChat('property')}
+        priceText={barPriceText}
       />
 
       {/* Share sheet */}
