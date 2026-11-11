@@ -104,9 +104,12 @@ export function PropertyActionsSidebar({
 export function PropertyActionsBar({
   actions,
   onChat,
+  priceText,
 }: {
   actions: PropertyActions
   onChat: () => void
+  // Monthly rent from the listing, already formatted (for example "₦400,000"). Left out when not listed.
+  priceText?: string | null
 }) {
   if (actions.ownerMessage) return null
 
@@ -119,6 +122,12 @@ export function PropertyActionsBar({
       aria-label="Property actions"
     >
       <div className="mx-auto max-w-xl">
+        {priceText && (
+          <p className="mb-1.5 text-body font-bold text-foreground">
+            {priceText}
+            <span className="text-caption font-normal text-muted-foreground"> per month</span>
+          </p>
+        )}
         {line && <p className="mb-2 text-caption leading-snug text-muted-foreground">{line}</p>}
         <div className="flex items-center gap-2">
           <button
