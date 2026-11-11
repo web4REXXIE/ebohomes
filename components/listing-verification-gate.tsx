@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
-import { AlertCircle, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Info, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { landlordVerificationDisplay, type VerificationDisplay } from '@/lib/landlord-verification'
 
@@ -14,19 +14,23 @@ export function useListingVerification() {
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const { data: auth } = await supabase.auth.getUser()
-      if (!auth?.user) {
+      try {
+        const { data: auth } = await supabase.auth.getUser()
+        if (!auth?.user) {
+          if (alive) setDisplay(landlordVerificationDisplay(null))
+          return
+        }
+        const { data } = await supabase
+          .from('profiles')
+          .select(
+            'account_type, business_name, business_address, cac_number, representative_name, representative_role, id_document_type, id_document_url, selfie_url, ownership_doc_url, verification_status, verified, rejection_reason',
+          )
+          .eq('id', auth.user.id)
+          .maybeSingle()
+        if (alive) setDisplay(landlordVerificationDisplay(data))
+      } catch {
         if (alive) setDisplay(landlordVerificationDisplay(null))
-        return
       }
-      const { data } = await supabase
-        .from('profiles')
-        .select(
-          'account_type, business_name, business_address, cac_number, representative_name, representative_role, id_document_type, id_document_url, selfie_url, ownership_doc_url, verification_status, verified, rejection_reason',
-        )
-        .eq('id', auth.user.id)
-        .maybeSingle()
-      if (alive) setDisplay(landlordVerificationDisplay(data))
     })()
     return () => {
       alive = false
@@ -48,18 +52,19 @@ export function VerificationModal({
   display: VerificationDisplay
   onClose: () => void
 }) {
+  const router = useRouter()
   const state = display.state
-  const actionRef = useRef<HTMLAnchorElement>(null)
 
-  // Put focus on the main button and let Escape close the popup.
+  // Keep the latest onClose without re-attaching the key listener on every render.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
   useEffect(() => {
-    actionRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') closeRef.current()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [])
 
   const message =
     state === 'not_submitted'
@@ -96,13 +101,13 @@ export function VerificationModal({
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary"
         >
           <X size={20} aria-hidden />
         </button>
 
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-          <AlertCircle size={28} className="text-primary" aria-hidden />
+          <Info size={28} className="text-primary" aria-hidden />
         </div>
 
         <p id="verify-modal-text" className="mb-6 text-sm leading-relaxed text-foreground">
@@ -113,17 +118,17 @@ export function VerificationModal({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-border bg-background text-sm font-semibold text-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-border bg-background text-sm font-semibold text-foreground hover:bg-secondary"
           >
             Close
           </button>
-          <Link
-            ref={actionRef}
-            href={href}
-            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          <button
+            type="button"
+            onClick={() => router.push(href)}
+            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90"
           >
             {label}
-          </Link>
+          </button>
         </div>
       </div>
     </div>
