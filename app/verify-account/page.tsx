@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ShieldCheck, Clock, XCircle, Check, Circle, FileText, Loader2, Mail, Info } from 'lucide-react'
+import { ShieldCheck, Clock, XCircle, Check, FileText, Loader2, Mail, Info } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
@@ -457,6 +457,16 @@ export default function VerifyAccountPage() {
           )}
         </button>
       </form>
+
+      <div className="text-center">
+        <Link
+          href={nextPath ?? '/search'}
+          className="focus-ring inline-flex min-h-11 items-center justify-center px-4 text-sm font-semibold text-primary"
+        >
+          I&apos;ll do this later
+        </Link>
+        <p className="text-xs text-muted-foreground">You can browse properties now. You must be verified before you can apply.</p>
+      </div>
     </Shell>
   )
-  }
+}
