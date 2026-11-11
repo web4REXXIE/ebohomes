@@ -493,4 +493,4 @@ export default function LoginPage() {
       )}
     </AuthShell>
   )
-                                                                                                                                                                                                                               }
+    }
