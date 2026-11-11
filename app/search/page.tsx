@@ -37,6 +37,15 @@ import { SearchAlertBar } from '@/components/search-alert-bar'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
 import { sizedPhoto, photoSrcSet } from '@/lib/image-url'
 import { SmartImage } from '@/components/ui/smart-image'
+import dynamic from 'next/dynamic'
+
+// The map loads only when needed. It uses Leaflet, which needs the browser.
+const SearchMap = dynamic(() => import('@/components/search-map').then((m) => ({ default: m.SearchMap })), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[60vh] animate-pulse rounded-card border border-border bg-secondary" aria-busy="true" />
+  ),
+})
 
 /* Stage 7: search page redesign.
    Data loading, filtering, sorting, paging, saving and sharing logic is the same as before.
@@ -706,7 +715,7 @@ function SearchContent() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map'>('grid')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
   const [sortBy, setSortBy] = useState('recommended')
   const [page, setPage] = useState(1)
@@ -1366,6 +1375,20 @@ function SearchContent() {
               <ListIcon size={16} aria-hidden="true" />
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setViewMode(viewMode === 'map' ? 'grid' : 'map')}
+            aria-pressed={viewMode === 'map'}
+            className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-control border px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              viewMode === 'map'
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-card text-foreground'
+            }`}
+          >
+            <MapPin size={16} aria-hidden="true" />
+            {viewMode === 'map' ? 'List' : 'Map'}
+          </button>
         </div>
       </div>
 
@@ -1569,22 +1592,26 @@ function SearchContent() {
                 )}
               </div>
             ) : (
-              <>
-                <div className={gridClass}>
-                  {pageResults.map((listing) => (
-                    <PropertyCard
-                      key={listing.id}
-                      listing={listing}
-                      layout={viewMode}
-                      saved={savedIds.has(listing.id)}
-                      onToggleSave={() => toggleSave(listing.id)}
-                      onShare={() => setShareTarget(listing)}
-                    />
-                  ))}
-                </div>
+              viewMode === 'map' ? (
+                <SearchMap listings={results} onOpen={(id) => router.push(`/listing/${id}`)} />
+              ) : (
+                <>
+                  <div className={gridClass}>
+                    {pageResults.map((listing) => (
+                      <PropertyCard
+                        key={listing.id}
+                        listing={listing}
+                        layout={viewMode}
+                        saved={savedIds.has(listing.id)}
+                        onToggleSave={() => toggleSave(listing.id)}
+                        onShare={() => setShareTarget(listing)}
+                      />
+                    ))}
+                  </div>
 
-                <Pagination page={currentPage} totalPages={totalPages} onChange={changePage} />
-              </>
+                  <Pagination page={currentPage} totalPages={totalPages} onChange={changePage} />
+                </>
+              )
             )}
           </div>
         </div>
