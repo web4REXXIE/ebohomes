@@ -15,6 +15,7 @@ import {
 } from '@/lib/ownership-docs'
 import { isSubmissionComplete, landlordVerificationDisplay, missingItems } from '@/lib/landlord-verification'
 import { ToneChip } from '@/components/dashboard-ui'
+import { VerificationTracker, IdTypePicker, UploadTips, WhatHappensNext } from '@/components/verification-ui' // NEW
 
 // Stage 16 Part 2: presentation changes only.
 // Upload, submit, cleanup and storage logic are the same as before.
@@ -536,6 +537,13 @@ export default function GetVerifiedPage() {
           <p className="text-sm text-muted-foreground">{display.detail}</p>
         </div>
 
+        {/* NEW: 3-step tracker and "What happens next?" */}
+        <section className="rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Verification progress">
+          <VerificationTracker current="waiting" />
+        </section>
+
+        <WhatHappensNext />
+
         <section className="rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Details submitted for verification">
           <h2 className="mb-1 font-bold text-foreground">What you submitted</h2>
           <ul className="divide-y divide-border">
@@ -596,6 +604,14 @@ export default function GetVerifiedPage() {
         </p>
       </div>
 
+      {/* NEW: tracker. Rejected shows the last step in red. */}
+      <section className="mb-5 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Verification progress">
+        <VerificationTracker
+          current={display.state === 'rejected' ? 'decision' : 'submit'}
+          outcome={display.state === 'rejected' ? 'rejected' : 'none'}
+        />
+      </section>
+
       {display.state === 'rejected' && (
         <div className="mb-5 flex items-start gap-3 rounded-card border border-danger/30 bg-danger-soft p-4">
           <XCircle size={18} className="mt-0.5 shrink-0 text-danger" aria-hidden />
@@ -606,6 +622,10 @@ export default function GetVerifiedPage() {
             ) : (
               <p>{display.detail}</p>
             )}
+            {/* NEW */}
+            <p className="mt-2 text-muted-foreground">
+              Fix the points above, upload a new photo if needed, then submit again.
+            </p>
           </div>
         </div>
       )}
@@ -709,24 +729,16 @@ export default function GetVerifiedPage() {
           />
         </div>
 
+        {/* CHANGED: dropdown replaced by tappable ID cards (same values as before). */}
         <div className="border-t border-border pt-4">
-          <label htmlFor="v-id-type" className="mb-1 block text-sm font-semibold text-foreground">Government ID type *</label>
-          <p className="mb-3 text-sm text-muted-foreground">
-            Choose the ID you will photograph: NIN slip, driver&apos;s licence, voter&apos;s card or international passport.
-          </p>
-          <select
-            id="v-id-type"
+          <IdTypePicker
             value={formData.id_document_type}
-            onChange={(e) => setFormData((p) => ({ ...p, id_document_type: e.target.value }))}
-            className={INPUT}
-          >
-            <option value="">Select ID type</option>
-            <option value="nin">NIN slip / card</option>
-            <option value="drivers_licence">Driver&apos;s licence</option>
-            <option value="voters_card">Voter&apos;s card</option>
-            <option value="intl_passport">International passport</option>
-          </select>
+            onChange={(next) => setFormData((p) => ({ ...p, id_document_type: next }))}
+          />
         </div>
+
+        {/* NEW: photo tips */}
+        <UploadTips />
 
         <UploadField
           id="v-id-photo"
@@ -737,7 +749,7 @@ export default function GetVerifiedPage() {
           fallbackName="ID uploaded"
           uploading={idUploading === 'id'}
           uploadingText="Uploading ID..."
-          idleText="Tap to upload your ID"
+          idleText="Take a photo or choose from gallery"
           accept={OWNERSHIP_ACCEPT}
           error={uploadErrors.id}
           onPick={(e) => handleIdUpload(e, 'id')}
@@ -753,7 +765,7 @@ export default function GetVerifiedPage() {
           fallbackName="Selfie uploaded"
           uploading={idUploading === 'selfie'}
           uploadingText="Uploading selfie..."
-          idleText="Tap to take or upload a selfie"
+          idleText="Take a selfie holding your ID"
           accept="image/jpeg,image/png,image/webp"
           capture="user"
           error={uploadErrors.selfie}
@@ -822,4 +834,4 @@ export default function GetVerifiedPage() {
       </form>
     </div>
   )
-}
+                           }
