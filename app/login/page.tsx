@@ -1,16 +1,40 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Mail, Lock, Phone, User, Home as HomeIcon } from 'lucide-react'
+import { Mail, Lock, Phone, User, Home as HomeIcon, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { getSiteUrl } from '@/lib/site-url'
+import { safeNextPath } from '@/lib/tenant-verification'
 import { VerifyEmail } from '@/components/auth/verify-email'
 import { AuthShell } from '@/components/auth/auth-shell'
 import { AuthField, PasswordField, AuthAlert, AuthStepper } from '@/components/auth/auth-fields'
 import { PasswordChecklist } from '@/components/auth/password-checklist'
+
+// Sign-up and login.
+// New: the ?redirect= link is honoured (it was ignored before), so people return to the page they came from.
+// New: new tenants are no longer saved as "approved". Verification is decided by EboHomes.
+// New: after a new tenant confirms their email they are offered ID verification (they can skip it).
+// Same as before: Supabase sign-up, email code, profile creation and the landlord verification redirect.
+
+const ROLES = [
+  {
+    value: 'tenant',
+    label: "I'm a tenant",
+    desc: 'Find and rent a home',
+    next: 'Confirm your email. Before you apply for a property, EboHomes asks for a photo of your ID and a selfie, so every landlord knows tenants are real people.',
+    icon: User,
+  },
+  {
+    value: 'landlord',
+    label: "I'm a landlord",
+    desc: 'List properties for rent',
+    next: 'Confirm your email, then send your ID and a selfie. EboHomes reviews them before you can list a property.',
+    icon: HomeIcon,
+  },
+]
 
 export default function LoginPage() {
   const router = useRouter()
@@ -35,9 +59,20 @@ export default function LoginPage() {
   // Email verification step (OTP). null = not verifying.
   const [verifyEmail, setVerifyEmail] = useState<{ email: string; justCreated: boolean } | null>(null)
 
+  const roleHeadingRef = useRef<HTMLHeadingElement>(null)
+
+  // Where to send the person after they log in. Only paths inside EboHomes are accepted.
+  const rawNext = safeNextPath(searchParams.get('redirect'))
+  const nextPath = rawNext && !rawNext.startsWith('/login') ? rawNext : null
+
   useEffect(() => {
     setIsSignup(searchParams.get('mode') === 'signup')
   }, [searchParams])
+
+  // When the role step opens, move focus to its heading so screen readers announce it.
+  useEffect(() => {
+    if (signupStep === 2) roleHeadingRef.current?.focus()
+  }, [signupStep])
 
   // Password validation
   const passwordChecks = {
@@ -53,8 +88,12 @@ export default function LoginPage() {
   const handleStep1Continue = (e: React.FormEvent) => {
     e.preventDefault()
     setMessage('')
-    if (!fullName || !phone || !email || !password || !confirmPassword) {
+    if (!fullName.trim() || !phone.trim() || !email.trim() || !password || !confirmPassword) {
       setMessage('Please fill in all fields.')
+      return
+    }
+    if (phone.replace(/\D/g, '').length < 10) {
+      setMessage('Please enter a valid phone number, for example 0801 234 5678.')
       return
     }
     if (!passwordValid) {
@@ -68,10 +107,10 @@ export default function LoginPage() {
     setSignupStep(2)
   }
 
-  // Step 2 -> create account (documents are submitted later from /dashboard/verify)
+  // Step 2 -> create account (documents are submitted later, on the verification pages)
   const handleStep2Continue = () => {
     if (!role) {
-      setMessage('Please select a role.')
+      setMessage('Please choose how you will use EboHomes.')
       return
     }
     setMessage('')
@@ -80,6 +119,7 @@ export default function LoginPage() {
 
   // Creates the profile row from the auth metadata. Safe to call repeatedly:
   // an existing profile is never overwritten.
+  // Tenants start with no verification result. Only EboHomes can mark an account verified.
   const ensureProfile = async (user: { id: string; user_metadata?: Record<string, any> }) => {
     const meta = user.user_metadata ?? {}
     const userRole = meta.role === 'landlord' ? 'landlord' : 'tenant'
@@ -90,13 +130,13 @@ export default function LoginPage() {
         role: userRole,
         phone: meta.phone ?? null,
         verified: false,
-        verification_status: userRole === 'landlord' ? null : 'approved',
+        verification_status: null,
       },
       { onConflict: 'id', ignoreDuplicates: true }
     )
   }
 
-  const redirectAfterAuth = async (userId: string) => {
+  const redirectAfterAuth = async (userId: string, justCreated = false) => {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role, verification_status')
@@ -104,19 +144,27 @@ export default function LoginPage() {
       .single()
 
     if (profile?.role === 'landlord') {
-      router.push(['verified', 'approved'].includes(profile.verification_status ?? '') ? '/dashboard' : '/dashboard/verify')
-    } else {
-      router.push('/')
+      const verified = ['verified', 'approved'].includes(profile.verification_status ?? '')
+      router.push(verified ? (nextPath ?? '/dashboard') : '/dashboard/verify')
+      return
     }
+
+    // A brand new tenant is offered ID verification straight away. They can skip it there.
+    if (justCreated) {
+      router.push(`/verify-account?next=${encodeURIComponent(nextPath ?? '/search')}`)
+      return
+    }
+    router.push(nextPath ?? '/')
   }
 
   const completeSignup = async () => {
     setLoading(true)
     setMessage('')
+    const cleanEmail = email.trim().toLowerCase()
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: cleanEmail,
       password,
-      options: { data: { full_name: fullName, role, phone } },
+      options: { data: { full_name: fullName.trim(), role, phone: phone.trim() } },
     })
     setLoading(false)
 
@@ -129,17 +177,18 @@ export default function LoginPage() {
       setMessage('An account with this email already exists. Please log in instead.')
       return
     }
-    setVerifyEmail({ email, justCreated: true })
+    setVerifyEmail({ email: cleanEmail, justCreated: true })
   }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage('')
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const cleanEmail = email.trim().toLowerCase()
+    const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password })
     if (error) {
       if (error.code === 'email_not_confirmed' || /not confirmed/i.test(error.message)) {
-        setVerifyEmail({ email, justCreated: false })
+        setVerifyEmail({ email: cleanEmail, justCreated: false })
       } else {
         setMessage(
           /invalid login/i.test(error.message) ? 'Incorrect email or password.' : error.message
@@ -161,32 +210,18 @@ export default function LoginPage() {
     })
   }
 
+  // Switching between log in and sign up keeps the page the person came from.
   const switchMode = (toSignup: boolean) => {
-    router.push(toSignup ? '/login?mode=signup' : '/login')
+    const q = nextPath ? `redirect=${encodeURIComponent(nextPath)}` : ''
+    if (toSignup) router.push(`/login?mode=signup${q ? `&${q}` : ''}`)
+    else router.push(q ? `/login?${q}` : '/login')
     setSignupStep(1)
     setMessage('')
   }
 
   const SIGNUP_STEPS = ['Account', 'Role', 'Verify email']
   const isSuccessMessage = message.includes('created')
-
-  const roles = [
-    {
-      value: 'tenant',
-      label: "I'm a tenant",
-      desc: 'Find and rent a home',
-      next: 'Your account is ready as soon as you confirm your email.',
-      icon: User,
-    },
-    {
-      value: 'landlord',
-      label: "I'm a landlord",
-      desc: 'List properties for rent',
-      next: 'After confirming your email, you will send your ID and a selfie so EboHomes can review who you are.',
-      icon: HomeIcon,
-    },
-  ]
-  const selectedRole = roles.find((r) => r.value === role)
+  const selectedRole = ROLES.find((r) => r.value === role)
 
   return (
     <AuthShell>
@@ -199,7 +234,9 @@ export default function LoginPage() {
             nextStep={
               role === 'landlord'
                 ? 'Next: you will be asked for your ID and a selfie so EboHomes can review your identity.'
-                : undefined
+                : role === 'tenant'
+                  ? 'Next: you can verify your ID so you are ready to apply. You can also do that later.'
+                  : undefined
             }
             onVerified={async () => {
               const { data } = await supabase.auth.getUser()
@@ -207,7 +244,7 @@ export default function LoginPage() {
             }}
             onContinue={async () => {
               const { data } = await supabase.auth.getUser()
-              if (data.user) await redirectAfterAuth(data.user.id)
+              if (data.user) await redirectAfterAuth(data.user.id, verifyEmail.justCreated)
               else router.push('/')
             }}
             onBack={() => {
@@ -226,7 +263,7 @@ export default function LoginPage() {
 
           {/* STEP 1: account details */}
           {signupStep === 1 && (
-            <form onSubmit={handleStep1Continue} className="space-y-4">
+            <form onSubmit={handleStep1Continue} className="space-y-4" noValidate>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <AuthField
                   label="Full name"
@@ -236,6 +273,7 @@ export default function LoginPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Your full name"
+                  hint="Use the name on your ID."
                   required
                 />
                 <AuthField
@@ -247,7 +285,7 @@ export default function LoginPage() {
                   inputMode="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+234 801 234 5678"
+                  placeholder="0801 234 5678"
                   required
                 />
               </div>
@@ -303,14 +341,22 @@ export default function LoginPage() {
             </form>
           )}
 
-          {/* STEP 2: role */}
+          {/* STEP 2: account type */}
           {signupStep === 2 && (
             <div>
-              <h2 className="mb-1 text-h3 font-semibold text-foreground">How will you use EboHomes?</h2>
-              <p className="mb-4 text-body text-muted-foreground">You can tell us now; it decides your next step.</p>
+              <h2
+                ref={roleHeadingRef}
+                tabIndex={-1}
+                className="mb-1 text-h3 font-semibold text-foreground outline-none"
+              >
+                How will you use EboHomes?
+              </h2>
+              <p className="mb-4 text-body text-muted-foreground">
+                This decides your next step. Pick the one that fits you best.
+              </p>
 
-              <div role="radiogroup" aria-label="Account type" className="mb-4 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
-                {roles.map((r) => {
+              <div role="radiogroup" aria-label="Account type" className="mb-4 space-y-3">
+                {ROLES.map((r) => {
                   const on = role === r.value
                   return (
                     <button
@@ -318,21 +364,40 @@ export default function LoginPage() {
                       type="button"
                       role="radio"
                       aria-checked={on}
-                      onClick={() => setRole(r.value)}
-                      className={`min-h-11 rounded-card border-2 p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
-                        on ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
+                      onClick={() => {
+                        setRole(r.value)
+                        setMessage('')
+                      }}
+                      className={`flex min-h-[4.5rem] w-full items-center gap-4 rounded-card border-2 p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                        on ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-secondary'
                       }`}
                     >
-                      <r.icon size={20} className={`mb-2 ${on ? 'text-primary' : 'text-muted-foreground'}`} />
-                      <p className="text-body font-semibold text-foreground">{r.label}</p>
-                      <p className="text-caption text-muted-foreground">{r.desc}</p>
+                      <span
+                        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${
+                          on ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
+                        }`}
+                      >
+                        <r.icon size={22} aria-hidden />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-body font-semibold text-foreground">{r.label}</span>
+                        <span className="block text-caption text-muted-foreground">{r.desc}</span>
+                      </span>
+                      <span
+                        aria-hidden
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+                          on ? 'border-primary bg-primary text-primary-foreground' : 'border-border'
+                        }`}
+                      >
+                        {on && <Check size={14} />}
+                      </span>
                     </button>
                   )
                 })}
               </div>
 
               {selectedRole && (
-                <p className="mb-4 rounded-control bg-cream px-3 py-2.5 text-caption text-cream-foreground">
+                <p className="mb-4 rounded-control bg-cream px-3 py-2.5 text-caption text-cream-foreground" role="status">
                   <span className="font-semibold">What happens next: </span>
                   {selectedRole.next}
                 </p>
@@ -341,7 +406,7 @@ export default function LoginPage() {
               {message && <AuthAlert tone={isSuccessMessage ? 'success' : 'error'} className="mb-4">{message}</AuthAlert>}
 
               <div className="flex gap-3">
-                <Button type="button" variant="outline" size="lg" onClick={() => setSignupStep(1)} className="flex-1">
+                <Button type="button" variant="outline" size="lg" onClick={() => { setSignupStep(1); setMessage('') }} className="flex-1">
                   Back
                 </Button>
                 <Button type="button" size="lg" onClick={handleStep2Continue} disabled={loading} loading={loading} className="flex-1">
@@ -428,4 +493,4 @@ export default function LoginPage() {
       )}
     </AuthShell>
   )
-                }
+                                                                                                                                                                                                                               }
