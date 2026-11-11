@@ -15,12 +15,15 @@ import {
   Key,
   User,
   Bell,
+  BellRing,
+  ShieldCheck,
   LogOut,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
 import { useNotifications } from '@/components/notification-provider'
 import { AccountShell, navItemClass, type AccountNavGroup } from '@/components/account-shell'
+import { tenantVerificationState } from '@/lib/tenant-verification'
 
 // Stage 15: the tenant dashboard frame.
 // - The links match the tenant links in lib/dashboard-links.ts (same labels and routes), plus Search, Saved and Profile.
@@ -30,6 +33,8 @@ import { AccountShell, navItemClass, type AccountNavGroup } from '@/components/a
 // Stage 17: the sidebar, phone header and phone menu now come from components/account-shell.tsx.
 // Stage 18b: this file moved here from app/home/layout.tsx so /tenancies can use the same tenant shell.
 // It still runs its own access check: landlords are sent to /dashboard, signed-out visitors to /login.
+// New: "ID Verification" and "My Alerts" are now in the menu. ID Verification shows a small marker only when the tenant
+// still has something to do (nothing submitted, or the last submission was not approved).
 const NAV_GROUPS: AccountNavGroup[] = [
   { title: null, items: [{ label: 'Dashboard', href: '/home', icon: LayoutDashboard, exact: true }] },
   {
@@ -37,6 +42,7 @@ const NAV_GROUPS: AccountNavGroup[] = [
     items: [
       { label: 'Search Homes', href: '/search', icon: Search },
       { label: 'Saved Homes', href: '/saved', icon: Heart },
+      { label: 'My Alerts', href: '/alerts', icon: BellRing },
     ],
   },
   {
@@ -54,6 +60,7 @@ const NAV_GROUPS: AccountNavGroup[] = [
     items: [
       { label: 'Messages', href: '/messages', icon: MessageCircle, badgeKey: 'messages' },
       { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
+      { label: 'ID Verification', href: '/verify-account', icon: ShieldCheck, badgeKey: 'verification' },
       { label: 'My Profile', href: '/profile', icon: User },
     ],
   },
@@ -123,6 +130,10 @@ export function TenantAccountShell({ children }: { children: React.ReactNode }) 
     router.push('/')
   }
 
+  // Only point at verification when the tenant has something to do. Submitted and verified show no marker.
+  const verificationState = tenantVerificationState(profile)
+  const verificationNeedsAction = verificationState === 'not_submitted' || verificationState === 'rejected'
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background" role="status" aria-label="Loading your dashboard">
@@ -147,6 +158,7 @@ export function TenantAccountShell({ children }: { children: React.ReactNode }) 
       badges={{
         messages: { count: unreadMessages, label: (n) => `${n} unread` },
         notifications: { count: unreadNotifs, label: (n) => `${n} unread` },
+        verification: { count: verificationNeedsAction ? 1 : 0, label: () => 'Action needed' },
       }}
       unreadNotifs={unreadNotifs}
       navFooter={
