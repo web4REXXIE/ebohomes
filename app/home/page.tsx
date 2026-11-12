@@ -24,6 +24,7 @@ import { getUnreadMessageCount } from '@/lib/support'
 import { TenantNextStep } from '@/components/tenant-next-step'
 import { sizedPhoto } from '@/lib/image-url'
 import { SmartImage } from '@/components/ui/smart-image'
+import { tenantVerificationState, type TenantVerificationState } from '@/lib/tenant-verification'
 
 type Listing = {
   id: string
@@ -65,6 +66,8 @@ export default function TenantHomePage() {
   const [recentMessages, setRecentMessages] = useState<ConvoPreview[]>([])
   const [notifications, setNotifications] = useState<any[]>([])
   const [savedCount, setSavedCount] = useState<number | null>(null)
+  // Tenant ID verification state. null until the profile has loaded (nothing is shown until then).
+  const [verifyState, setVerifyState] = useState<TenantVerificationState | null>(null)
   // Sections whose data could not be loaded. They say so instead of showing an empty message.
   const [failed, setFailed] = useState<string[]>([])
 
@@ -90,10 +93,11 @@ export default function TenantHomePage() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('full_name')
+      .select('full_name, id_document_type, id_document_url, selfie_url, verification_status, verified')
       .eq('id', user.id)
       .single()
     setFullName(profile?.full_name ?? 'there')
+    setVerifyState(profile ? tenantVerificationState(profile) : null)
 
     setUnreadMsgCount(await getUnreadMessageCount())
 
@@ -236,6 +240,41 @@ export default function TenantHomePage() {
           <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden />
           Some of your dashboard could not load. Please refresh the page.
         </p>
+      )}
+
+      {/* ID verification: shown only while the tenant has something to do or is waiting. Nothing is shown once verified. */}
+      {verifyState && verifyState !== 'verified' && (
+        <section
+          aria-labelledby="verify-card-title"
+          className={`mb-6 flex items-start gap-3 rounded-card border p-4 ${
+            verifyState === 'rejected' ? 'border-destructive/30 bg-destructive/5' : verifyState === 'submitted' ? 'border-border bg-card' : 'border-warning/40 bg-warning-soft'
+          }`}
+        >
+          <ShieldCheck size={22} className="mt-0.5 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <h2 id="verify-card-title" className="text-sm font-bold text-foreground">
+              {verifyState === 'submitted'
+                ? 'Your ID details are with EboHomes'
+                : verifyState === 'rejected'
+                  ? 'Your last ID submission was not approved'
+                  : 'Verify your ID to apply'}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {verifyState === 'submitted'
+                ? 'You have sent your ID and selfie. EboHomes has not recorded a decision yet. You can apply once your account is approved.'
+                : verifyState === 'rejected'
+                  ? 'Open the verification page to see the reason and send new photos.'
+                  : 'EboHomes checks every tenant before they apply. It takes a few minutes: your ID type, a photo of the ID and a selfie.'}
+            </p>
+            <Link
+              href="/verify-account?next=/home"
+              className="focus-ring mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-button bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              {verifyState === 'submitted' ? 'View status' : verifyState === 'rejected' ? 'Update details' : 'Verify now'}
+              <ArrowRight size={16} aria-hidden />
+            </Link>
+          </div>
+        </section>
       )}
 
       <TenantNextStep />
