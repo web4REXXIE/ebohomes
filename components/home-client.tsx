@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   Search, ShieldCheck, Home as HomeIcon, Tag, MapPin, ChevronDown, Building2, Home,
   DoorOpen, Building, Bed, Briefcase, Store, MapPinned, Warehouse, CalendarClock, Users,
-  Crown, Loader2, Play, X, ArrowRight,
+  Crown, Loader2, Play, X, ArrowRight, SlidersHorizontal,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
@@ -385,6 +385,9 @@ export default function HomeClient() {
   const [bedrooms, setBedrooms] = useState('')
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
+  // Phones show only the location box first. Type, bedrooms and budget open with "More filters". Larger screens show all.
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreCount = [propertyType, bedrooms, minPrice, maxPrice].filter(Boolean).length
 
   const [featured, setFeatured] = useState<Listing[]>([])
   const [recent, setRecent] = useState<Listing[]>([])
@@ -570,7 +573,23 @@ export default function HomeClient() {
                 </datalist>
               </div>
 
-              <div>
+              <div className="sm:hidden">
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen((v) => !v)}
+                  aria-expanded={moreOpen}
+                  aria-controls="home-more-filters"
+                  className="focus-visible:ring-ring/50 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2"
+                >
+                  <SlidersHorizontal size={16} aria-hidden="true" className="text-primary" />
+                  {moreOpen ? 'Fewer filters' : 'More filters'}
+                  {!moreOpen && moreCount > 0 && (
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">{moreCount}</span>
+                  )}
+                </button>
+              </div>
+
+              <div id="home-more-filters" className={moreOpen ? '' : 'hidden sm:block'}>
                 <label htmlFor="home-type" className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
                   <HomeIcon size={14} aria-hidden="true" className="text-primary" /> Property type
                 </label>
@@ -583,7 +602,7 @@ export default function HomeClient() {
                 </div>
               </div>
 
-              <div>
+              <div className={moreOpen ? '' : 'hidden sm:block'}>
                 <label htmlFor="home-beds" className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
                   <Bed size={14} aria-hidden="true" className="text-primary" /> Bedrooms
                 </label>
@@ -596,7 +615,7 @@ export default function HomeClient() {
                 </div>
               </div>
 
-              <div className="sm:col-span-2 lg:col-span-1">
+              <div className={cn('sm:col-span-2 lg:col-span-1', !moreOpen && 'hidden sm:block')}>
                 <span className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
                   <Tag size={14} aria-hidden="true" className="text-primary" /> Budget
                 </span>
