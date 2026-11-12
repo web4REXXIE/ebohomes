@@ -58,6 +58,62 @@ export default function AdminHandovers() {
   )
 }
 
+type TenantContact = {
+  has_contact: boolean
+  tenant_phone: string | null
+  home_address: string | null
+  city: string | null
+  emergency_name: string | null
+  emergency_phone: string | null
+  emergency_relationship: string | null
+}
+
+// Hidden until an admin asks for it. Each time it is opened, the database writes an audit record.
+function TenantContactBox({ tenancyId }: { tenancyId: string }) {
+  const [loading, setLoading] = useState(false)
+  const [contact, setContact] = useState<TenantContact | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const show = async () => {
+    if (loading) return
+    setLoading(true); setError(null)
+    const { data, error } = await supabase.rpc('eb_admin_tenant_contact', { p_tenancy_id: tenancyId })
+    setLoading(false)
+    if (error || !data) { setError('Could not open the contact details. Nothing was shown.'); return }
+    setContact(data as TenantContact)
+  }
+
+  if (!contact) {
+    return (
+      <div className="rounded-xl border border-border p-3">
+        <p className="mb-2 text-xs text-muted-foreground">The tenant's address and emergency contact are private. Opening them is recorded in the audit log.</p>
+        <button onClick={show} disabled={loading} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-semibold hover:bg-secondary disabled:opacity-50">
+          {loading && <Loader2 size={16} className="animate-spin" aria-hidden />}Show tenant contact
+        </button>
+        {error && <p role="alert" className="mt-2 text-xs text-red-900">{error}</p>}
+      </div>
+    )
+  }
+
+  const row = (label: string, value: string | null) => (
+    <div><dt className="text-xs text-muted-foreground">{label}</dt><dd>{value || 'Not provided'}</dd></div>
+  )
+
+  return (
+    <div className="rounded-xl border border-border p-3">
+      <p className="mb-2 font-bold">Tenant contact</p>
+      <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+        {row('Tenant phone', contact.tenant_phone)}
+        {row('Home address', [contact.home_address, contact.city].filter(Boolean).join(', '))}
+        {row('Emergency contact', contact.emergency_name)}
+        {row('Emergency phone', contact.emergency_phone)}
+        {row('Relationship', contact.emergency_relationship)}
+      </dl>
+      {!contact.has_contact && <p className="mt-2 text-xs text-muted-foreground">The tenant has not added an address or emergency contact.</p>}
+    </div>
+  )
+}
+
 function Detail({ s, onChanged }: { s: any; onChanged: () => void }) {
   const [outcome, setOutcome] = useState<'reset' | 'admin_completed' | ''>('')
   const [note, setNote] = useState('')
@@ -87,6 +143,8 @@ function Detail({ s, onChanged }: { s: any; onChanged: () => void }) {
       {s.state === 'completed' && <p className="rounded-lg bg-emerald-50 p-3 text-emerald-900">Completed {when(s.completed_at)} ({s.completed_via === 'admin_review' ? 'after EboHomes review' : 'both parties confirmed'}).{s.resolution_note ? ` Note: ${s.resolution_note}` : ''}</p>}
       <ul className="space-y-1 text-xs">{s.events.map((e: any, i: number) => <li key={i} className="rounded-md border border-border p-2"><b>{String(e.event).replace(/_/g, ' ')}</b> · {e.by ?? 'n/a'} ({e.role}) · {when(e.at)}{e.note ? ` · "${e.note}"` : ''}</li>)}</ul>
 
+      <TenantContactBox tenancyId={s.tenancy_id} />
+
       {s.state === 'disputed' && (
         <div className="space-y-3 rounded-xl border border-border p-3">
           <p className="font-bold">Resolve the dispute</p>
@@ -99,4 +157,4 @@ function Detail({ s, onChanged }: { s: any; onChanged: () => void }) {
       {msg && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-red-900">{msg}</p>}
     </div>
   )
-}
+        }
