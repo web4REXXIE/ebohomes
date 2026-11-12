@@ -43,6 +43,8 @@ import {
   PropertyActionsSidebar,
 } from '@/components/property-actions'
 import { decidePropertyActions } from '@/lib/property-actions'
+import { VerifyPromptModal, type ViewerGate } from '@/components/verify-prompt-modal'
+import { tenantVerificationState } from '@/lib/tenant-verification'
 import { OPEN_STATUSES as APPLICATION_OPEN_STATUSES } from '@/lib/application-form'
 import { OPEN_STATUSES as VIEWING_OPEN_STATUSES } from '@/lib/viewing-status'
 
@@ -181,6 +183,12 @@ export default function ListingDetailPage() {
   } | null>(null)
   const [myViewing, setMyViewing] = useState<{ status: string } | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+
+  // Is this viewer a tenant who still needs to verify? null = no gate
+  // (verified, not a tenant, signed out, or the check could not be made).
+  const [viewerGate, setViewerGate] = useState<ViewerGate | null>(null)
+  const [showVerifyPrompt, setShowVerifyPrompt] = useState(false)
+
   const [showReportModal, setShowReportModal] = useState(false)
   const [notAvailable, setNotAvailable] = useState(false)
   const [pageError, setPageError] = useState('')
@@ -191,6 +199,35 @@ export default function ListingDetailPage() {
 
   // Derived early so gallery handlers and hooks below can use it
   const photos: string[] = cleanMediaUrls(listing?.photos)
+
+  /* ---------------- Verification gate (popup only) ---------------- */
+
+  // This only decides whether Apply opens the popup. The apply page still checks on its own,
+  // so if this lookup fails nothing is blocked or opened by mistake.
+  useEffect(() => {
+    if (!userId) {
+      setViewerGate(null)
+      return
+    }
+    let alive = true
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role, id_document_type, id_document_url, selfie_url, verification_status, verified')
+        .eq('id', userId)
+        .maybeSingle()
+      if (!alive || error || !data) return
+      if (data.role && data.role !== 'tenant') {
+        setViewerGate(null)
+        return
+      }
+      const s = tenantVerificationState(data)
+      setViewerGate(s === 'verified' ? null : s)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [userId])
 
   /* ---------------- Share ---------------- */
 
@@ -745,6 +782,9 @@ export default function ListingDetailPage() {
   const barPriceText =
     rentNumber !== null && rentNumber > 0 ? `₦${rentNumber.toLocaleString('en-NG')}` : null
 
+  // Opens the verify popup instead of the apply page, only for tenants who still need to verify.
+  const onGate = viewerGate ? () => setShowVerifyPrompt(true) : undefined
+
   /* ---------------- Main render ---------------- */
 
   return (
@@ -1024,6 +1064,7 @@ export default function ListingDetailPage() {
                 <PropertyActionsSidebar
                   actions={actions}
                   onChat={() => openEboHomesChat('property')}
+                  onGate={onGate}
                 />
               </div>
             </div>
@@ -1036,7 +1077,17 @@ export default function ListingDetailPage() {
         actions={actions}
         onChat={() => openEboHomesChat('property')}
         priceText={barPriceText}
+        onGate={onGate}
       />
+
+      {/* Verify popup: only opens when an unverified tenant taps Apply */}
+      {showVerifyPrompt && viewerGate && (
+        <VerifyPromptModal
+          gate={viewerGate}
+          listingId={String(listing.id)}
+          onClose={() => setShowVerifyPrompt(false)}
+        />
+      )}
 
       {/* Share sheet */}
       {showShareMenu && (
@@ -1145,4 +1196,4 @@ export default function ListingDetailPage() {
       <Footer />
     </div>
   )
-          }
+}
