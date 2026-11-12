@@ -16,6 +16,7 @@ type Prefs = {
   listings: boolean
   renewals: boolean
   sound_enabled: boolean
+  email_enabled: boolean
 }
 
 const DEFAULTS: Prefs = {
@@ -25,6 +26,7 @@ const DEFAULTS: Prefs = {
   listings: true,
   renewals: true,
   sound_enabled: false,
+  email_enabled: true,
 }
 
 function Toggle({
@@ -104,7 +106,7 @@ export default function NotificationPreferencesPage() {
 
       const { data, error } = await supabase
         .from('notification_preferences')
-        .select('in_app_enabled, messages, applications, listings, renewals, sound_enabled')
+        .select('in_app_enabled, messages, applications, listings, renewals, sound_enabled, email_enabled')
         .eq('user_id', user.id)
         .maybeSingle()
 
@@ -206,6 +208,13 @@ export default function NotificationPreferencesPage() {
               disabled={saving || !prefs.in_app_enabled}
             />
             <Row
+              title="Email notifications"
+              description="Also send each new notification to your account email. Messages, payments and tenancy emails only say there is an update, with no details."
+              checked={prefs.email_enabled}
+              onChange={(v) => update('email_enabled', v)}
+              disabled={saving || !prefs.in_app_enabled}
+            />
+            <Row
               title="Notification sound"
               description="Play a short chime when a new notification arrives while EboHomes is open. Your browser may stay silent until you have tapped the page."
               checked={prefs.sound_enabled}
@@ -226,7 +235,7 @@ export default function NotificationPreferencesPage() {
             open in your browser.
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
-          Security alerts (such as changes to your bank, phone or email) and landlord verification results are always on.
+          Security alerts (such as changes to your bank, phone or email) and landlord verification results are always on, and they are always emailed too.
           </p>
 
           <p className="mt-2 h-4 text-xs text-muted-foreground" aria-live="polite">
