@@ -204,9 +204,11 @@ export default function LoginPage() {
   }
 
   const handleGoogleAuth = async () => {
+    // Google returns to /auth/continue, which sends the person back to the page they came from.
+    const back = nextPath ? `?next=${encodeURIComponent(nextPath)}` : ''
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${getSiteUrl()}/` },
+      options: { redirectTo: `${getSiteUrl()}/auth/continue${back}` },
     })
   }
 
