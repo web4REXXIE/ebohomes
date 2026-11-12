@@ -16,12 +16,15 @@ function ActionLink({
   icon,
   short = false,
   className = '',
+  onGate,
 }: {
   action: ActionButton
   kind: 'primary' | 'outline'
   icon: React.ReactNode
   short?: boolean
   className?: string
+  // When set, taps that would open the apply page open the verify popup instead.
+  onGate?: () => void
 }) {
   const cls = `${kind === 'primary' ? primary : outline} ${className}`
   const text = short ? action.shortLabel : action.label
@@ -34,6 +37,16 @@ function ActionLink({
       </button>
     )
   }
+
+  if (onGate && action.href.startsWith('/journey/apply/')) {
+    return (
+      <button type="button" onClick={onGate} className={cls}>
+        {icon}
+        {text}
+      </button>
+    )
+  }
+
   return (
     <Link href={action.href} className={cls}>
       {icon}
@@ -46,9 +59,11 @@ function ActionLink({
 export function PropertyActionsSidebar({
   actions,
   onChat,
+  onGate,
 }: {
   actions: PropertyActions
   onChat: () => void
+  onGate?: () => void
 }) {
   if (actions.ownerMessage) {
     return (
@@ -76,12 +91,12 @@ export function PropertyActionsSidebar({
       )}
 
       {actions.apply && (
-        <ActionLink action={actions.apply} kind="primary" icon={<FileText size={16} aria-hidden />} />
+        <ActionLink action={actions.apply} kind="primary" icon={<FileText size={16} aria-hidden />} onGate={onGate} />
       )}
 
       {actions.viewing && (
         <div className="mt-2">
-          <ActionLink action={actions.viewing} kind="outline" icon={<Calendar size={16} aria-hidden />} />
+          <ActionLink action={actions.viewing} kind="outline" icon={<Calendar size={16} aria-hidden />} onGate={onGate} />
           {actions.viewing.statusLine && (
             <p className="mt-1.5 text-caption leading-snug text-muted-foreground">{actions.viewing.statusLine}</p>
           )}
@@ -105,11 +120,13 @@ export function PropertyActionsBar({
   actions,
   onChat,
   priceText,
+  onGate,
 }: {
   actions: PropertyActions
   onChat: () => void
   // Monthly rent from the listing, already formatted (for example "₦400,000"). Left out when not listed.
   priceText?: string | null
+  onGate?: () => void
 }) {
   if (actions.ownerMessage) return null
 
@@ -146,6 +163,7 @@ export function PropertyActionsBar({
               short
               icon={<Calendar size={16} aria-hidden />}
               className="h-11 flex-1 px-2 text-caption"
+              onGate={onGate}
             />
           )}
 
@@ -156,6 +174,7 @@ export function PropertyActionsBar({
               short
               icon={<FileText size={16} aria-hidden />}
               className="h-11 flex-[1.3] px-2"
+              onGate={onGate}
             />
           )}
         </div>
