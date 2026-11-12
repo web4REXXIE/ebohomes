@@ -16,8 +16,9 @@ type Filters = {
 
 type BarState = 'idle' | 'saving' | 'saved' | 'exists' | 'error'
 
-// Saves the current search as an alert. EboHomes sends an in-app notification when a
-// matching property is approved. There is no email or WhatsApp delivery, so none is promised.
+// Saves the current search as an alert. When a matching property is approved, EboHomes sends an
+// in-app notification, and also an email unless the person switched email off in their
+// notification settings. There is no WhatsApp, Daily or Weekly delivery, so none is promised.
 export function SearchAlertBar({ label, filters }: { label: string; filters: Filters }) {
   const router = useRouter()
   const [state, setState] = useState<BarState>('idle')
@@ -68,17 +69,25 @@ export function SearchAlertBar({ label, filters }: { label: string; filters: Fil
         <p className="text-sm font-bold text-foreground">Get alerts for this search</p>
         <p className="text-xs text-muted-foreground" role="status">
           {state === 'saved'
-            ? 'Alert saved. You will get a notification in EboHomes when a matching property is approved.'
+            ? 'Alert saved. When a matching property is approved, you get a notification in EboHomes and an email.'
             : state === 'exists'
               ? 'You already have an alert for this search.'
               : state === 'error'
                 ? 'Could not save the alert. Please try again.'
-                : `${label}. You are notified in EboHomes when a matching property is approved.`}
+                : `${label}. You are notified in EboHomes and by email when a matching property is approved.`}
         </p>
         {done && (
-          <Link href="/alerts" className="focus-ring mt-1 inline-flex min-h-11 items-center text-xs font-semibold text-primary">
-            Manage my alerts
-          </Link>
+          <>
+            <Link href="/alerts" className="focus-ring mt-1 inline-flex min-h-11 items-center text-xs font-semibold text-primary">
+              Manage my alerts
+            </Link>
+            <Link
+              href="/notifications/preferences"
+              className="focus-ring ml-4 mt-1 inline-flex min-h-11 items-center text-xs font-semibold text-primary"
+            >
+              Email settings
+            </Link>
+          </>
         )}
       </div>
       {!done && (
