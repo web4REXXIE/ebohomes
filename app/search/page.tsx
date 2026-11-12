@@ -50,7 +50,9 @@ const SearchMap = dynamic(() => import('@/components/search-map').then((m) => ({
 /* Stage 7: search page redesign.
    Data loading, filtering, sorting, paging, saving and sharing logic is the same as before.
    New in this file: design tokens, accessible dialogs, and filters kept in sync with the URL.
-   The map (components/search-map.tsx) is not wired in here. It is handled in a later step. */
+   The Map view uses components/search-map.tsx.
+   New: the phone filter sheet is built from chips and Min / Max boxes (renderMobileFilters).
+   The desktop sidebar still uses renderFilters. Both change the same filter state. */
 
 // Values must match what is stored in listings.property_type (same list as /list-property)
 const PROPERTY_TYPES = [
@@ -253,6 +255,103 @@ function useDialog(open: boolean, onClose: () => void, panelRef: RefObject<HTMLD
       previous?.focus?.()
     }
   }, [open, panelRef])
+}
+
+/* ---------------- Budget boxes (phone filter sheet) ----------------
+   Two number boxes, Min and Max rent per month. An empty box means no limit on that side.
+   The boxes keep what the person types in their own state, so typing is never interrupted.
+   Anything above the cap counts as "no upper limit", the same rule the old slider used. */
+
+const digitsOnly = (v: string) => v.replace(/\D/g, '')
+const parseMinText = (t: string) => (t === '' ? 0 : Math.min(Number(t), PRICE_CAP))
+const parseMaxText = (t: string) => (t === '' ? PRICE_CAP : Math.min(Number(t), PRICE_CAP))
+
+function BudgetInputs({
+  id,
+  minPrice,
+  maxPrice,
+  onMin,
+  onMax,
+  inputClass,
+}: {
+  id: string
+  minPrice: number
+  maxPrice: number
+  onMin: (n: number) => void
+  onMax: (n: number) => void
+  inputClass: string
+}) {
+  const [minText, setMinText] = useState(minPrice > 0 ? String(minPrice) : '')
+  const [maxText, setMaxText] = useState(maxPrice < PRICE_CAP ? String(maxPrice) : '')
+
+  // When something else changes the budget (Reset, a recent search, the Back button), follow it.
+  useEffect(() => {
+    if (parseMinText(minText) !== minPrice) setMinText(minPrice > 0 ? String(minPrice) : '')
+  }, [minPrice, minText])
+  useEffect(() => {
+    if (parseMaxText(maxText) !== maxPrice) setMaxText(maxPrice < PRICE_CAP ? String(maxPrice) : '')
+  }, [maxPrice, maxText])
+
+  const minTooHigh = minPrice > 0 && maxPrice < PRICE_CAP && minPrice > maxPrice
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <label htmlFor={`${id}-min`} className="sr-only">
+            Minimum rent per month
+          </label>
+          <input
+            id={`${id}-min`}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="Min"
+            value={minText}
+            onChange={(e) => {
+              const t = digitsOnly(e.target.value)
+              setMinText(t)
+              onMin(parseMinText(t))
+            }}
+            className={inputClass}
+          />
+        </div>
+        <span className="text-muted-foreground" aria-hidden="true">
+          —
+        </span>
+        <div className="min-w-0 flex-1">
+          <label htmlFor={`${id}-max`} className="sr-only">
+            Maximum rent per month
+          </label>
+          <input
+            id={`${id}-max`}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="Max"
+            value={maxText}
+            onChange={(e) => {
+              const t = digitsOnly(e.target.value)
+              setMaxText(t)
+              onMax(parseMaxText(t))
+            }}
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {minPrice > 0 || maxPrice < PRICE_CAP
+          ? `${minPrice > 0 ? naira(minPrice) : 'No minimum'} to ${maxPrice < PRICE_CAP ? naira(maxPrice) : 'no limit'}`
+          : `Leave empty for no limit. Above ${naira(PRICE_CAP)} counts as no limit.`}
+      </p>
+      {minTooHigh && (
+        <p role="alert" className="mt-1 text-xs font-medium text-destructive">
+          The minimum is higher than the maximum, so nothing will match.
+        </p>
+      )}
+    </div>
+  )
 }
 
 /* ---------------- Share sheet ---------------- */
@@ -1065,7 +1164,12 @@ function SearchContent() {
   if (priceActive) {
     activeChips.push({
       key: 'price',
-      label: maxPrice >= PRICE_CAP ? `From ${naira(minPrice)}` : `Up to ${naira(maxPrice)}`,
+      label:
+        maxPrice >= PRICE_CAP
+          ? `From ${naira(minPrice)}`
+          : minPrice > 0
+            ? `${naira(minPrice)} to ${naira(maxPrice)}`
+            : `Up to ${naira(maxPrice)}`,
       onRemove: () => {
         setMinPrice(0)
         setMaxPrice(PRICE_CAP)
@@ -1101,6 +1205,7 @@ function SearchContent() {
 
   // Rendered as a function (not a component) so inputs keep focus while typing.
   // `id` keeps element ids unique when the sidebar and the mobile sheet are both in the page.
+  // This is the DESKTOP sidebar. The phone sheet uses renderMobileFilters below.
   const renderFilters = (id: string) => (
     <div className="space-y-6">
       {/* Location */}
@@ -1232,6 +1337,129 @@ function SearchContent() {
     'inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
   const chipOn = 'border-primary bg-primary text-primary-foreground'
   const chipOff = 'border-border bg-card text-foreground hover:bg-secondary'
+
+  // PHONE filter sheet. Chips and Min / Max boxes instead of a long form.
+  // Only property types that really have listings are offered (with their real counts), plus the one
+  // already selected, so a tap never leads to an empty page by design.
+  const renderMobileFilters = (id: string) => {
+    const typeChips = PROPERTY_TYPES.filter((t) => typeCounts[t.value] > 0 || propertyType === t.value)
+    const heading = 'mb-2 text-sm font-semibold text-foreground'
+
+    return (
+      <div className="space-y-6">
+        {/* Location */}
+        <div>
+          <label htmlFor={`${id}-location`} className={`${heading} block`}>
+            Location
+          </label>
+          <input
+            id={`${id}-location`}
+            type="text"
+            value={locationText}
+            onChange={(e) => setLocationText(e.target.value)}
+            placeholder="e.g. Abakaliki"
+            autoComplete="off"
+            className={inputBase}
+          />
+        </div>
+
+        {/* Property type */}
+        <fieldset>
+          <legend className={heading}>Property type</legend>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setPropertyType('')}
+              aria-pressed={propertyType === ''}
+              className={`${chipBase} ${propertyType === '' ? chipOn : chipOff}`}
+            >
+              All
+            </button>
+            {typeChips.map((t) => (
+              <button
+                type="button"
+                key={t.value}
+                onClick={() => setPropertyType(propertyType === t.value ? '' : t.value)}
+                aria-pressed={propertyType === t.value}
+                className={`${chipBase} ${propertyType === t.value ? chipOn : chipOff}`}
+              >
+                {t.label}
+                {typeCounts[t.value] > 0 && <span className="ml-1 opacity-70">({typeCounts[t.value]})</span>}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        {/* Rent budget */}
+        <fieldset>
+          <legend className={heading}>Rent budget (₦ per month)</legend>
+          <BudgetInputs
+            id={id}
+            minPrice={minPrice}
+            maxPrice={maxPrice}
+            onMin={setMinPrice}
+            onMax={setMaxPrice}
+            inputClass={inputBase}
+          />
+        </fieldset>
+
+        {/* Bedrooms */}
+        <fieldset>
+          <legend className={heading}>Bedrooms</legend>
+          <div className="flex flex-wrap gap-2">
+            {['', ...COUNT_OPTIONS].map((b) => (
+              <button
+                type="button"
+                key={b || 'any'}
+                onClick={() => setBedrooms(b)}
+                aria-pressed={bedrooms === b}
+                className={`${chipBase} min-w-14 justify-center ${bedrooms === b ? chipOn : chipOff}`}
+              >
+                {b === '' ? 'Any' : b}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        {/* Bathrooms */}
+        <fieldset>
+          <legend className={heading}>Bathrooms</legend>
+          <div className="flex flex-wrap gap-2">
+            {['', ...COUNT_OPTIONS].map((b) => (
+              <button
+                type="button"
+                key={b || 'any'}
+                onClick={() => setBathrooms(b)}
+                aria-pressed={bathrooms === b}
+                className={`${chipBase} min-w-14 justify-center ${bathrooms === b ? chipOn : chipOff}`}
+              >
+                {b === '' ? 'Any' : b}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        {/* Amenities */}
+        <fieldset>
+          <legend className={heading}>Amenities</legend>
+          <p className="mb-2 text-xs text-muted-foreground">Shows properties with any of the ones you pick.</p>
+          <div className="flex flex-wrap gap-2">
+            {AMENITIES.map((a) => (
+              <button
+                type="button"
+                key={a}
+                onClick={() => toggleAmenity(a)}
+                aria-pressed={amenities.includes(a)}
+                className={`${chipBase} ${amenities.includes(a) ? chipOn : chipOff}`}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -1652,7 +1880,7 @@ function SearchContent() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5">{renderFilters('m')}</div>
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5">{renderMobileFilters('m')}</div>
 
             <div className="border-t border-border bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
               <Button type="button" size="lg" onClick={closeFilters} className="w-full">
@@ -1666,4 +1894,4 @@ function SearchContent() {
       {shareTarget && <ShareSheet listing={shareTarget} onClose={() => setShareTarget(null)} />}
     </>
   )
-      }
+}
