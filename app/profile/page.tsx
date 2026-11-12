@@ -4,17 +4,16 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  User, Phone, Mail, Camera, Loader2, Check, LogOut, Lock, ShieldCheck, Bell, KeyRound, ChevronRight,
+  User, Phone, Mail, Camera, Loader2, Check, LogOut, Lock, ShieldCheck, Bell, KeyRound, ChevronRight, Home,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { tenantVerificationState } from '@/lib/tenant-verification'
 import { landlordVerificationDisplay } from '@/lib/landlord-verification'
 
 // Profile.
-// Same as before: photo upload, name and phone, email (read only), account links, logout.
-// New: an "ID verification" row that tells the truth about where the person stands, with a link to the right page.
-// New: the name and phone are checked before saving. The landlord "Verified" tag next to the role is gone: it
-// read one database flag on its own. The verification row uses the same checks as the rest of the app.
+// Same as before: photo upload, name and phone, email (read only), ID verification row, account links, logout.
+// New: tenants get an "Address and emergency contact" card. It is saved in its own private table
+// (profile_contacts). Only the person and EboHomes admins can read it. Landlords do not see it.
 
 type Profile = {
   id: string
@@ -77,6 +76,9 @@ function verifyRow(p: Profile): VerifyRow {
   return { label: 'Not verified', detail: 'You must verify your ID before you can apply for a property.', tone: 'grey', href: '/verify-account', action: 'Verify now' }
 }
 
+const inputClass = 'w-full h-12 px-3 rounded-lg border border-border-strong bg-background text-base'
+const labelClass = 'text-sm font-medium text-foreground-secondary mb-1.5 block'
+
 export default function ProfilePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -89,6 +91,16 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
+
+  // Address and emergency contact (tenants)
+  const [homeAddress, setHomeAddress] = useState('')
+  const [city, setCity] = useState('')
+  const [emName, setEmName] = useState('')
+  const [emPhone, setEmPhone] = useState('')
+  const [emRelationship, setEmRelationship] = useState('')
+  const [contactSaving, setContactSaving] = useState(false)
+  const [contactSaved, setContactSaved] = useState(false)
+  const [contactError, setContactError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchProfile()
@@ -120,6 +132,22 @@ export default function ProfilePage() {
       setFullName(data.full_name ?? '')
       setPhone(data.phone ?? '')
     }
+
+    // Saved address and emergency contact. If the table is not there yet, the card still works for typing
+    // and shows the error when the person saves.
+    const { data: contact } = await supabase
+      .from('profile_contacts')
+      .select('home_address, city, emergency_name, emergency_phone, emergency_relationship')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (contact) {
+      setHomeAddress(contact.home_address ?? '')
+      setCity(contact.city ?? '')
+      setEmName(contact.emergency_name ?? '')
+      setEmPhone(contact.emergency_phone ?? '')
+      setEmRelationship(contact.emergency_relationship ?? '')
+    }
+
     setLoading(false)
   }
 
@@ -187,6 +215,50 @@ export default function ProfilePage() {
     setSaving(false)
   }
 
+  async function handleSaveContact() {
+    if (!profile) return
+    setContactError(null)
+
+    const address = homeAddress.trim()
+    const cityClean = city.trim()
+    const name = emName.trim()
+    const ePhone = emPhone.trim()
+    const relationship = emRelationship.trim()
+
+    // An emergency contact needs a name and a phone number together.
+    if ((name && !ePhone) || (!name && ePhone)) {
+      setContactError('Enter both the name and the phone number of your emergency contact, or leave both empty.')
+      return
+    }
+    if (ePhone && ePhone.replace(/\D/g, '').length < 10) {
+      setContactError('Please enter a valid phone number for your emergency contact.')
+      return
+    }
+
+    setContactSaving(true)
+    const { error } = await supabase.from('profile_contacts').upsert(
+      {
+        user_id: profile.id,
+        home_address: address || null,
+        city: cityClean || null,
+        emergency_name: name || null,
+        emergency_phone: ePhone || null,
+        emergency_relationship: relationship || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' },
+    )
+
+    if (error) {
+      setContactError('Could not save. Please try again.')
+      console.error('profile_contacts save failed:', error.message)
+    } else {
+      setContactSaved(true)
+      setTimeout(() => setContactSaved(false), 2000)
+    }
+    setContactSaving(false)
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/')
@@ -243,7 +315,7 @@ export default function ProfilePage() {
       <div className="bg-card border border-border rounded-xl p-5 mb-4">
         <h2 className="font-semibold text-foreground mb-4 text-sm">Personal Details</h2>
 
-        <label htmlFor="profile-name" className="text-sm font-medium text-foreground-secondary mb-1.5 block">Full name</label>
+        <label htmlFor="profile-name" className={labelClass}>Full name</label>
         <div className="relative mb-4">
           <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -255,7 +327,7 @@ export default function ProfilePage() {
           />
         </div>
 
-        <label htmlFor="profile-phone" className="text-sm font-medium text-foreground-secondary mb-1.5 block">Phone number</label>
+        <label htmlFor="profile-phone" className={labelClass}>Phone number</label>
         <div className="relative mb-4">
           <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -269,7 +341,7 @@ export default function ProfilePage() {
           />
         </div>
 
-        <label htmlFor="profile-email" className="text-sm font-medium text-foreground-secondary mb-1.5 block">Email</label>
+        <label htmlFor="profile-email" className={labelClass}>Email</label>
         <div className="relative mb-1">
           <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -293,6 +365,86 @@ export default function ProfilePage() {
         </button>
         <p role="status" className="sr-only">{saved ? 'Your changes were saved.' : ''}</p>
       </div>
+
+      {/* Address and emergency contact (tenants only) */}
+      {profile && profile.role !== 'landlord' && (
+        <section aria-labelledby="profile-contact-title" className="bg-card border border-border rounded-xl p-5 mb-4">
+          <h2 id="profile-contact-title" className="flex items-center gap-2 font-semibold text-foreground text-sm mb-1">
+            <Home size={16} className="text-primary" aria-hidden /> Address and emergency contact
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Optional. Only you and EboHomes can see this. It is not shown to landlords or on any listing.
+          </p>
+
+          {contactError && (
+            <div role="alert" className="mb-4 bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-sm text-destructive">
+              {contactError}
+            </div>
+          )}
+
+          <label htmlFor="profile-address" className={labelClass}>Home address</label>
+          <input
+            id="profile-address"
+            value={homeAddress}
+            onChange={(e) => setHomeAddress(e.target.value)}
+            autoComplete="street-address"
+            maxLength={300}
+            className={`${inputClass} mb-4`}
+          />
+
+          <label htmlFor="profile-city" className={labelClass}>Town or city</label>
+          <input
+            id="profile-city"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            autoComplete="address-level2"
+            maxLength={100}
+            className={`${inputClass} mb-5`}
+          />
+
+          <p className="text-sm font-semibold text-foreground mb-3">Emergency contact</p>
+
+          <label htmlFor="profile-em-name" className={labelClass}>Name</label>
+          <input
+            id="profile-em-name"
+            value={emName}
+            onChange={(e) => setEmName(e.target.value)}
+            maxLength={120}
+            className={`${inputClass} mb-4`}
+          />
+
+          <label htmlFor="profile-em-phone" className={labelClass}>Phone number</label>
+          <input
+            id="profile-em-phone"
+            value={emPhone}
+            onChange={(e) => setEmPhone(e.target.value)}
+            type="tel"
+            inputMode="tel"
+            maxLength={30}
+            className={`${inputClass} mb-4`}
+          />
+
+          <label htmlFor="profile-em-rel" className={labelClass}>Relationship (for example sister, father)</label>
+          <input
+            id="profile-em-rel"
+            value={emRelationship}
+            onChange={(e) => setEmRelationship(e.target.value)}
+            maxLength={60}
+            className={`${inputClass} mb-4`}
+          />
+
+          <button
+            type="button"
+            onClick={handleSaveContact}
+            disabled={contactSaving}
+            className="focus-ring w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            {contactSaving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : contactSaved ? <Check size={16} aria-hidden /> : null}
+            {contactSaving ? 'Saving...' : contactSaved ? 'Saved' : 'Save address and contact'}
+          </button>
+          <p role="status" className="sr-only">{contactSaved ? 'Your address and emergency contact were saved.' : ''}</p>
+        </section>
+      )}
 
       {/* ID verification */}
       {profile && (() => {
