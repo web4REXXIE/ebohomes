@@ -21,14 +21,18 @@ import {
   CalendarClock,
   ClipboardCheck,
   KeyRound,
+  LogOut,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
 import { useNotifications } from '@/components/notification-provider'
-import { AccountShell, type AccountNavGroup } from '@/components/account-shell'
+import { AccountShell, navItemClass, type AccountNavGroup } from '@/components/account-shell'
+import { landlordVerificationDisplay } from '@/lib/landlord-verification'
 
 // Stage 16: the same 15 destinations as before, grouped so the menu is easier to scan.
 // Nothing was removed or renamed. Badges and active-route rules are unchanged.
+// New: Get Verified shows a small marker while the landlord still has something to do (nothing submitted, or not approved).
+// New: a Logout button, the profile photo in the menu header, and signed-out visitors return to the dashboard after login.
 const NAV_GROUPS: AccountNavGroup[] = [
   {
     title: null,
@@ -55,7 +59,7 @@ const NAV_GROUPS: AccountNavGroup[] = [
   {
     title: 'Trust and growth',
     items: [
-      { label: 'Get Verified', href: '/dashboard/verify', icon: ShieldCheck },
+      { label: 'Get Verified', href: '/dashboard/verify', icon: ShieldCheck, badgeKey: 'verification' },
       { label: 'Professional Profile', href: '/dashboard/professional', icon: BadgeCheck },
       { label: 'My Company', href: '/dashboard/company', icon: Building2 },
       { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
@@ -91,7 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
           redirected = true
-          router.push('/login')
+          router.push('/login?redirect=/dashboard')
           return
         }
 
@@ -155,6 +159,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => { supabase.removeChannel(channel) }
   }, [profile?.id])
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/')
+  }
+
+  // Uses the same checks as the Get Verified page, so the marker and that page always agree.
+  const verificationNeedsAction = landlordVerificationDisplay(profile).needsAction
+
   if (loading) {
     return (
       <div
@@ -175,16 +187,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       navLabel="Landlord menu"
       menuButtonLabel="Open menu"
       mobileHomeHref="/dashboard"
-      identity={{ name: displayName, roleLabel: 'Landlord', fallbackInitial: displayName[0]?.toUpperCase() ?? 'L' }}
+      identity={{
+        name: displayName,
+        roleLabel: 'Landlord',
+        fallbackInitial: displayName[0]?.toUpperCase() ?? 'L',
+        avatarUrl: profile?.avatar_url,
+      }}
       badges={{
         messages: { count: unreadMessages, label: (n) => `${n} unread ${n === 1 ? 'message' : 'messages'}` },
         notifications: { count: unreadNotifs, label: (n) => `${n} unread ${n === 1 ? 'notification' : 'notifications'}` },
+        verification: { count: verificationNeedsAction ? 1 : 0, label: () => 'Action needed' },
         applications: {
           count: pendingApplications,
           label: (n) => `${n} ${n === 1 ? 'application' : 'applications'} without your recommendation`,
         },
       }}
       unreadNotifs={unreadNotifs}
+      navFooter={
+        <button
+          type="button"
+          onClick={handleLogout}
+          className={`${navItemClass} w-full justify-start text-muted-foreground hover:bg-secondary/50 hover:text-foreground`}
+        >
+          <span className="flex items-center gap-3">
+            <LogOut size={17} aria-hidden />
+            Logout
+          </span>
+        </button>
+      }
       sidebarPromo={
         <div className="m-3 rounded-card bg-forest-gradient p-4 text-white">
           <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-amber-400/20">
