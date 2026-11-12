@@ -1,3 +1,4 @@
+
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -1712,6 +1713,12 @@ function SearchContent() {
                   'Properties could not be loaded'
                 ) : results.length === 0 ? (
                   '0 properties found'
+                ) : viewMode === 'map' ? (
+                  <>
+                    <span className="font-semibold text-foreground">{results.length}</span>{' '}
+                    {results.length === 1 ? 'property matches' : 'properties match'}. The map shows the ones
+                    with a map pin.
+                  </>
                 ) : (
                   <>
                     Showing{' '}
