@@ -7,6 +7,14 @@ import {
   User, Phone, Mail, Camera, Loader2, Check, LogOut, Lock, ShieldCheck, Bell, KeyRound, ChevronRight,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { tenantVerificationState } from '@/lib/tenant-verification'
+import { landlordVerificationDisplay } from '@/lib/landlord-verification'
+
+// Profile.
+// Same as before: photo upload, name and phone, email (read only), account links, logout.
+// New: an "ID verification" row that tells the truth about where the person stands, with a link to the right page.
+// New: the name and phone are checked before saving. The landlord "Verified" tag next to the role is gone: it
+// read one database flag on its own. The verification row uses the same checks as the rest of the app.
 
 type Profile = {
   id: string
@@ -16,6 +24,57 @@ type Profile = {
   avatar_url: string | null
   verified: boolean | null
   verification_status: string | null
+  rejection_reason: string | null
+  account_type: string | null
+  business_name: string | null
+  business_address: string | null
+  cac_number: string | null
+  representative_name: string | null
+  representative_role: string | null
+  id_document_type: string | null
+  id_document_url: string | null
+  selfie_url: string | null
+  ownership_doc_url: string | null
+}
+
+type VerifyRow = {
+  label: string
+  detail: string
+  tone: 'green' | 'amber' | 'red' | 'grey'
+  href: string
+  action: string
+}
+
+const TONE_CHIP: Record<VerifyRow['tone'], string> = {
+  green: 'bg-success-soft text-success',
+  amber: 'bg-warning-soft text-warning',
+  red: 'bg-destructive/10 text-destructive',
+  grey: 'bg-secondary text-muted-foreground',
+}
+
+// One plain description of the person's verification, from the same helpers the verification pages use.
+function verifyRow(p: Profile): VerifyRow {
+  if (p.role === 'landlord') {
+    const d = landlordVerificationDisplay(p)
+    return {
+      label: d.label,
+      detail: d.detail,
+      tone: d.tone === 'blue' ? 'amber' : d.tone,
+      href: '/dashboard/verify',
+      action: d.state === 'verified' ? 'View details' : d.actionLabel,
+    }
+  }
+  const state = tenantVerificationState(p)
+  if (state === 'verified') {
+    return { label: 'Verified', detail: 'EboHomes approved your account. You can apply for properties.', tone: 'green', href: '/verify-account', action: 'View details' }
+  }
+  if (state === 'submitted') {
+    return { label: 'Submitted, waiting for EboHomes', detail: 'You have sent your ID and selfie. EboHomes has not recorded a decision yet.', tone: 'amber', href: '/verify-account', action: 'View status' }
+  }
+  if (state === 'rejected') {
+    return { label: 'Not approved', detail: 'Your last submission was not approved. Open it to see the reason and send new photos.', tone: 'red', href: '/verify-account', action: 'Update details' }
+  }
+  return { label: 'Not verified', detail: 'You must verify your ID before you can apply for a property.', tone: 'grey', href: '/verify-account', action: 'Verify now' }
 }
 
 export default function ProfilePage() {
@@ -49,7 +108,9 @@ export default function ProfilePage() {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, phone, role, avatar_url, verified, verification_status')
+      .select(
+        'id, full_name, phone, role, avatar_url, verified, verification_status, rejection_reason, account_type, business_name, business_address, cac_number, representative_name, representative_role, id_document_type, id_document_url, selfie_url, ownership_doc_url',
+      )
       .eq('id', user.id)
       .maybeSingle()
 
@@ -98,12 +159,23 @@ export default function ProfilePage() {
 
   async function handleSave() {
     if (!profile) return
-    setSaving(true)
     setError(null)
 
+    const cleanName = fullName.trim()
+    const cleanPhone = phone.trim()
+    if (!cleanName) {
+      setError('Please enter your full name.')
+      return
+    }
+    if (cleanPhone && cleanPhone.replace(/\D/g, '').length < 10) {
+      setError('Please enter a valid phone number, for example 0801 234 5678.')
+      return
+    }
+
+    setSaving(true)
     const { error } = await supabase
       .from('profiles')
-      .update({ full_name: fullName, phone })
+      .update({ full_name: cleanName, phone: cleanPhone || null })
       .eq('id', profile.id)
 
     if (error) {
@@ -157,11 +229,6 @@ export default function ProfilePage() {
         {profile?.role && (
           <span className="mt-3 text-xs font-medium bg-secondary text-muted-foreground px-3 py-1 rounded-full capitalize">
             {profile.role}
-            {profile.role === 'landlord' && profile.verified && (
-              <span className="inline-flex items-center gap-1 text-primary ml-1.5">
-                <ShieldCheck size={11} /> Verified
-              </span>
-            )}
           </span>
         )}
       </div>
@@ -226,6 +293,28 @@ export default function ProfilePage() {
         </button>
         <p role="status" className="sr-only">{saved ? 'Your changes were saved.' : ''}</p>
       </div>
+
+      {/* ID verification */}
+      {profile && (() => {
+        const v = verifyRow(profile)
+        return (
+          <section aria-labelledby="profile-verify-title" className="bg-card border border-border rounded-xl p-5 mb-4">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <h2 id="profile-verify-title" className="flex items-center gap-2 font-semibold text-foreground text-sm">
+                <ShieldCheck size={16} className="text-primary" aria-hidden /> ID verification
+              </h2>
+              <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${TONE_CHIP[v.tone]}`}>{v.label}</span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-3">{v.detail}</p>
+            <Link
+              href={v.href}
+              className="focus-ring inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-semibold text-foreground hover:bg-secondary"
+            >
+              {v.action}
+            </Link>
+          </section>
+        )
+      })()}
 
       {/* Account actions */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
