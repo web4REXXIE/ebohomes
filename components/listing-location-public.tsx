@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
-import { Map as MapIcon, MapPin, Info, Navigation, AlertTriangle } from 'lucide-react'
+import Link from 'next/link'
+import { Map as MapIcon, MapPin, Info, Navigation, AlertTriangle, ArrowRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { SURROUNDINGS_CATEGORIES, answerLabel, categoryLabel, factProvenance, formatStraightLine, isFacilityCategory } from '@/lib/surroundings'
 
@@ -11,6 +12,19 @@ type Exact = { lat: number; lng: number; reason: string }
 type Fact = {
   id: string; category: string; answer: string; name: string | null; note: string | null; context: string | null; source: string
   observed_at: string; reviewed_at: string | null; distance_m_rounded: number | string | null; distance_method: string | null; is_stale: boolean
+}
+
+// The town or area for the "more homes" link: the last part of the address that is not just the state or country.
+// Returns null when the address has no comma, so the link never searches for one exact street.
+const BROAD_PARTS = ['ebonyi', 'ebonyi state', 'nigeria']
+function areaFromAddress(address?: string | null): string | null {
+  if (!address) return null
+  const parts = address.split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length < 2) return null
+  for (let i = parts.length - 1; i >= 1; i--) {
+    if (!BROAD_PARTS.includes(parts[i].toLowerCase())) return parts[i]
+  }
+  return null
 }
 
 const day = (s?: string | null) => (s ? new Date(s).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
@@ -49,6 +63,7 @@ export function ListingLocationPublic({ listingId, title, address }: { listingId
     return () => { alive = false }
   }, [listingId])
 
+  const area = areaFromAddress(address)
   const hasPin = !!pin?.has_pin && pin.area_lat != null && pin.area_lng != null
   const areaLat = hasPin ? Number(pin!.area_lat) : null
   const areaLng = hasPin ? Number(pin!.area_lng) : null
@@ -183,6 +198,17 @@ export function ListingLocationPublic({ listingId, title, address }: { listingId
               </ul>
             </div>
           ))}
+        </div>
+      )}
+
+      {area && (
+        <div className="mt-5 border-t border-border pt-4">
+          <Link
+            href={`/search?location=${encodeURIComponent(area)}`}
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-background px-4 text-body font-semibold text-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            See more homes in {area} <ArrowRight size={16} aria-hidden />
+          </Link>
         </div>
       )}
     </section>
