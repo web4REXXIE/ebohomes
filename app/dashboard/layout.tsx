@@ -29,10 +29,13 @@ import { useNotifications } from '@/components/notification-provider'
 import { AccountShell, navItemClass, type AccountNavGroup } from '@/components/account-shell'
 import { landlordVerificationDisplay } from '@/lib/landlord-verification'
 
-// Stage 16: the same 15 destinations as before, grouped so the menu is easier to scan.
-// Nothing was removed or renamed. Badges and active-route rules are unchanged.
-// New: Get Verified shows a small marker while the landlord still has something to do (nothing submitted, or not approved).
-// New: a Logout button, the profile photo in the menu header, and signed-out visitors return to the dashboard after login.
+// Landlord menu: the same 16 destinations as before, now in 4 groups instead of 5, in the same order of use
+// as the tenant menu. Nothing was removed.
+// - Inspection requests and Analytics sit under Properties, because both are about the landlord's properties.
+// - Professional Profile and My Company sit under Account.
+// - "Get Verified" is now "Verification" (it reads wrongly once the landlord is verified). It keeps its
+//   small "Action needed" marker, which only shows while the landlord still has something to do.
+// Badges, active-route rules, the access check and logout are unchanged.
 const NAV_GROUPS: AccountNavGroup[] = [
   {
     title: null,
@@ -43,6 +46,8 @@ const NAV_GROUPS: AccountNavGroup[] = [
     items: [
       { label: 'My Properties', href: '/dashboard/listings', icon: List },
       { label: 'Add New Listing', href: '/list-property', icon: Plus },
+      { label: 'Inspection requests', href: '/dashboard/inspection-requests', icon: ClipboardCheck },
+      { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
     ],
   },
   {
@@ -50,32 +55,25 @@ const NAV_GROUPS: AccountNavGroup[] = [
     items: [
       { label: 'Applications', href: '/dashboard/applications', icon: FileText, badgeKey: 'applications' },
       { label: 'Viewings', href: '/dashboard/viewings', icon: CalendarClock },
-      { label: 'Inspection requests', href: '/dashboard/inspection-requests', icon: ClipboardCheck },
       { label: 'Tenancies', href: '/dashboard/tenancies', icon: KeyRound },
       { label: 'Payments', href: '/dashboard/payments', icon: CreditCard },
       { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badgeKey: 'messages' },
     ],
   },
   {
-    title: 'Trust and growth',
-    items: [
-      { label: 'Get Verified', href: '/dashboard/verify', icon: ShieldCheck, badgeKey: 'verification' },
-      { label: 'Professional Profile', href: '/dashboard/professional', icon: BadgeCheck },
-      { label: 'My Company', href: '/dashboard/company', icon: Building2 },
-      { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
-    ],
-  },
-  {
     title: 'Account',
     items: [
       { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
+      { label: 'Verification', href: '/dashboard/verify', icon: ShieldCheck, badgeKey: 'verification' },
       { label: 'Profile', href: '/dashboard/profile', icon: User },
+      { label: 'Professional Profile', href: '/dashboard/professional', icon: BadgeCheck },
+      { label: 'My Company', href: '/dashboard/company', icon: Building2 },
       { label: 'Help & Support', href: '/contact', icon: HelpCircle },
     ],
   },
 ]
 
-// Stage 17: the sidebar, phone header and phone menu now come from components/account-shell.tsx.
+// The sidebar, phone header and phone menu come from components/account-shell.tsx.
 // The Dashboard link is active only on its own page (exact: true). Every other link is also active on nested pages.
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -164,7 +162,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push('/')
   }
 
-  // Uses the same checks as the Get Verified page, so the marker and that page always agree.
+  // Uses the same checks as the Verification page, so the marker and that page always agree.
   const verificationNeedsAction = landlordVerificationDisplay(profile).needsAction
 
   if (loading) {
