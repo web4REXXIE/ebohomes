@@ -1,6 +1,6 @@
 // Pure helpers (no imports) for the landlord's "ready to set up" list.
-// A tenancy can be created only from an application EboHomes approved AND the tenant confirmed (tenant_interest_at).
-// The database guard (eb_tenancy_guard) is the real enforcement. This only decides what to SHOW, and says why when blocked.
+// A tenancy follows only an application EboHomes approved AND the tenant confirmed (tenant_interest_at), through the rental offer.
+// The database (eb_create_tenancy_from_offer and the insert gate) is the real enforcement. This only decides what to SHOW, and says why when blocked.
 
 export type SetupApp = { id: string; listing_id: string; tenant_id: string; status?: string | null; tenant_interest_at?: string | null; case_ref?: string | null; application_data?: any }
 export type SetupTenancy = { application_id: string; listing_id: string; status?: string | null }
