@@ -1,10 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Loader2, MapPin } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { CreateTenancyModal } from '@/components/create-tenancy-modal'
 import { buildSetupRows, type SetupRow } from '@/lib/landlord-setup'
 import { fetchTenantNames } from '@/lib/tenant-names'
 import { sizedPhoto } from '@/lib/image-url'
@@ -15,20 +15,18 @@ const naira = (n: unknown) => (typeof n === 'number' || (typeof n === 'string' &
 type Row = SetupRow<any>
 
 // Shown at the top of the landlord's Tenancies page. Lists applicants EboHomes approved who confirmed they want to proceed
-// and have no tenancy yet. Creating the tenancy itself is still guarded by the database.
+// and have no tenancy yet. This list does NOT create tenancies. Rent, dates and terms come from the rental offer, and EboHomes
+// creates the tenancy from the accepted offer (eb_create_tenancy_from_offer). The landlord follows the offer on the applications page.
 export function LandlordTenancySetup() {
   const router = useRouter()
   const [state, setState] = useState<'loading' | 'error' | 'ok'>('loading')
-  const [uid, setUid] = useState<string | null>(null)
   const [rows, setRows] = useState<Row[]>([])
   const [listings, setListings] = useState<Record<string, any>>({})
   const [names, setNames] = useState<Record<string, string>>({})
-  const [open, setOpen] = useState<Row | null>(null)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
-    setUid(user.id)
     const apps = await supabase.from('applications')
       .select('id, listing_id, tenant_id, status, tenant_interest_at, case_ref, application_data')
       .eq('landlord_id', user.id).eq('status', 'approved').not('tenant_interest_at', 'is', null)
@@ -37,7 +35,7 @@ export function LandlordTenancySetup() {
     const list = apps.data ?? []
     if (list.length === 0) { setRows([]); setState('ok'); return }
     const ten = await supabase.from('tenancies').select('application_id, listing_id, status').eq('landlord_id', user.id)
-    if (ten.error) { setState('error'); return } // never offer "create" if we cannot see existing tenancies
+    if (ten.error) { setState('error'); return } // never show the offer link if we cannot see existing tenancies
     const ids = Array.from(new Set(list.map((a: any) => a.listing_id)))
     const ls = await supabase.from('listings').select('id, title, status, price_monthly, location_text, photos').in('id', ids)
     if (ls.error) { setState('error'); return }
@@ -58,7 +56,7 @@ export function LandlordTenancySetup() {
     <section className="mx-auto max-w-3xl space-y-3 p-4" aria-label="Tenants ready for tenancy setup">
       <div>
         <h2 className="text-lg font-bold text-foreground">Ready for tenancy setup ({rows.length})</h2>
-        <p className="text-sm text-muted-foreground">EboHomes approved these applicants and they confirmed they want to proceed. Create the tenancy, then propose the rental terms. Nothing is rented until EboHomes verifies payment and the key handover is confirmed.</p>
+        <p className="text-sm text-muted-foreground">EboHomes approved these applicants and they confirmed they want to proceed. The rent and dates come from the rental offer. Once the offer is accepted and you confirm it, EboHomes creates the tenancy and reserves the property. Nothing is rented until EboHomes verifies payment.</p>
       </div>
       {rows.map((r) => {
         const l = listings[r.app.listing_id]
@@ -73,20 +71,11 @@ export function LandlordTenancySetup() {
               <p className="text-muted-foreground">Listed rent: <b className="text-foreground">{naira(l?.price_monthly)}</b> · Applicant: <b className="text-foreground">{who}</b>{r.app.case_ref ? ` · Ref ${r.app.case_ref}` : ''}</p>
               {r.reason
                 ? <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">{r.reason}</p>
-                : <button type="button" onClick={() => setOpen(r)} className="mt-2 min-h-11 w-full rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground">Create tenancy</button>}
+                : <Link href="/dashboard/applications" className="mt-2 flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground">Open the rental offer</Link>}
             </div>
           </article>
         )
       })}
-      {open && uid && (
-        <CreateTenancyModal
-          application={{ id: open.app.id, listing_id: open.app.listing_id, tenant_id: open.app.tenant_id, application_data: open.app.application_data }}
-          listing={{ price_monthly: listings[open.app.listing_id]?.price_monthly ?? null, title: listings[open.app.listing_id]?.title ?? 'Property' }}
-          landlordId={uid}
-          onClose={() => setOpen(null)}
-          onCreated={(t) => { setOpen(null); router.push(`/dashboard/tenancies/${t.id}`) }}
-        />
-      )}
     </section>
   )
 }
