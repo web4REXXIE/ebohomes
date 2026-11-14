@@ -1,8 +1,12 @@
 // Pure ranking rule for the "Recommended" order in search. No imports, so it can be unit tested.
-// It is a visible score, not machine learning. Featured listings are handled separately by the search page
-// (they stay clearly labelled and first). Money never buys a verified look: this score only reads facts.
+// It is a visible rule, not machine learning. Featured listings are handled separately by the search page
+// (they stay clearly labelled and first). Money never buys a verified look: this only reads facts.
 //
-// Points (highest possible 100):
+// Order:
+//   1. Inspected by EboHomes (valid public inspection) always comes before listings that are not.
+//   2. Inside each group, higher score first. Equal scores keep the newest first.
+//
+// Points (highest possible 100). Inspected still counts here, so the score matches what it did before:
 //   Inspected by EboHomes (valid public inspection) .... 40
 //   Landlord confirmed "still available" recently ...... up to 25  (3 days 25, 7 days 15, 14 days 5, unknown 0)
 //   Listing completeness (photos, video, description) .. up to 20
@@ -51,15 +55,19 @@ export function rankScore(input: RankInput, now: number = Date.now()): number {
   return score
 }
 
-// Sorts best first. Equal scores keep the newest first.
+// Sorts best first: inspected before not inspected, then higher score, then newest.
 export function rankListings<T extends { id: string; created_at?: string | null }>(
   rows: T[],
   inputFor: (row: T) => RankInput,
   now: number = Date.now(),
 ): T[] {
   return rows
-    .map((row) => ({ row, score: rankScore(inputFor(row), now) }))
+    .map((row) => {
+      const input = inputFor(row)
+      return { row, inspected: input.inspected === true, score: rankScore(input, now) }
+    })
     .sort((a, b) => {
+      if (a.inspected !== b.inspected) return a.inspected ? -1 : 1
       if (b.score !== a.score) return b.score - a.score
       const ta = a.row.created_at ? new Date(a.row.created_at).getTime() : 0
       const tb = b.row.created_at ? new Date(b.row.created_at).getTime() : 0
