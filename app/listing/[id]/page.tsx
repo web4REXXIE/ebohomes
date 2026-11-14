@@ -1069,6 +1069,17 @@ export default function ListingDetailPage() {
                               : 'Verification details'}
                           {' · see details'}
                         </a>
+
+                        {listing.landlord_id && (
+                          <div>
+                            <Link
+                              href={`/landlord/${listing.landlord_id}`}
+                              className="focus-ring inline-flex min-h-11 items-center text-caption font-semibold text-primary hover:underline"
+                            >
+                              See all properties by this landlord
+                            </Link>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
