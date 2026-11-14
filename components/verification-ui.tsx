@@ -161,7 +161,7 @@ export function WhatHappensNext() {
       <ul className="space-y-3 text-sm text-muted-foreground">
         <li className="flex items-start gap-3">
           <Mail size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden />
-          <span>EboHomes will notify you when a decision is recorded.</span>
+          <span>EboHomes aims to reply within 48 hours and will notify you when a decision is recorded.</span>
         </li>
         <li className="flex items-start gap-3">
           <FileText size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden />
