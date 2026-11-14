@@ -30,6 +30,7 @@ import { TONE_CLASS } from '@/lib/viewing-status'
 import { OWNER_LISTING_COLUMNS } from '@/lib/listing-columns'
 import { landlordVerificationDisplay, type VerificationDisplayState } from '@/lib/landlord-verification'
 import { MetricCard, ToneChip } from '@/components/dashboard-ui'
+import { StillAvailableCard } from '@/components/still-available-card'
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
 
@@ -196,6 +197,17 @@ export default function DashboardOverview() {
           </Link>
         </div>
       )}
+
+      {!failed && <StillAvailableCard
+          listings={listings}
+          onChanged={async () => {
+            // Quiet refresh of the listings only, so the card's thank-you message stays on screen.
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+            const { data } = await supabase.from('listings').select(`${OWNER_LISTING_COLUMNS}, properties(public_id)`).eq('landlord_id', user.id).order('created_at', { ascending: false })
+            if (data) setListings(data)
+          }}
+        />}
 
       {next && (
         <section aria-labelledby="next-step" className="mb-6 rounded-card border border-border border-l-4 border-l-primary bg-card p-4 shadow-rest sm:p-5">
