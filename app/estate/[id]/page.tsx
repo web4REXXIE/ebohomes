@@ -10,6 +10,8 @@ import { isValidListingId } from '@/lib/listing-id'
 import { displayTitle } from '@/lib/property-display'
 import { groupUnits, unitState, countToLet, type ViewUnit } from '@/lib/estate-view'
 import { LightDeyCard } from '@/components/light-dey-card'
+import { BlockScene, CompoundScene } from '@/components/building-scene'
+import type { LightState } from '@/lib/light-status'
 
 type EstateInfo = { id: string; name: string; kind: string; address_text: string | null }
 type ListingInfo = { id: string; title: string | null; price_monthly: number | null; bedrooms: number | null; property_type: string | null; location_text: string | null }
@@ -29,42 +31,8 @@ const STICKERS: { key: 'knock' | 'welcome' | 'howfar'; icon: string; label: stri
   { key: 'howfar', icon: '🤝', label: 'How far?' },
 ]
 
-const TONE_NOTE: Record<TileTone, string> = { to_let: 'To let', taken: 'Taken', mine: 'You', neighbour: 'Neighbour' }
-const TONE_CLASS: Record<TileTone, string> = {
-  to_let: 'border-2 border-success bg-card text-success',
-  taken: 'border border-transparent bg-muted text-muted-foreground',
-  mine: 'border-2 border-primary bg-primary text-primary-foreground',
-  neighbour: 'border border-primary/40 bg-secondary text-foreground',
-}
-
 function naira(n: number | null | undefined): string | null {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? `₦${n.toLocaleString('en-NG')}` : null
-}
-
-type TileProps = {
-  unit: ViewUnit
-  tone: TileTone
-  selected: boolean
-  compact?: boolean
-  onSelect: (id: string) => void
-}
-
-// One window (block) or one door number (estate).
-function Tile({ unit, tone, selected, compact = false, onSelect }: TileProps) {
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(unit.id)}
-      aria-pressed={selected}
-      aria-label={`Unit ${unit.unit_label}, ${TONE_NOTE[tone].toLowerCase()}`}
-      className={`focus-ring flex flex-col items-center justify-center rounded-md text-sm font-bold transition ${
-        compact ? 'min-h-12 px-1' : 'min-h-14 min-w-16 px-3 py-1'
-      } ${TONE_CLASS[tone]} ${selected ? 'ring-2 ring-primary ring-offset-2' : ''}`}
-    >
-      {unit.unit_label}
-      <span className="text-[11px] font-normal leading-tight">{TONE_NOTE[tone]}</span>
-    </button>
-  )
 }
 
 export default function EstateViewPage() {
@@ -81,6 +49,7 @@ export default function EstateViewPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [groupKey, setGroupKey] = useState<string>('all')
   const [sending, setSending] = useState(false)
+  const [light, setLight] = useState<LightState>('unknown')
   const [knockMsg, setKnockMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
@@ -216,7 +185,7 @@ export default function EstateViewPage() {
               {` · ${units.length} ${units.length === 1 ? 'unit' : 'units'} · ${toLet} to let`}
             </p>
 
-            <LightDeyCard estateId={estate.id} isResident={isResident} />
+            <LightDeyCard estateId={estate.id} isResident={isResident} onStatus={setLight} />
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {isBlock && groups.length > 3 && (
@@ -261,48 +230,13 @@ export default function EstateViewPage() {
             )}
 
             <p className="mt-4 text-sm text-muted-foreground">
-              {isResident ? 'This is your building. Tap a neighbour’s door to say hi.' : 'Tap any window to peek inside.'}
+              {isResident ? 'This is your building. Tap a neighbour’s door to say hi.' : (isBlock ? 'Tap any window to peek inside.' : 'Tap any house to peek inside.')}
             </p>
 
             {isBlock ? (
-              <div className="mx-auto mt-3 max-w-md" aria-label={`${estate.name} building`}>
-                {/* Roof */}
-                <div className="mx-3 flex h-7 items-center justify-center rounded-t-2xl bg-primary" aria-hidden>
-                  <span className="h-1.5 w-10 rounded-full bg-primary-foreground/30" />
-                </div>
-                {/* Floors, top first */}
-                <div className="space-y-1.5 border-x-2 border-primary/25 bg-secondary px-2 py-2">
-                  {visibleGroups.map((g) => (
-                    <section key={g.key} id={g.key} aria-label={g.title} className="scroll-mt-24 flex items-stretch gap-2 rounded-md border border-border bg-card p-2">
-                      <div className="flex w-9 shrink-0 flex-col items-center justify-center rounded-md bg-secondary text-sm font-bold text-foreground" title={g.title}>
-                        {g.floor === 0 ? 'G' : g.floor}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {g.shown.map((x) => (
-                          <Tile key={x.id} unit={x} tone={toneOf(x)} selected={x.id === selectedId} onSelect={selectUnit} />
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-                {/* Ground and gate */}
-                <div className="flex h-6 items-end justify-center border-x-2 border-primary/25 bg-primary/80" aria-hidden>
-                  <span className="h-4 w-9 rounded-t-md bg-primary-foreground/40" />
-                </div>
-              </div>
+              <BlockScene name={estate.name} groups={visibleGroups} toneOf={toneOf} selectedId={selectedId} onSelect={selectUnit} light={light} />
             ) : (
-              <div className="mt-3 space-y-3">
-                {visibleGroups.map((g) => (
-                  <section key={g.key} id={g.key} aria-label={g.title} className="scroll-mt-24 rounded-card border border-border bg-card p-3">
-                    <h2 className="mb-2 text-sm font-semibold text-foreground">{g.title}</h2>
-                    <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-                      {g.shown.map((x) => (
-                        <Tile key={x.id} unit={x} compact tone={toneOf(x)} selected={x.id === selectedId} onSelect={selectUnit} />
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
+              <CompoundScene name={estate.name} groups={visibleGroups} toneOf={toneOf} selectedId={selectedId} onSelect={selectUnit} light={light} />
             )}
 
             {onlyToLet && toLet === 0 && <p className="mt-3 text-sm text-muted-foreground">Nothing is to let here right now.</p>}
