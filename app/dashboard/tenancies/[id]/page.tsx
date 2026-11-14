@@ -7,12 +7,14 @@ import { ArrowRight, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { TenancyHub } from '@/components/tenancy-hub'
 import { RenewalPanel } from '@/components/renewal-panel'
+import { RentNoticeCard } from '@/components/rent-notice-card'
 
 type Access = 'checking' | 'owner' | 'other'
 
-// The landlord's view of one tenancy. The record link and the renewal panel (which can send a renewal
-// offer) are shown only when the signed-in user is the landlord on this tenancy. Otherwise only the hub
-// is shown. The hub does its own check and says "not found" or "this is on your tenant side".
+// The landlord's view of one tenancy. The record link, the rent notice card and the renewal panel
+// (which can send a renewal offer) are shown only when the signed-in user is the landlord on this
+// tenancy. Otherwise only the hub is shown. The hub does its own check and says "not found" or
+// "this is on your tenant side".
 export default function LandlordTenancyPage() {
   const params = useParams()
   const router = useRouter()
@@ -55,6 +57,9 @@ export default function LandlordTenancyPage() {
           See the full tenancy record
           <ArrowRight size={16} aria-hidden />
         </Link>
+      </div>
+      <div className="mx-auto max-w-3xl px-4 pt-3 empty:hidden">
+        <RentNoticeCard role="landlord" tenancyId={id} />
       </div>
       <TenancyHub role="landlord" tenancyId={String(params?.id ?? '')} />
       <RenewalPanel role="landlord" tenancyId={String(params?.id ?? '')} />
