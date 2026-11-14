@@ -24,6 +24,34 @@ function naira(n: number | null | undefined): string | null {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? `₦${n.toLocaleString('en-NG')}` : null
 }
 
+type TileProps = {
+  unit: ViewUnit
+  open: boolean
+  selected: boolean
+  compact?: boolean
+  onSelect: (id: string) => void
+}
+
+// One window (block) or one door number (estate). To let = outlined green. Taken = grey. Selected = ring.
+function Tile({ unit, open, selected, compact = false, onSelect }: TileProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(unit.id)}
+      aria-pressed={selected}
+      aria-label={`Unit ${unit.unit_label}, ${open ? 'to let' : 'not available'}`}
+      className={`focus-ring flex flex-col items-center justify-center rounded-md text-sm font-bold transition ${
+        compact ? 'min-h-12 px-1' : 'min-h-14 min-w-16 px-3 py-1'
+      } ${open ? 'border-2 border-success bg-card text-success' : 'border border-transparent bg-muted text-muted-foreground'} ${
+        selected ? 'ring-2 ring-primary ring-offset-2' : ''
+      }`}
+    >
+      {unit.unit_label}
+      <span className="text-[11px] font-normal leading-tight">{open ? 'To let' : 'Taken'}</span>
+    </button>
+  )
+}
+
 export default function EstateViewPage() {
   const params = useParams<{ id: string }>()
   const estateId = params?.id
@@ -35,6 +63,7 @@ export default function EstateViewPage() {
   const [loadError, setLoadError] = useState(false)
   const [onlyToLet, setOnlyToLet] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [groupKey, setGroupKey] = useState<string>('all')
 
   useEffect(() => {
     let cancelled = false
@@ -101,7 +130,12 @@ export default function EstateViewPage() {
   const selected = units.find((x) => x.id === selectedId) ?? null
   const selectedListing = selected?.listing_id ? listings[selected.listing_id] : undefined
   const selectedIsToLet = selected ? unitState(selected, live) === 'to_let' : false
-  const floorGroups = groups.filter((g) => g.floor !== null)
+
+  const isBlock = groups.some((g) => g.floor !== null)
+  const visibleGroups = groups
+    .filter((g) => isBlock || groupKey === 'all' || g.key === groupKey)
+    .map((g) => ({ ...g, shown: onlyToLet ? g.units.filter((x) => unitState(x, live) === 'to_let') : g.units }))
+    .filter((g) => g.shown.length > 0)
 
   const jumpTo = (key: string) => {
     document.getElementById(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -131,7 +165,7 @@ export default function EstateViewPage() {
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              {floorGroups.length > 3 && (
+              {isBlock && groups.length > 3 && (
                 <label className="flex items-center gap-2 text-sm text-foreground">
                   <span className="font-semibold">Jump to floor</span>
                   <select
@@ -140,7 +174,7 @@ export default function EstateViewPage() {
                     onChange={(e) => { if (e.target.value) jumpTo(e.target.value) }}
                   >
                     <option value="" disabled>Choose</option>
-                    {floorGroups.map((g) => (
+                    {groups.map((g) => (
                       <option key={g.key} value={g.key}>{g.title}</option>
                     ))}
                   </select>
@@ -156,46 +190,91 @@ export default function EstateViewPage() {
               </button>
             </div>
 
-            <div className="mt-4 space-y-3">
-              {groups.map((g) => {
-                const shown = onlyToLet ? g.units.filter((x) => unitState(x, live) === 'to_let') : g.units
-                if (shown.length === 0) return null
-                return (
-                  <section key={g.key} id={g.key} className="scroll-mt-24 rounded-card border border-border bg-card p-3" aria-label={g.title}>
-                    <h2 className="mb-2 text-sm font-semibold text-foreground">{g.title}</h2>
-                    <div className="flex flex-wrap gap-2">
-                      {shown.map((x) => {
-                        const open = unitState(x, live) === 'to_let'
-                        const isSel = x.id === selectedId
-                        return (
-                          <button
+            {!isBlock && groups.length > 1 && (
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Filter by street or phase">
+                {[{ key: 'all', title: 'All' }, ...groups.map((g) => ({ key: g.key, title: g.title }))].map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    aria-pressed={groupKey === c.key}
+                    onClick={() => setGroupKey(c.key)}
+                    className={`focus-ring min-h-9 shrink-0 rounded-chip border px-3 text-sm font-semibold ${groupKey === c.key ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground'}`}
+                  >
+                    {c.title}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <p className="mt-4 text-sm text-muted-foreground">Tap any window to peek inside.</p>
+
+            {isBlock ? (
+              <div className="mx-auto mt-3 max-w-md" aria-label={`${estate.name} building`}>
+                {/* Roof */}
+                <div className="mx-3 flex h-7 items-center justify-center rounded-t-2xl bg-primary" aria-hidden>
+                  <span className="h-1.5 w-10 rounded-full bg-primary-foreground/30" />
+                </div>
+                {/* Floors, top first */}
+                <div className="space-y-1.5 border-x-2 border-primary/25 bg-secondary px-2 py-2">
+                  {visibleGroups.map((g) => (
+                    <section key={g.key} id={g.key} aria-label={g.title} className="scroll-mt-24 flex items-stretch gap-2 rounded-md border border-border bg-card p-2">
+                      <div className="flex w-9 shrink-0 flex-col items-center justify-center rounded-md bg-secondary text-sm font-bold text-foreground" title={g.title}>
+                        {g.floor === 0 ? 'G' : g.floor}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {g.shown.map((x) => (
+                          <Tile
                             key={x.id}
-                            type="button"
-                            onClick={() => setSelectedId(x.id)}
-                            aria-pressed={isSel}
-                            aria-label={`Unit ${x.unit_label}, ${open ? 'to let' : 'not available'}`}
-                            className={`focus-ring flex min-h-14 min-w-16 flex-col items-center justify-center rounded-button px-3 py-1 text-sm font-bold ${
-                              open ? 'border-2 border-success bg-card text-success' : 'border border-transparent bg-muted text-muted-foreground'
-                            } ${isSel ? 'ring-2 ring-primary ring-offset-2' : ''}`}
-                          >
-                            {x.unit_label}
-                            <span className="text-xs font-normal">{open ? 'To let' : 'Taken'}</span>
-                          </button>
-                        )
-                      })}
+                            unit={x}
+                            open={unitState(x, live) === 'to_let'}
+                            selected={x.id === selectedId}
+                            onSelect={setSelectedId}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+                {/* Ground and gate */}
+                <div className="flex h-6 items-end justify-center border-x-2 border-primary/25 bg-primary/80" aria-hidden>
+                  <span className="h-4 w-9 rounded-t-md bg-primary-foreground/40" />
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {visibleGroups.map((g) => (
+                  <section key={g.key} id={g.key} aria-label={g.title} className="scroll-mt-24 rounded-card border border-border bg-card p-3">
+                    <h2 className="mb-2 text-sm font-semibold text-foreground">{g.title}</h2>
+                    <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                      {g.shown.map((x) => (
+                        <Tile
+                          key={x.id}
+                          unit={x}
+                          compact
+                          open={unitState(x, live) === 'to_let'}
+                          selected={x.id === selectedId}
+                          onSelect={setSelectedId}
+                        />
+                      ))}
                     </div>
                   </section>
-                )
-              })}
-              {onlyToLet && toLet === 0 && <p className="text-sm text-muted-foreground">Nothing is to let here right now.</p>}
+                ))}
+              </div>
+            )}
+
+            {onlyToLet && toLet === 0 && <p className="mt-3 text-sm text-muted-foreground">Nothing is to let here right now.</p>}
+
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2 border-success bg-card" aria-hidden />To let</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-muted" aria-hidden />Taken</span>
             </div>
-            <p className="mt-4 text-xs text-muted-foreground">Tenant names are never shown. Grey means not available to rent right now.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Tenant names are never shown. Grey means not available to rent right now.</p>
           </>
         )}
       </main>
 
       {selected && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card px-4 pb-6 pt-4 shadow-lg" role="dialog" aria-label={`Unit ${selected.unit_label}`}>
+        <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-modal border-t border-border bg-card px-4 pb-6 pt-4 shadow-lg" role="dialog" aria-label={`Unit ${selected.unit_label}`}>
           <div className="mx-auto flex max-w-2xl items-start justify-between gap-3">
             <div>
               <p className="text-xs text-muted-foreground">
@@ -230,4 +309,4 @@ export default function EstateViewPage() {
       <Footer />
     </>
   )
-      }
+}
