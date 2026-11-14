@@ -317,11 +317,15 @@ export default function EstatesPage() {
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {shown.map((u) => (
-                  <span key={u.id} title={tileNote(u)} className={`rounded-button px-2.5 py-1 text-xs font-semibold ${tileClass(u)}`}>{u.unit_label}</span>
+                  u.listing_id ? (
+                    <span key={u.id} title={tileNote(u)} className={`rounded-button px-2.5 py-1 text-xs font-semibold ${tileClass(u)}`}>{u.unit_label}</span>
+                  ) : (
+                    <Link key={u.id} href={`/list-property?unit=${u.id}`} title="List this unit" className={`focus-ring inline-flex min-h-11 items-center rounded-button px-3 text-xs font-semibold ${tileClass(u)}`}>{u.unit_label}</Link>
+                  )
                 ))}
                 {us.length > shown.length && <span className="px-1 py-1 text-xs text-muted-foreground">+{us.length - shown.length} more</span>}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">Dashed means no listing yet.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Dashed means no listing yet. Tap one to list it.</p>
             </div>
           )
         })}
