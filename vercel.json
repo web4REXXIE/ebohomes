@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/cron/authority-expiry", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/expire-offers", "schedule": "30 6 * * *" }
+    { "path": "/api/cron/expire-offers", "schedule": "30 6 * * *" },
+    { "path": "/api/cron/listing-freshness", "schedule": "0 6 * * *" }
   ]
 }
