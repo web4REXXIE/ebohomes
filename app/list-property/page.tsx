@@ -371,6 +371,17 @@ export default function ListPropertyPage() {
       return
     }
 
+    // Link this listing to a numbered unit (from My Estates) or make a one-unit home. Never blocks the listing.
+    try {
+      const unitParam = new URLSearchParams(window.location.search).get('unit')
+      await supabase.rpc('link_listing_to_unit', {
+        p_listing: newListing.id,
+        p_unit: unitParam && /^[0-9a-f-]{36}$/i.test(unitParam) ? unitParam : null,
+      })
+    } catch (e) {
+      console.error('Unit link failed:', e)
+    }
+
     // Step 2 of 2: the lister shows they may list this property (reviewed per property by EboHomes).
     router.push(`/dashboard/authority/${newListing.id}`)
   }
