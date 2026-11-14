@@ -1,4 +1,3 @@
-
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -36,6 +35,7 @@ import { supabase } from '@/lib/supabase'
 import { RecentSearches, saveRecentSearch } from '@/components/recent-searches'
 import { SearchAlertBar } from '@/components/search-alert-bar'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
+import { useUnitInfo } from '@/lib/use-unit-info'
 import { sizedPhoto, photoSrcSet } from '@/lib/image-url'
 import { SmartImage } from '@/components/ui/smart-image'
 import dynamic from 'next/dynamic'
@@ -510,6 +510,7 @@ function PropertyCard({
 
   // Physical inspection comes from the public_listing_inspections view, never from listings.verified
   const inspected = useInspectedIds([String(listing.id)]).has(String(listing.id))
+  const unitInfo = useUnitInfo(String(listing.id))
 
   function requestViewing() {
     const params = new URLSearchParams({
@@ -641,6 +642,11 @@ function PropertyCard({
           <MapPin size={12} className="shrink-0" aria-hidden="true" />
           <span className="line-clamp-1">{listing.location_text}</span>
         </p>
+        {unitInfo && (
+          <p className="mt-0.5 line-clamp-1 text-xs font-semibold text-primary">
+            Unit {unitInfo.unit}, {unitInfo.estateName}
+          </p>
+        )}
 
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {listing.property_type && (
