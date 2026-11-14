@@ -44,7 +44,7 @@ export function TenancyChecklist({ tenancyId }: { tenancyId: string }) {
           key: 'handover',
           label: 'Key handover confirmed',
           done: handed,
-          note: handed ? 'Both parties confirmed the handover.' : 'The handover is not complete yet.',
+          note: handed ? 'The key handover is complete.' : 'The handover is not complete yet.',
         },
         {
           key: 'complete',
