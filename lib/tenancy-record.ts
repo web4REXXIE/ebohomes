@@ -90,18 +90,19 @@ export function handoverChip(h: RecordHandover | null, role: RecordRole, hasVeri
       : { key: 'handover', label, value: 'Opens after a verified payment', tone: 'neutral' }
   }
   if (h.status === 'disputed') return { key: 'handover', label, value: 'Disputed. EboHomes is reviewing', tone: 'bad' }
-  if (h.status === 'completed') return { key: 'handover', label, value: h.completed_via === 'admin_review' ? 'Completed after EboHomes review' : 'Completed by both parties', tone: 'done' }
+  if (h.status === 'completed') return { key: 'handover', label, value: h.completed_via === 'admin_review' ? 'Completed after EboHomes review' : h.completed_via === 'window_passed' ? 'Completed. No problem raised in 48 hours' : 'Completed by both parties', tone: 'done' }
   const t = !!h.tenant_confirmed_at, l = !!h.landlord_confirmed_at
   if (t && l) return { key: 'handover', label, value: 'Both confirmed', tone: 'done' }
   if (!t && !l) return { key: 'handover', label, value: 'Waiting for the tenant and the landlord', tone: 'warn' }
-  const waitingFor = t ? 'landlord' : 'tenant'
-  if (role === waitingFor) return { key: 'handover', label, value: 'Waiting for you to confirm', tone: 'warn' }
-  return { key: 'handover', label, value: `Waiting for the ${waitingFor}`, tone: 'warn' }
+  // The tenant's confirmation starts the 48-hour window. The landlord's confirmation is optional.
+  if (t) return { key: 'handover', label, value: role === 'tenant' ? 'You confirmed. 48-hour window to raise a problem' : 'Tenant confirmed. 48-hour window running', tone: 'warn' }
+  if (role === 'tenant') return { key: 'handover', label, value: 'Waiting for you to confirm', tone: 'warn' }
+  return { key: 'handover', label, value: 'Waiting for the tenant', tone: 'warn' }
 }
 
 const PAYOUT_TEXT: Record<PayoutState, { value: string; tone: Tone }> = {
   not_ready: { value: 'Not started', tone: 'neutral' },
-  on_hold: { value: 'On hold until the handover is complete', tone: 'warn' },
+  on_hold: { value: 'On hold until the tenant confirms and the 48-hour window passes', tone: 'warn' },
   ready: { value: 'Ready for EboHomes to prepare', tone: 'neutral' },
   in_progress: { value: 'Being processed by EboHomes', tone: 'warn' },
   released: { value: 'Sent to the landlord', tone: 'done' },
@@ -162,7 +163,7 @@ export function buildTimeline(r: TenancyRecord): TimelineItem[] {
       const who = h.disputed_role === 'tenant' || h.disputed_role === 'landlord' ? me(h.disputed_role) : 'A party'
       add('h-d', h.disputed_at, `${who} raised a concern about the key handover`, 'bad')
     }
-    if (h.status === 'completed') add('h-c', h.completed_at, h.completed_via === 'admin_review' ? 'Key handover completed after EboHomes review' : 'Key handover completed')
+    if (h.status === 'completed') add('h-c', h.completed_at, h.completed_via === 'admin_review' ? 'Key handover completed after EboHomes review' : h.completed_via === 'window_passed' ? 'Key handover completed. No problem was raised in 48 hours' : 'Key handover completed')
   }
 
   if (r.role !== 'tenant') {
