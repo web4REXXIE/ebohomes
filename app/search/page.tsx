@@ -35,6 +35,7 @@ import { supabase } from '@/lib/supabase'
 import { RecentSearches, saveRecentSearch } from '@/components/recent-searches'
 import { SearchAlertBar } from '@/components/search-alert-bar'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
+import { rankListings } from '@/lib/listing-rank'
 import { useUnitInfo } from '@/lib/use-unit-info'
 import { sizedPhoto, photoSrcSet } from '@/lib/image-url'
 import { SmartImage } from '@/components/ui/smart-image'
@@ -880,7 +881,7 @@ function SearchContent() {
       const { data, error } = await supabase
         .from('listings')
         .select(
-          'id, landlord_id, title, photos, price_monthly, price_yearly, location_text, property_type, bedrooms, bathrooms, amenities, created_at, verified, featured'
+          'id, landlord_id, title, photos, price_monthly, price_yearly, location_text, property_type, bedrooms, bathrooms, amenities, created_at, verified, featured, availability_confirmed_at, video_url, description'
         )
         .eq('status', 'approved')
         .order('created_at', { ascending: false })
@@ -980,6 +981,11 @@ function SearchContent() {
 
   /* ---- Filter + rank: featured always first ---- */
 
+  // Which listings have a valid EboHomes inspection. Used only to rank the Recommended order.
+  const allIds = useMemo(() => listings.map((l: any) => String(l.id)), [listings])
+  const inspectedForRank = useInspectedIds(allIds)
+  const inspectedKey = Array.from(inspectedForRank).sort().join(',')
+
   const results = useMemo(() => {
     let r = [...listings]
 
@@ -1034,7 +1040,17 @@ function SearchContent() {
     } else {
       // Recommended: featured rotate randomly each visit, the rest newest first
       featured = seed === null ? featured : seededShuffle(featured, seed)
-      regular.sort(newest)
+      // Regular listings: inspected, recently confirmed and complete listings first, then newest.
+      const inspectedSet = new Set(inspectedKey ? inspectedKey.split(',') : [])
+      const ranked = rankListings(regular, (l: any) => ({
+        inspected: inspectedSet.has(String(l.id)),
+        confirmedAt: l.availability_confirmed_at,
+        photoCount: Array.isArray(l.photos) ? l.photos.length : 0,
+        hasVideo: !!l.video_url,
+        hasDescription: typeof l.description === 'string' && l.description.trim().length > 0,
+        createdAt: l.created_at,
+      }))
+      regular.splice(0, regular.length, ...ranked)
     }
 
     return [...featured, ...regular]
@@ -1051,6 +1067,7 @@ function SearchContent() {
     amenities,
     sortBy,
     seed,
+    inspectedKey,
   ])
 
   // Back to page 1 whenever the filters or sort change
