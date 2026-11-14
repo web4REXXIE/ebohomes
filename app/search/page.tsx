@@ -900,6 +900,15 @@ function SearchContent() {
         rows = rows.filter((l: any) => !heldSet.has(l.id))
       }
 
+      // Listings another tenant is completing a reservation for are not shown either.
+      // If this call fails (for example the SQL was not applied yet), search works as before.
+      // The database still refuses applications and payments on a reserved property.
+      const { data: reserved, error: reservedError } = await supabase.rpc('reserved_listing_ids')
+      if (!reservedError && Array.isArray(reserved) && reserved.length > 0) {
+        const reservedSet = new Set<string>(reserved as string[])
+        rows = rows.filter((l: any) => !reservedSet.has(l.id))
+      }
+
       setListings(rows)
       setLoading(false)
     }
@@ -1924,4 +1933,4 @@ function SearchContent() {
       {shareTarget && <ShareSheet listing={shareTarget} onClose={() => setShareTarget(null)} />}
     </>
   )
-}
+  }
