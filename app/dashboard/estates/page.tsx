@@ -424,6 +424,12 @@ export default function EstatesPage() {
                 </div>
                 <p className="shrink-0 text-xs text-muted-foreground">{us.length} {us.length === 1 ? 'unit' : 'units'}</p>
               </div>
+              <Link
+                href={`/estate/${e.id}`}
+                className="focus-ring mt-3 inline-flex min-h-11 items-center rounded-button border border-border px-4 text-sm font-semibold text-primary hover:bg-secondary"
+              >
+                View building
+              </Link>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {shown.map((u) => (
                   u.listing_id ? (
@@ -455,4 +461,4 @@ export default function EstatesPage() {
       </section>
     </div>
   )
-}
+                      }
