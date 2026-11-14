@@ -10,6 +10,7 @@ import {
 
 type UnitRow = { id: string; unit_label: string; floor_no: number | null; group_label: string | null; status: string; listing_id: string | null }
 type EstateRow = { id: string; name: string; kind: string; address_text: string | null; legacy_listing_id: string | null; units: UnitRow[] | null }
+type MyListing = { id: string; title: string | null; location_text: string | null; status: string | null }
 
 const KINDS: { value: EstateKind; label: string }[] = [
   { value: 'single_house', label: 'Single house' },
@@ -40,8 +41,14 @@ function tileNote(u: UnitRow): string {
   return 'Off market'
 }
 
+function listingName(l: MyListing): string {
+  const t = (l.title ?? '').trim()
+  return t !== '' ? t : 'Untitled home'
+}
+
 export default function EstatesPage() {
   const [estates, setEstates] = useState<EstateRow[]>([])
+  const [myListings, setMyListings] = useState<MyListing[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
 
@@ -57,6 +64,12 @@ export default function EstatesPage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
+  // Attach a listing to an empty unit
+  const [pickUnit, setPickUnit] = useState<{ id: string; label: string; estateName: string } | null>(null)
+  const [pickListingId, setPickListingId] = useState<string | null>(null)
+  const [attaching, setAttaching] = useState(false)
+  const [attachMsg, setAttachMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
   const loadEstates = async () => {
     setLoading(true)
     setLoadError(false)
@@ -65,13 +78,22 @@ export default function EstatesPage() {
       setLoading(false)
       return
     }
-    const { data, error } = await supabase
-      .from('estates')
-      .select('id, name, kind, address_text, legacy_listing_id, units(id, unit_label, floor_no, group_label, status, listing_id)')
-      .eq('owner_id', user.id)
-      .order('created_at', { ascending: false })
-    if (error) setLoadError(true)
-    else setEstates((data ?? []) as unknown as EstateRow[])
+    const [estatesResult, listingsResult] = await Promise.all([
+      supabase
+        .from('estates')
+        .select('id, name, kind, address_text, legacy_listing_id, units(id, unit_label, floor_no, group_label, status, listing_id)')
+        .eq('owner_id', user.id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('listings')
+        .select('id, title, location_text, status')
+        .eq('landlord_id', user.id)
+        .order('created_at', { ascending: false }),
+    ])
+    if (estatesResult.error) setLoadError(true)
+    else setEstates((estatesResult.data ?? []) as unknown as EstateRow[])
+    // The listing list only feeds the attach panel. If it fails, the rest of the page still works.
+    if (!listingsResult.error) setMyListings((listingsResult.data ?? []) as MyListing[])
     setLoading(false)
   }
 
@@ -138,6 +160,40 @@ export default function EstatesPage() {
     loadEstates()
   }
 
+  const ownEstates = estates.filter((e) => !e.legacy_listing_id)
+  const singleCount = estates.length - ownEstates.length
+
+  // Listings that are not yet on one of the owner's own estates. A listing that only sits on its automatic
+  // single-house unit can be moved. The database does the move.
+  const placedIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const e of ownEstates) for (const u of e.units ?? []) if (u.listing_id) ids.add(u.listing_id)
+    return ids
+  }, [ownEstates])
+  const attachable = myListings.filter((l) => !placedIds.has(l.id))
+
+  const openPicker = (u: UnitRow, estateName: string) => {
+    setPickUnit({ id: u.id, label: u.unit_label, estateName })
+    setPickListingId(null)
+    setAttachMsg(null)
+  }
+
+  const attach = async () => {
+    if (!pickUnit || !pickListingId) return
+    setAttaching(true)
+    setAttachMsg(null)
+    const { error } = await supabase.rpc('attach_listing_to_unit', { p_unit: pickUnit.id, p_listing: pickListingId })
+    setAttaching(false)
+    if (error) {
+      setAttachMsg({ ok: false, text: error.message || 'Could not attach the listing. Try again.' })
+      return
+    }
+    setMsg({ ok: true, text: `The listing is now on unit ${pickUnit.label}, ${pickUnit.estateName}. Tenants see the unit once the listing is live.` })
+    setPickUnit(null)
+    setPickListingId(null)
+    loadEstates()
+  }
+
   // Preview: top floors first, then "...", then the bottom floor. Estates and hostels show the first few numbers.
   const previewRows: { label: string; tiles: string[] }[] = []
   let previewMore = false
@@ -157,9 +213,6 @@ export default function EstatesPage() {
       previewMore = units.length > 12
     }
   }
-
-  const ownEstates = estates.filter((e) => !e.legacy_listing_id)
-  const singleCount = estates.length - ownEstates.length
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 p-4 sm:p-6">
@@ -303,6 +356,62 @@ export default function EstatesPage() {
         {!loading && !loadError && ownEstates.length === 0 && (
           <p className="rounded-card border border-border bg-card p-4 text-sm text-muted-foreground">No estates yet. Add your first place above.</p>
         )}
+
+        {pickUnit && (
+          <div role="dialog" aria-label={`Attach a listing to unit ${pickUnit.label}`} className="space-y-3 rounded-card border-2 border-primary bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-foreground">Unit {pickUnit.label}, {pickUnit.estateName}</p>
+                <p className="text-xs text-muted-foreground">Choose the listing for this unit.</p>
+              </div>
+              <button type="button" onClick={() => setPickUnit(null)} className="focus-ring min-h-11 shrink-0 rounded-button px-3 text-sm font-semibold text-primary">Close</button>
+            </div>
+
+            {attachable.length === 0 ? (
+              <p className="rounded-card border border-border bg-background p-3 text-sm text-muted-foreground">
+                You have no listing waiting for a unit. Create a new listing, then come back here to attach it.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {attachable.map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => setPickListingId(l.id)}
+                    aria-pressed={pickListingId === l.id}
+                    className={`focus-ring w-full rounded-button border px-3 py-2 text-left ${pickListingId === l.id ? 'border-primary bg-secondary' : 'border-border bg-card'}`}
+                  >
+                    <span className="block text-sm font-semibold text-foreground">{listingName(l)}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {l.location_text ? `${l.location_text} · ` : ''}{l.status ?? 'status unknown'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {attachMsg && (
+              <p role="alert" className={`rounded-card border p-3 text-sm ${attachMsg.ok ? 'border-success bg-success-soft text-success' : 'border-danger bg-danger-soft text-danger'}`}>
+                {attachMsg.text}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={attach}
+              disabled={attaching || !pickListingId}
+              className="focus-ring min-h-12 w-full rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50"
+            >
+              {attaching ? 'Attaching...' : 'Attach to this unit'}
+            </button>
+            <p className="text-xs text-muted-foreground">
+              A listing sits on one unit. If it was on an automatic single-house unit, it moves here.{' '}
+              <Link href="/list-property" className="font-semibold text-primary underline">Create a new listing</Link>{' '}
+              instead. A new listing is not linked to a unit until you attach it here.
+            </p>
+          </div>
+        )}
+
         {ownEstates.map((e) => {
           const us = [...(e.units ?? [])].sort((a, b) => (b.floor_no ?? 0) - (a.floor_no ?? 0) || a.unit_label.localeCompare(b.unit_label, undefined, { numeric: true }))
           const shown = us.slice(0, 48)
@@ -320,12 +429,21 @@ export default function EstatesPage() {
                   u.listing_id ? (
                     <span key={u.id} title={tileNote(u)} className={`rounded-button px-2.5 py-1 text-xs font-semibold ${tileClass(u)}`}>{u.unit_label}</span>
                   ) : (
-                    <Link key={u.id} href={`/list-property?unit=${u.id}`} title="List this unit" className={`focus-ring inline-flex min-h-11 items-center rounded-button px-3 text-xs font-semibold ${tileClass(u)}`}>{u.unit_label}</Link>
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => openPicker(u, e.name)}
+                      title="Attach a listing to this unit"
+                      aria-label={`Unit ${u.unit_label}, no listing yet. Attach a listing`}
+                      className={`focus-ring inline-flex min-h-11 items-center rounded-button px-3 text-xs font-semibold ${tileClass(u)}`}
+                    >
+                      {u.unit_label}
+                    </button>
                   )
                 ))}
                 {us.length > shown.length && <span className="px-1 py-1 text-xs text-muted-foreground">+{us.length - shown.length} more</span>}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">Dashed means no listing yet. Tap one to list it.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Dashed means no listing yet. Tap one to attach a listing.</p>
             </div>
           )
         })}
