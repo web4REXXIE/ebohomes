@@ -2,31 +2,39 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Building2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { isValidListingId } from '@/lib/listing-id'
 
-type Found = { unitLabel: string; estateId: string; estateName: string; kind: string }
+type EstateRef = { id: string; name: string; kind: string }
+type UnitInfo = {
+  unit_label: string
+  floor_no: number | null
+  estates: EstateRef | EstateRef[] | null
+}
 
-// Shows "Unit 8B, Maker Man's Lodge. See the whole building" on a listing page.
-// Renders nothing for one-unit homes, while loading, or if anything fails. It never blocks the page.
-export function UnitBadge({ listingId }: { listingId: string }) {
-  const [found, setFound] = useState<Found | null>(null)
+// Shows "Unit 8B, Estate name" with a link to the building view.
+// Hidden for one-unit homes (single houses), and hidden if the lookup fails. It never blocks the listing page.
+export function UnitBadge({ listingId, className = '' }: { listingId: string; className?: string }) {
+  const [info, setInfo] = useState<{ unit: string; floor: number | null; estateId: string; estateName: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
+      if (!isValidListingId(listingId)) return
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('units')
-          .select('unit_label, estate_id, estates(name, kind)')
+          .select('unit_label, floor_no, estates(id, name, kind)')
           .eq('listing_id', listingId)
           .maybeSingle()
-        if (cancelled || !data) return
-        const raw = (data as unknown as { estates: unknown }).estates
-        const est = (Array.isArray(raw) ? raw[0] : raw) as { name?: string; kind?: string } | null
-        if (!est || !est.name || est.kind === 'single_house') return
-        setFound({ unitLabel: (data as { unit_label: string }).unit_label, estateId: (data as { estate_id: string }).estate_id, estateName: est.name, kind: est.kind ?? '' })
+        if (cancelled || error || !data) return
+        const row = data as unknown as UnitInfo
+        const estate = Array.isArray(row.estates) ? row.estates[0] : row.estates
+        if (!estate || estate.kind === 'single_house') return
+        setInfo({ unit: row.unit_label, floor: row.floor_no, estateId: estate.id, estateName: estate.name })
       } catch {
-        // Leave the page as it was.
+        // Quietly skip: the listing page works without this.
       }
     }
     load()
@@ -35,16 +43,24 @@ export function UnitBadge({ listingId }: { listingId: string }) {
     }
   }, [listingId])
 
-  if (!found) return null
+  if (!info) return null
+
   return (
-    <Link
-      href={`/estate/${found.estateId}`}
-      className="focus-ring mb-4 flex min-h-11 items-center justify-between gap-3 rounded-card border border-border bg-card px-4 py-2 text-sm"
-    >
-      <span className="text-foreground">
-        <span className="font-semibold">Unit {found.unitLabel}</span>, {found.estateName}
-      </span>
-      <span className="shrink-0 font-semibold text-primary">See the building</span>
-    </Link>
+    <div className={`flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-card px-4 py-3 ${className}`}>
+      <p className="flex items-center gap-2 text-sm text-foreground">
+        <Building2 size={16} aria-hidden className="shrink-0 text-primary" />
+        <span>
+          <span className="font-semibold">Unit {info.unit}</span>
+          {info.floor !== null ? `, floor ${info.floor}` : ''}
+          <span className="text-muted-foreground">, {info.estateName}</span>
+        </span>
+      </p>
+      <Link
+        href={`/estate/${info.estateId}`}
+        className="focus-ring inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline"
+      >
+        View building
+      </Link>
+    </div>
   )
 }
