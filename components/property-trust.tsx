@@ -13,6 +13,8 @@ import {
   ChevronUp,
   CheckCircle2,
   AlertTriangle,
+  Check,
+  Minus,
   Route,
   Droplet,
   Zap,
@@ -42,6 +44,27 @@ const DETAIL_ICONS: Record<IconKey, ComponentType<{ size?: number; className?: s
   building: Building2,
   leaf: Leaf,
   home: Home,
+}
+
+// One short pill in the summary row: what was looked at, and whether EboHomes has it on record.
+function CheckPill({ label, state }: { label: string; state: RowState }) {
+  const yes = state === 'yes'
+  const unavailable = state === 'unavailable'
+  const status = yes ? 'Checked' : unavailable ? 'Unavailable' : 'Not yet'
+
+  return (
+    <li
+      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-caption font-semibold ${
+        yes
+          ? 'border-primary/30 bg-primary/10 text-primary'
+          : 'border-border bg-muted text-muted-foreground'
+      }`}
+    >
+      {yes ? <Check size={14} aria-hidden /> : <Minus size={14} aria-hidden />}
+      <span>{label}</span>
+      <span className="sr-only">: {status}</span>
+    </li>
+  )
 }
 
 // One line in the block: an icon, a short title and a plain explanation.
@@ -113,7 +136,7 @@ function DetailList({ items, bold }: { items: ReturnType<typeof inspectionDetail
   )
 }
 
-// Trust and verification for one listing.
+// What EboHomes has checked for one listing.
 // trust = the existing listing_trust record. inspection = the existing public inspection record.
 // Failed flags mean the data could not be loaded, which is different from "not checked".
 export function PropertyTrust({
@@ -140,6 +163,11 @@ export function PropertyTrust({
   const authority = authorityState(authorityReviewed ? 'accepted' : null, authorityFailed || authorityReviewed === null)
   const inspected = inspectionState(inspection, inspectionFailed)
 
+  const states = [identity, authority, inspected]
+  const checksDone = states.filter((s) => s === 'yes').length
+  // Only count when every check could be read. Otherwise "1 of 3" could be wrong.
+  const canCount = states.every((s) => s !== 'unavailable')
+
   const date = inspected === 'yes' ? formatInspectionDate((inspection as { inspected_at?: unknown }).inspected_at) : ''
   const { facts, notes } = inspectionDetails(inspection)
   const nearby = nearbyText(inspection)
@@ -153,11 +181,23 @@ export function PropertyTrust({
     >
       <h2 id="trust-heading" className="mb-1 flex items-center gap-2 text-h3 font-semibold text-foreground">
         <ShieldCheck size={18} className="text-primary" aria-hidden />
-        Trust and verification
+        What EboHomes checked
       </h2>
-      <p className="mb-4 text-caption text-muted-foreground">
+      <p className="mb-3 text-caption text-muted-foreground">
         This shows what EboHomes has actually checked. Anything not marked as checked has not been confirmed.
       </p>
+
+      <ul aria-label="Checks at a glance" className="mb-1 flex flex-wrap gap-2">
+        <CheckPill label="Identity" state={identity} />
+        <CheckPill label="Authority" state={authority} />
+        <CheckPill label="Inspection" state={inspected} />
+      </ul>
+      {canCount && (
+        <p className="mb-4 text-caption font-medium text-muted-foreground">
+          {checksDone} of 3 checks on record
+        </p>
+      )}
+      {!canCount && <div className="mb-4" />}
 
       <ul className="space-y-4">
         <Row
