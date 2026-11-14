@@ -15,7 +15,7 @@ type MyListing = { id: string; title: string | null; location_text: string | nul
 const KINDS: { value: EstateKind; label: string }[] = [
   { value: 'single_house', label: 'Single house' },
   { value: 'block', label: 'Block of flats' },
-  { value: 'estate', label: 'Estate of houses' },
+  { value: 'estate', label: 'Estate of houses or duplexes' },
   { value: 'hostel', label: 'Hostel' },
 ]
 const KIND_LABEL: Record<string, string> = Object.fromEntries(KINDS.map((k) => [k.value, k.label]))
@@ -58,6 +58,8 @@ export default function EstatesPage() {
   const [floors, setFloors] = useState('')
   const [perFloor, setPerFloor] = useState('')
   const [differ, setDiffer] = useState(false)
+  const [hasGround, setHasGround] = useState(false)
+  const [groundStr, setGroundStr] = useState('')
   const [floorCountsStr, setFloorCountsStr] = useState<string[]>([])
   const [count, setCount] = useState('')
   const [groupLabel, setGroupLabel] = useState('')
@@ -117,10 +119,11 @@ export default function EstatesPage() {
       floors: floorsNum,
       perFloor: toNum(perFloor),
       floorCounts: floorCountsNums,
+      groundCount: kind === 'block' && hasGround ? (toNum(groundStr) ?? NaN) : undefined,
       count: toNum(count),
       groupLabel,
     }),
-    [kind, floorsNum, perFloor, floorCountsNums, count, groupLabel],
+    [kind, floorsNum, perFloor, floorCountsNums, hasGround, groundStr, count, groupLabel],
   )
 
   const units: UnitDraft[] = built.units
@@ -154,6 +157,8 @@ export default function EstatesPage() {
     setFloors('')
     setPerFloor('')
     setDiffer(false)
+    setHasGround(false)
+    setGroundStr('')
     setFloorCountsStr([])
     setCount('')
     setGroupLabel('')
@@ -263,6 +268,16 @@ export default function EstatesPage() {
               </label>
             </div>
             <label className="flex min-h-11 items-center gap-3 text-sm text-foreground">
+              <input type="checkbox" className="h-5 w-5" checked={hasGround} onChange={(e) => setHasGround(e.target.checked)} />
+              The ground floor has flats too
+            </label>
+            {hasGround && (
+              <label className="block text-xs text-muted-foreground">
+                Flats on the ground floor
+                <input className={`${input} mt-1 text-foreground`} inputMode="numeric" value={groundStr} onChange={(e) => setGroundStr(e.target.value.replace(/\D/g, ''))} placeholder="2" />
+              </label>
+            )}
+            <label className="flex min-h-11 items-center gap-3 text-sm text-foreground">
               <input type="checkbox" className="h-5 w-5" checked={differ} onChange={(e) => setDiffer(e.target.checked)} />
               Some floors have a different number of flats
             </label>
@@ -286,7 +301,7 @@ export default function EstatesPage() {
                 ))}
               </div>
             )}
-            <p className="text-xs text-muted-foreground">Up to {MAX_FLOORS} floors and {MAX_PER_FLOOR} flats on a floor. Flats are numbered 1A, 1B, 2A and so on.</p>
+            <p className="text-xs text-muted-foreground">Up to {MAX_FLOORS} floors and {MAX_PER_FLOOR} flats on a floor. Flats are numbered 1A, 1B, 2A and so on. Ground floor flats are GA, GB and so on. "Floors" means the floors above the ground.</p>
           </div>
         )}
 
@@ -424,12 +439,6 @@ export default function EstatesPage() {
                 </div>
                 <p className="shrink-0 text-xs text-muted-foreground">{us.length} {us.length === 1 ? 'unit' : 'units'}</p>
               </div>
-              <Link
-                href={`/estate/${e.id}`}
-                className="focus-ring mt-3 inline-flex min-h-11 items-center rounded-button border border-border px-4 text-sm font-semibold text-primary hover:bg-secondary"
-              >
-                View building
-              </Link>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {shown.map((u) => (
                   u.listing_id ? (
@@ -461,4 +470,4 @@ export default function EstatesPage() {
       </section>
     </div>
   )
-                      }
+}
