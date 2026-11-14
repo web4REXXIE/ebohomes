@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { Home, Star, Pause, Play, Pencil, Trash2, Plus, Eye, CheckCircle2, X, MessageCircle, ShieldCheck, Search } from 'lucide-react'
+import { Home, Star, Pause, Play, Pencil, Trash2, Plus, Eye, CheckCircle2, X, MessageCircle, ShieldCheck, Search, CalendarCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
 import { PropertySummary, type PropertyLite } from '@/components/property-summary'
@@ -23,9 +23,20 @@ const AUTHORITY_TONE: Record<string, string> = {
 }
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
+const ONE_DAY = 24 * 60 * 60 * 1000
+const FRESH_DAYS = 14
 
 const actionBtn =
   'inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40'
+
+// How long ago the landlord last said "still available". null if the date could not be read.
+function freshnessOf(listing: any): { left: number; date: string } | null {
+  const t = listing?.availability_confirmed_at ? new Date(listing.availability_confirmed_at).getTime() : NaN
+  if (!Number.isFinite(t)) return null
+  const days = Math.floor((Date.now() - t) / ONE_DAY)
+  const date = new Date(t).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })
+  return { left: FRESH_DAYS - days, date }
+}
 
 export default function MyListingsPage() {
   const [listings, setListings] = useState<any[]>([])
@@ -97,8 +108,16 @@ export default function MyListingsPage() {
       .eq('landlord_id', user.id)
 
     if (!error) {
+      const nowIso = new Date().toISOString()
       setListings((prev) =>
-        prev.map((l) => (l.id === listing.id ? { ...l, status: nextStatus } : l))
+        prev.map((l) =>
+          l.id === listing.id
+            ? nextStatus === 'approved'
+              // Going live again counts as a fresh confirmation (the database does the same).
+              ? { ...l, status: nextStatus, availability_confirmed_at: nowIso, freshness_paused_at: null }
+              : { ...l, status: nextStatus }
+            : l
+        )
       )
       const name = displayTitle(listing)
       setMsg({
@@ -110,6 +129,28 @@ export default function MyListingsPage() {
       })
     } else {
       setMsg({ ok: false, text: 'Could not update the property: ' + error.message })
+    }
+    setActioningId(null)
+  }
+
+  // "Yes, still available". The database checks the listing is really yours.
+  // It also puts a listing back live if the 14-day check paused it.
+  const handleConfirmAvailable = async (listing: any) => {
+    setActioningId(listing.id)
+    setMsg(null)
+    const { data, error } = await supabase.rpc('confirm_listing_available', { p_listing: listing.id })
+    if (error) {
+      setMsg({ ok: false, text: 'Could not confirm: ' + error.message })
+    } else {
+      const when = typeof data === 'string' ? data : new Date().toISOString()
+      setListings((prev) =>
+        prev.map((l) =>
+          l.id === listing.id
+            ? { ...l, status: 'approved', availability_confirmed_at: when, freshness_paused_at: null }
+            : l
+        )
+      )
+      setMsg({ ok: true, text: `Thank you. "${displayTitle(listing)}" is confirmed as available and stays live.` })
     }
     setActioningId(null)
   }
@@ -347,6 +388,10 @@ export default function MyListingsPage() {
                   const busy = actioningId === listing.id
                   const auth = authorityStatusInfo(listing.authority_status)
                   const authAction = listing.authority_status === 'accepted' ? 'Authority details' : listing.authority_status === 'needs_evidence' || listing.authority_status === 'rejected' ? 'Fix authority' : listing.authority_status === 'submitted' || listing.authority_status === 'on_hold' ? 'View authority' : 'Add authority evidence'
+                  const fresh = freshnessOf(listing)
+                  const pausedByCheck = listing.status === 'paused' && !!listing.freshness_paused_at
+                  const showFreshness = pausedByCheck || (listing.status === 'approved' && !!fresh)
+                  const dueSoon = !!fresh && fresh.left <= 4
                   return (
                     <div
                       key={listing.id}
@@ -371,6 +416,48 @@ export default function MyListingsPage() {
                         inspected={inspected.has(listing.id)}
                         href={live ? `/listing/${listing.id}` : undefined}
                       />
+
+                      {showFreshness && (
+                        <div
+                          className={`mt-3 rounded-lg border-2 px-3 py-3 text-sm ${
+                            pausedByCheck || dueSoon ? 'border-amber-400 bg-amber-50 text-amber-950' : 'border-emerald-300 bg-emerald-50 text-emerald-950'
+                          }`}
+                        >
+                          <p className="flex items-center gap-1.5 font-bold">
+                            <CalendarCheck size={15} aria-hidden /> Is this property still available?
+                          </p>
+                          <p className="mt-1 text-xs">
+                            {pausedByCheck
+                              ? 'It was paused because you did not confirm in time. Confirm to put it back on the market.'
+                              : fresh && fresh.left > 0
+                                ? `Last confirmed on ${fresh.date}. Please confirm again within ${fresh.left} ${fresh.left === 1 ? 'day' : 'days'}, or it will be paused.`
+                                : 'Your confirmation is overdue. The listing will be paused at the next check unless you confirm now.'}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              onClick={() => handleConfirmAvailable(listing)}
+                              disabled={busy}
+                              className="min-h-11 rounded-full bg-primary px-4 text-xs font-bold text-primary-foreground disabled:opacity-50"
+                            >
+                              {busy ? 'Please wait…' : 'Yes, still available'}
+                            </button>
+                            {listing.status === 'approved' && (
+                              <button
+                                onClick={() => handleTogglePause(listing)}
+                                disabled={busy}
+                                className="min-h-11 rounded-full border border-border bg-card px-4 text-xs font-bold text-foreground disabled:opacity-50"
+                              >
+                                No, it is taken
+                              </button>
+                            )}
+                          </div>
+                          {listing.status === 'approved' && (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              &quot;No, it is taken&quot; pauses the listing so tenants stop seeing it.
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${AUTHORITY_TONE[auth.tone]}`}>
                         <p className="flex items-center gap-1.5 font-bold"><ShieldCheck size={13} aria-hidden /> {auth.label}</p>
