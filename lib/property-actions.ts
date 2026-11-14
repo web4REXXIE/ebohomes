@@ -16,6 +16,8 @@ export type ActionInput = {
   signedIn: boolean
   isOwner: boolean
   onHold: boolean
+  // Another tenant is completing a reservation for this property. Optional so existing callers keep working.
+  reserved?: boolean
   // The tenant's own open application for this listing, if any (pending, info_requested or approved).
   application: ApplicationRef | null
   // The tenant's own open viewing on that application, if any.
@@ -45,6 +47,9 @@ export type PropertyActions = {
 
 export const HOLD_NOTE =
   "This property is on hold and can't take new applications or viewing requests right now. You can still chat with EboHomes."
+
+export const RESERVED_NOTE =
+  'Another tenant is completing a reservation for this property. It may become available again, so check back in a few days.'
 
 export const NOT_OPEN_NOTE = 'This property is not open for applications right now.'
 
@@ -102,7 +107,7 @@ function openViewingButton(status: string, href: string): ActionButton {
 }
 
 export function decidePropertyActions(input: ActionInput): PropertyActions {
-  const { listingId, listingStatus, signedIn, isOwner, onHold, application, viewing } = input
+  const { listingId, listingStatus, signedIn, isOwner, onHold, reserved = false, application, viewing } = input
 
   if (isOwner) {
     return { ownerMessage: OWNER_MESSAGE, canSave: false, apply: null, viewing: null, note: null, helper: null }
@@ -131,6 +136,17 @@ export function decidePropertyActions(input: ActionInput): PropertyActions {
       apply: { label: 'Applications paused', shortLabel: 'Paused', href: null, statusLine: null },
       viewing: { label: 'Viewing requests paused', shortLabel: 'Paused', href: null, statusLine: null },
       note: HOLD_NOTE,
+      helper: null,
+    }
+  }
+
+  // A reservation stops NEW applications (the database enforces it). The reserved tenant already has an application, so they can still open theirs.
+  if (reserved && !hasApplication) {
+    return {
+      ...none,
+      apply: { label: 'Reserved', shortLabel: 'Reserved', href: null, statusLine: null },
+      viewing: { label: 'Viewing not available', shortLabel: 'Unavailable', href: null, statusLine: null },
+      note: RESERVED_NOTE,
       helper: null,
     }
   }
