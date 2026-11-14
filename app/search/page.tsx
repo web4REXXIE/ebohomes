@@ -38,6 +38,7 @@ import { useInspectedIds } from '@/lib/use-inspected-ids'
 import { rankListings } from '@/lib/listing-rank'
 import { useUnitInfo } from '@/lib/use-unit-info'
 import { sizedPhoto, photoSrcSet } from '@/lib/image-url'
+import { upfrontTotal } from '@/lib/property-display' // CHANGED: used for the upfront line on each card
 import { SmartImage } from '@/components/ui/smart-image'
 import dynamic from 'next/dynamic'
 
@@ -513,6 +514,9 @@ function PropertyCard({
   const inspected = useInspectedIds([String(listing.id)]).has(String(listing.id))
   const unitInfo = useUnitInfo(String(listing.id))
 
+  // CHANGED: rent + service charge + caution deposit. null unless all three amounts are listed.
+  const upfront = upfrontTotal(listing)
+
   function requestViewing() {
     const params = new URLSearchParams({
       new: '1',
@@ -617,6 +621,10 @@ function PropertyCard({
             </p>
             {Number(listing.price_yearly) > 0 && (
               <p className="text-xs text-muted-foreground">{naira(listing.price_yearly)}/year</p>
+            )}
+            {/* CHANGED: upfront total, only when rent, service charge and caution deposit are all listed */}
+            {upfront !== null && (
+              <p className="text-xs text-muted-foreground">{naira(upfront)} upfront</p>
             )}
           </div>
 
@@ -881,7 +889,8 @@ function SearchContent() {
       const { data, error } = await supabase
         .from('listings')
         .select(
-          'id, landlord_id, title, photos, price_monthly, price_yearly, location_text, property_type, bedrooms, bathrooms, amenities, created_at, verified, featured, availability_confirmed_at, video_url, description'
+          // CHANGED: service_charge and caution_deposit added for the upfront line on each card
+          'id, landlord_id, title, photos, price_monthly, price_yearly, service_charge, caution_deposit, location_text, property_type, bedrooms, bathrooms, amenities, created_at, verified, featured, availability_confirmed_at, video_url, description'
         )
         .eq('status', 'approved')
         .order('created_at', { ascending: false })
@@ -1933,4 +1942,4 @@ function SearchContent() {
       {shareTarget && <ShareSheet listing={shareTarget} onClose={() => setShareTarget(null)} />}
     </>
   )
-  }
+}
