@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { adminState, validateResolve } from '@/lib/handover'
+import { HANDOVER_WINDOW_HOURS, adminState, eligibilityNote, validateResolve, type WindowState } from '@/lib/handover'
 
 const when = (s?: string | null) => (s ? new Date(s).toLocaleString('en-NG') : 'n/a')
 const field = 'w-full min-h-11 rounded-lg border border-border bg-input px-3 py-2 text-base'
@@ -36,7 +36,7 @@ export default function AdminHandovers() {
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <h1 className="text-xl font-bold text-foreground">Key handovers</h1>
-      <p className="rounded-lg bg-secondary p-3 text-xs text-muted-foreground">A landlord payout stays on hold until the tenant and the landlord have both confirmed the handover, or you resolve a dispute. Payment confirmation is not proof of handover.</p>
+      <p className="rounded-lg bg-secondary p-3 text-xs text-muted-foreground">{`A landlord payout stays on hold until the tenant confirms they have the keys and ${HANDOVER_WINDOW_HOURS} hours pass with no problem raised, or you resolve a dispute. The landlord's own confirmation does not hold it up. You still prepare, approve and pay each payout by hand. Payment confirmation is not proof of handover.`}</p>
       <div className="flex gap-2 overflow-x-auto pb-1" role="tablist">
         {FILTERS.map((f) => (
           <button key={f.key} role="tab" aria-selected={filter === f.key} onClick={() => { setFilter(f.key); setOpenId(null) }}
@@ -50,7 +50,7 @@ export default function AdminHandovers() {
             <button className="flex w-full min-h-14 flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpenId(openId === s.tenancy_id ? null : s.tenancy_id)} aria-expanded={openId === s.tenancy_id}>
               <span><b>{s.tenancy_code}</b> · {s.landlord_name} / {s.tenant_name}
                 {s.open_payouts > 0 && <AlertTriangle size={14} className="ml-1 inline text-amber-700" aria-label="A payout is waiting on this handover" />}</span>
-              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${tone[s.state]}`}>{adminState(s.state, s.tenant_confirmed_at, s.landlord_confirmed_at)}</span>
+              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${tone[s.state === 'waiting' && s.window_state === 'passed' ? 'completed' : s.state]}`}>{adminState(s.state, s.tenant_confirmed_at, s.landlord_confirmed_at, s.window_state as WindowState | undefined)}</span>
             </button>
             {openId === s.tenancy_id && <Detail s={s} onChanged={() => { setOpenId(null); load() }} />}
           </li>))}</ul>}
@@ -140,7 +140,17 @@ function Detail({ s, onChanged }: { s: any; onChanged: () => void }) {
         <div><dt className="text-xs text-muted-foreground">Landlord ({s.landlord_name})</dt><dd>{s.landlord_confirmed_at ? `Confirmed ${when(s.landlord_confirmed_at)}` : 'Not confirmed'}</dd></div>
       </dl>
       {s.state === 'disputed' && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-red-900">Disputed by the {s.disputed_role} on {when(s.disputed_at)}: "{s.dispute_note}"</p>}
-      {s.state === 'completed' && <p className="rounded-lg bg-emerald-50 p-3 text-emerald-900">Completed {when(s.completed_at)} ({s.completed_via === 'admin_review' ? 'after EboHomes review' : 'both parties confirmed'}).{s.resolution_note ? ` Note: ${s.resolution_note}` : ''}</p>}
+      {s.state === 'completed' && <p className="rounded-lg bg-emerald-50 p-3 text-emerald-900">Completed {when(s.completed_at)} ({s.completed_via === 'admin_review' ? 'after EboHomes review' : s.completed_via === 'window_passed' ? `no problem raised in ${HANDOVER_WINDOW_HOURS} hours` : 'both parties confirmed'}).{s.resolution_note ? ` Note: ${s.resolution_note}` : ''}</p>}
+      {(() => {
+        const e = eligibilityNote(s)
+        if (!e) return null
+        return (
+          <div className={`rounded-lg border p-3 ${s.window_state === 'passed' ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}>
+            <p><b>Payout eligible from:</b> {when(e.from)}</p>
+            <p><b>Reason:</b> {e.reason}</p>
+            <p><b>Status:</b> {e.status}</p>
+          </div>)
+      })()}
       <ul className="space-y-1 text-xs">{s.events.map((e: any, i: number) => <li key={i} className="rounded-md border border-border p-2"><b>{String(e.event).replace(/_/g, ' ')}</b> · {e.by ?? 'n/a'} ({e.role}) · {when(e.at)}{e.note ? ` · "${e.note}"` : ''}</li>)}</ul>
 
       <TenantContactBox tenancyId={s.tenancy_id} />
@@ -157,4 +167,4 @@ function Detail({ s, onChanged }: { s: any; onChanged: () => void }) {
       {msg && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-red-900">{msg}</p>}
     </div>
   )
-        }
+}
