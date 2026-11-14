@@ -23,6 +23,7 @@ import { supabase } from '@/lib/supabase'
 import { EBOHOMES_WHATSAPP } from '@/lib/contact'
 import { getSiteUrl } from '@/lib/site-url'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
+import { useUnitInfo } from '@/lib/use-unit-info'
 import { sizedPhoto, photoSrcSet, PLACEHOLDER_PHOTO } from '@/lib/image-url'
 import { SmartImage } from '@/components/ui/smart-image'
 
@@ -227,6 +228,7 @@ export function ListingCard({
   const displayTitle = title || property_type
   const added = addedLabel(created_at)
   const inspected = useInspectedIds([id]).has(id)
+  const unitInfo = useUnitInfo(id)
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
@@ -388,6 +390,11 @@ export function ListingCard({
             <MapPin size={12} className="shrink-0" />
             <span className="line-clamp-1">{location}</span>
           </p>
+          {unitInfo && (
+            <p className="mt-0.5 line-clamp-1 text-xs font-semibold text-primary">
+              Unit {unitInfo.unit}, {unitInfo.estateName}
+            </p>
+          )}
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {property_type && (
