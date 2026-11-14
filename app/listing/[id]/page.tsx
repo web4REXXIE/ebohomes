@@ -49,6 +49,7 @@ import { VerifyPromptModal, type ViewerGate } from '@/components/verify-prompt-m
 import { tenantVerificationState } from '@/lib/tenant-verification'
 import { OPEN_STATUSES as APPLICATION_OPEN_STATUSES } from '@/lib/application-form'
 import { OPEN_STATUSES as VIEWING_OPEN_STATUSES } from '@/lib/viewing-status'
+import { useListingReserved } from '@/lib/use-listing-reserved'
 
 const ListingLocation = dynamic(
   () =>
@@ -179,6 +180,7 @@ export default function ListingDetailPage() {
   const [savedKnown, setSavedKnown] = useState(true)
   const [saveMessage, setSaveMessage] = useState('')
   const [onHold, setOnHold] = useState(false)
+  const reserved = useListingReserved(listing ? String(listing.id) : null)
   const [myApplication, setMyApplication] = useState<{
     id: string
     status: string
@@ -768,6 +770,7 @@ export default function ListingDetailPage() {
     signedIn: !!userId,
     isOwner,
     onHold,
+    reserved,
     application: myApplication,
     viewing: myViewing,
   })
