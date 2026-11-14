@@ -12,6 +12,8 @@ import { groupUnits, unitState, countToLet, type ViewUnit } from '@/lib/estate-v
 
 type EstateInfo = { id: string; name: string; kind: string; address_text: string | null }
 type ListingInfo = { id: string; title: string | null; price_monthly: number | null; bedrooms: number | null; property_type: string | null; location_text: string | null }
+type ResidentView = { my_unit: string | null; occupied: Set<string> }
+type TileTone = 'to_let' | 'taken' | 'mine' | 'neighbour'
 
 const KIND_LABEL: Record<string, string> = {
   single_house: 'House',
@@ -20,34 +22,46 @@ const KIND_LABEL: Record<string, string> = {
   hostel: 'Hostel',
 }
 
+const STICKERS: { key: 'knock' | 'welcome' | 'howfar'; icon: string; label: string }[] = [
+  { key: 'knock', icon: '👋', label: 'Knock knock' },
+  { key: 'welcome', icon: '🎉', label: 'Welcome, neighbour' },
+  { key: 'howfar', icon: '🤝', label: 'How far?' },
+]
+
+const TONE_NOTE: Record<TileTone, string> = { to_let: 'To let', taken: 'Taken', mine: 'You', neighbour: 'Neighbour' }
+const TONE_CLASS: Record<TileTone, string> = {
+  to_let: 'border-2 border-success bg-card text-success',
+  taken: 'border border-transparent bg-muted text-muted-foreground',
+  mine: 'border-2 border-primary bg-primary text-primary-foreground',
+  neighbour: 'border border-primary/40 bg-secondary text-foreground',
+}
+
 function naira(n: number | null | undefined): string | null {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? `₦${n.toLocaleString('en-NG')}` : null
 }
 
 type TileProps = {
   unit: ViewUnit
-  open: boolean
+  tone: TileTone
   selected: boolean
   compact?: boolean
   onSelect: (id: string) => void
 }
 
-// One window (block) or one door number (estate). To let = outlined green. Taken = grey. Selected = ring.
-function Tile({ unit, open, selected, compact = false, onSelect }: TileProps) {
+// One window (block) or one door number (estate).
+function Tile({ unit, tone, selected, compact = false, onSelect }: TileProps) {
   return (
     <button
       type="button"
       onClick={() => onSelect(unit.id)}
       aria-pressed={selected}
-      aria-label={`Unit ${unit.unit_label}, ${open ? 'to let' : 'not available'}`}
+      aria-label={`Unit ${unit.unit_label}, ${TONE_NOTE[tone].toLowerCase()}`}
       className={`focus-ring flex flex-col items-center justify-center rounded-md text-sm font-bold transition ${
         compact ? 'min-h-12 px-1' : 'min-h-14 min-w-16 px-3 py-1'
-      } ${open ? 'border-2 border-success bg-card text-success' : 'border border-transparent bg-muted text-muted-foreground'} ${
-        selected ? 'ring-2 ring-primary ring-offset-2' : ''
-      }`}
+      } ${TONE_CLASS[tone]} ${selected ? 'ring-2 ring-primary ring-offset-2' : ''}`}
     >
       {unit.unit_label}
-      <span className="text-[11px] font-normal leading-tight">{open ? 'To let' : 'Taken'}</span>
+      <span className="text-[11px] font-normal leading-tight">{TONE_NOTE[tone]}</span>
     </button>
   )
 }
@@ -58,12 +72,15 @@ export default function EstateViewPage() {
   const [estate, setEstate] = useState<EstateInfo | null>(null)
   const [units, setUnits] = useState<ViewUnit[]>([])
   const [listings, setListings] = useState<Record<string, ListingInfo>>({})
+  const [resident, setResident] = useState<ResidentView>({ my_unit: null, occupied: new Set() })
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [onlyToLet, setOnlyToLet] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [groupKey, setGroupKey] = useState<string>('all')
+  const [sending, setSending] = useState(false)
+  const [knockMsg, setKnockMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -112,7 +129,14 @@ export default function EstateViewPage() {
           .eq('status', 'approved')
         for (const row of (l ?? []) as ListingInfo[]) map[row.id] = row
       }
+      // Residents only: which door is mine, which doors are lived in. Anyone else gets nothing back.
+      // If this fails, the page still works as a normal building view.
+      const { data: rv, error: rvErr } = await supabase.rpc('estate_resident_view', { p_estate: estateId })
       if (cancelled) return
+      if (!rvErr && rv && typeof rv === 'object') {
+        const r = rv as { my_unit?: string | null; occupied?: string[] }
+        setResident({ my_unit: r.my_unit ?? null, occupied: new Set(Array.isArray(r.occupied) ? r.occupied : []) })
+      }
       setEstate(e as EstateInfo)
       setUnits(unitRows)
       setListings(map)
@@ -130,6 +154,15 @@ export default function EstateViewPage() {
   const selected = units.find((x) => x.id === selectedId) ?? null
   const selectedListing = selected?.listing_id ? listings[selected.listing_id] : undefined
   const selectedIsToLet = selected ? unitState(selected, live) === 'to_let' : false
+  const isResident = resident.my_unit !== null
+  const selectedIsMine = !!selected && selected.id === resident.my_unit
+  const selectedIsNeighbour = !!selected && resident.occupied.has(selected.id)
+
+  const toneOf = (x: ViewUnit): TileTone => {
+    if (x.id === resident.my_unit) return 'mine'
+    if (resident.occupied.has(x.id)) return 'neighbour'
+    return unitState(x, live) === 'to_let' ? 'to_let' : 'taken'
+  }
 
   const isBlock = groups.some((g) => g.floor !== null)
   const visibleGroups = groups
@@ -141,10 +174,28 @@ export default function EstateViewPage() {
     document.getElementById(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  const selectUnit = (id: string) => {
+    setSelectedId(id)
+    setKnockMsg(null)
+  }
+
+  const sendKnock = async (sticker: 'knock' | 'welcome' | 'howfar') => {
+    if (!selected || sending) return
+    setSending(true)
+    setKnockMsg(null)
+    const { error } = await supabase.rpc('send_knock', { p_to_unit: selected.id, p_sticker: sticker })
+    setSending(false)
+    setKnockMsg(
+      error
+        ? { ok: false, text: error.message || 'Could not send it. Try again.' }
+        : { ok: true, text: 'Sent. They only see your unit number, never your name.' },
+    )
+  }
+
   return (
     <>
       <Header />
-      <main className="mx-auto w-full max-w-2xl px-4 pb-48 pt-6 sm:px-6">
+      <main className="mx-auto w-full max-w-2xl px-4 pb-56 pt-6 sm:px-6">
         {loading && <p className="py-16 text-center text-sm text-muted-foreground" role="status">Loading the building...</p>}
         {!loading && notFound && (
           <div className="py-16 text-center">
@@ -206,7 +257,9 @@ export default function EstateViewPage() {
               </div>
             )}
 
-            <p className="mt-4 text-sm text-muted-foreground">Tap any window to peek inside.</p>
+            <p className="mt-4 text-sm text-muted-foreground">
+              {isResident ? 'This is your building. Tap a neighbour’s door to say hi.' : 'Tap any window to peek inside.'}
+            </p>
 
             {isBlock ? (
               <div className="mx-auto mt-3 max-w-md" aria-label={`${estate.name} building`}>
@@ -223,13 +276,7 @@ export default function EstateViewPage() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {g.shown.map((x) => (
-                          <Tile
-                            key={x.id}
-                            unit={x}
-                            open={unitState(x, live) === 'to_let'}
-                            selected={x.id === selectedId}
-                            onSelect={setSelectedId}
-                          />
+                          <Tile key={x.id} unit={x} tone={toneOf(x)} selected={x.id === selectedId} onSelect={selectUnit} />
                         ))}
                       </div>
                     </section>
@@ -247,14 +294,7 @@ export default function EstateViewPage() {
                     <h2 className="mb-2 text-sm font-semibold text-foreground">{g.title}</h2>
                     <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                       {g.shown.map((x) => (
-                        <Tile
-                          key={x.id}
-                          unit={x}
-                          compact
-                          open={unitState(x, live) === 'to_let'}
-                          selected={x.id === selectedId}
-                          onSelect={setSelectedId}
-                        />
+                        <Tile key={x.id} unit={x} compact tone={toneOf(x)} selected={x.id === selectedId} onSelect={selectUnit} />
                       ))}
                     </div>
                   </section>
@@ -267,6 +307,12 @@ export default function EstateViewPage() {
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2 border-success bg-card" aria-hidden />To let</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-muted" aria-hidden />Taken</span>
+              {isResident && (
+                <>
+                  <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-primary" aria-hidden />You</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-primary/40 bg-secondary" aria-hidden />Neighbour</span>
+                </>
+              )}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">Tenant names are never shown. Grey means not available to rent right now.</p>
           </>
@@ -274,13 +320,17 @@ export default function EstateViewPage() {
       </main>
 
       {selected && (
-        <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-modal border-t border-border bg-card px-4 pb-6 pt-4 shadow-lg" role="dialog" aria-label={`Unit ${selected.unit_label}`}>
+        <div className="fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto rounded-t-modal border-t border-border bg-card px-4 pb-6 pt-4 shadow-lg" role="dialog" aria-label={`Unit ${selected.unit_label}`}>
           <div className="mx-auto flex max-w-2xl items-start justify-between gap-3">
             <div>
               <p className="text-xs text-muted-foreground">
                 {selected.floor_no !== null ? `Floor ${selected.floor_no}, ` : ''}unit {selected.unit_label}
               </p>
-              {selectedIsToLet && selectedListing ? (
+              {selectedIsMine ? (
+                <p className="text-base font-bold text-foreground">This is your home</p>
+              ) : selectedIsNeighbour ? (
+                <p className="text-base font-bold text-foreground">Your neighbour lives here</p>
+              ) : selectedIsToLet && selectedListing ? (
                 <>
                   <p className="text-base font-bold text-foreground">{displayTitle(selectedListing)}</p>
                   {naira(selectedListing.price_monthly) && (
@@ -296,7 +346,33 @@ export default function EstateViewPage() {
             </div>
             <button type="button" onClick={() => setSelectedId(null)} className="focus-ring min-h-11 shrink-0 rounded-button px-3 text-sm font-semibold text-primary">Close</button>
           </div>
-          {selectedIsToLet && selectedListing && (
+
+          {selectedIsNeighbour && (
+            <div className="mx-auto mt-3 max-w-2xl">
+              <p className="mb-2 text-sm text-muted-foreground">Send a greeting. They see your unit number, not your name.</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {STICKERS.map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    disabled={sending}
+                    onClick={() => sendKnock(s.key)}
+                    className="focus-ring flex min-h-12 items-center justify-center gap-2 rounded-button border border-border bg-card px-3 text-sm font-semibold text-foreground hover:bg-secondary disabled:opacity-50"
+                  >
+                    <span aria-hidden className="text-lg">{s.icon}</span>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              {knockMsg && (
+                <p role="status" className={`mt-2 rounded-card border p-3 text-sm ${knockMsg.ok ? 'border-success bg-success-soft text-success' : 'border-danger bg-danger-soft text-danger'}`}>
+                  {knockMsg.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {!selectedIsMine && !selectedIsNeighbour && selectedIsToLet && selectedListing && (
             <Link
               href={`/listing/${selectedListing.id}`}
               className="focus-ring mx-auto mt-3 flex min-h-12 max-w-2xl items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground"
