@@ -301,7 +301,7 @@ export default function VerifyAccountPage() {
           <Clock size={36} className="mx-auto mb-3 text-warning" aria-hidden />
           <h1 className="mb-1 text-xl font-bold text-foreground">We have your details</h1>
           <p className="text-sm text-muted-foreground">
-            You have submitted your ID and selfie. EboHomes has not recorded a decision yet. You will be notified when there is one.
+            You have submitted your ID and selfie. EboHomes has not recorded a decision yet. We aim to reply within 48 hours and you will be notified when there is a decision.
           </p>
         </div>
 
