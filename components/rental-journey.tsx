@@ -21,6 +21,7 @@ import {
   type JourneyStep, type StepKey,
 } from '@/lib/rental-journey'
 import { TenancyChecklist } from '@/components/tenancy-checklist'
+import { ViewingSlotPicker } from '@/components/viewing-slot-picker'
 import { getPaymentState, isVerified, paymentLabel } from '@/lib/payment-status'
 
 const INTRO_KEY = 'ebohomes_journey_intro_v1'
@@ -533,9 +534,11 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   const requestForm = (
     <div className="space-y-3 rounded-lg border border-border p-3 text-sm">
       <p className="font-semibold text-foreground">Tell us when and how to reach you</p>
-      <label className="block text-xs font-semibold text-foreground">Preferred date and time
-        <input type="datetime-local" value={reqWhen} onChange={(e) => setReqWhen(e.target.value)} className={`${field} mt-1`} />
-      </label>
+      <ViewingSlotPicker value={reqWhen} onChange={setReqWhen} fieldClass={field} />
+      <div className="rounded-lg border border-border bg-card p-3 text-xs">
+        <p className="font-bold text-foreground">No viewing fee. Ever.</p>
+        <p className="mt-0.5 text-muted-foreground">This is a request, not a booking. EboHomes confirms the time here, and you see &quot;Appointment scheduled&quot; once it is set.</p>
+      </div>
       <label className="block text-xs font-semibold text-foreground">Phone number EboHomes can call
         <input type="tel" inputMode="tel" autoComplete="tel" placeholder="0803 123 4567" value={reqPh} onChange={(e) => setReqPhone(e.target.value)} className={`${field} mt-1`} />
       </label>
