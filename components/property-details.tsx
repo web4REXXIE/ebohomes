@@ -123,7 +123,7 @@ export function PropertyKeyFacts({
   )
 }
 
-/* ---------------- Rent and payment terms ---------------- */
+/* ---------------- Rent and move-in costs ---------------- */
 
 export function PropertyRentCard({
   priceMonthly,
@@ -142,19 +142,18 @@ export function PropertyRentCard({
   const total = upfrontTotal({ price_monthly: priceMonthly, service_charge: serviceCharge, caution_deposit: cautionDeposit })
   const hasRent = rent !== null && rent > 0
 
-  const line = (label: string, value: number | null) =>
-    value === null ? null : (
-      <div className="flex justify-between gap-3 text-body">
-        <dt className="text-forest-foreground/75">{label}</dt>
-        <dd className="font-semibold">{value > 0 ? naira(value) : 'None'}</dd>
-      </div>
-    )
-
-  const serviceLine = line('Service charge', service)
-  const cautionLine = line('Caution deposit', caution)
+  // Every line is always shown. A missing amount says "Not listed" and is never counted as zero.
+  const line = (label: string, value: number | null) => (
+    <div className="flex justify-between gap-3 text-body">
+      <dt className="text-forest-foreground/75">{label}</dt>
+      <dd className={value === null ? 'font-medium text-forest-foreground/60' : 'font-semibold'}>
+        {value === null ? 'Not listed' : value > 0 ? naira(value) : 'None'}
+      </dd>
+    </div>
+  )
 
   return (
-    <section aria-label="Rent and payment terms" className={`rounded-card bg-forest p-card text-forest-foreground shadow-raised ${className}`}>
+    <section aria-label="Rent and move-in costs" className={`rounded-card bg-forest p-card text-forest-foreground shadow-raised ${className}`}>
       <p className="text-caption font-medium uppercase tracking-wide text-forest-foreground/70">Monthly rent</p>
 
       {hasRent ? (
@@ -166,12 +165,14 @@ export function PropertyRentCard({
         <p className="mt-1 text-h3 font-semibold">Rent not listed</p>
       )}
 
-      {(serviceLine || cautionLine) && (
-        <dl className="mt-4 space-y-2 border-t border-white/15 pt-4">
-          {serviceLine}
-          {cautionLine}
+      <div className="mt-4 border-t border-white/15 pt-4">
+        <p className="mb-2 text-caption font-medium uppercase tracking-wide text-forest-foreground/70">Move-in costs</p>
+        <dl className="space-y-2">
+          {line('Monthly rent', rent)}
+          {line('Service charge', service)}
+          {line('Caution deposit', caution)}
         </dl>
-      )}
+      </div>
 
       {total !== null ? (
         <div className="mt-4 rounded-control border border-featured/40 bg-white/5 p-3">
