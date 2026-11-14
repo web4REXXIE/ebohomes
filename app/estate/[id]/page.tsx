@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
 import { displayTitle } from '@/lib/property-display'
 import { groupUnits, unitState, countToLet, type ViewUnit } from '@/lib/estate-view'
+import { LightDeyCard } from '@/components/light-dey-card'
 
 type EstateInfo = { id: string; name: string; kind: string; address_text: string | null }
 type ListingInfo = { id: string; title: string | null; price_monthly: number | null; bedrooms: number | null; property_type: string | null; location_text: string | null }
@@ -214,6 +215,8 @@ export default function EstateViewPage() {
               {estate.address_text ? `, ${estate.address_text}` : ''}
               {` · ${units.length} ${units.length === 1 ? 'unit' : 'units'} · ${toLet} to let`}
             </p>
+
+            <LightDeyCard estateId={estate.id} isResident={isResident} />
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {isBlock && groups.length > 3 && (
