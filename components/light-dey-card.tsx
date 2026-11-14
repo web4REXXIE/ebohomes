@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { EMPTY_LIGHT, lightHeadline, parseLight, reportsLine, timeAgo, type LightInfo } from '@/lib/light-status'
+import { EMPTY_LIGHT, lightHeadline, parseLight, reportsLine, timeAgo, type LightInfo, type LightState } from '@/lib/light-status'
 
 // "Light dey?" for one building. Everyone sees the status; residents can report.
 // If the database function is missing or fails, the card simply does not show and the page works as before.
-export function LightDeyCard({ estateId, isResident }: { estateId: string; isResident: boolean }) {
+export function LightDeyCard({ estateId, isResident, onStatus }: { estateId: string; isResident: boolean; onStatus?: (s: LightState) => void }) {
   const [info, setInfo] = useState<LightInfo>(EMPTY_LIGHT)
   const [available, setAvailable] = useState(false)
   const [sending, setSending] = useState(false)
@@ -22,6 +22,11 @@ export function LightDeyCard({ estateId, isResident }: { estateId: string; isRes
   useEffect(() => {
     load()
   }, [load])
+
+  // Lets the building picture glow when neighbours say the light is on.
+  useEffect(() => {
+    onStatus?.(info.status)
+  }, [info.status, onStatus])
 
   const report = async (status: 'on' | 'off') => {
     if (sending) return
