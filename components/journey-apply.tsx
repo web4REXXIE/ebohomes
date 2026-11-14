@@ -21,6 +21,7 @@ import {
   type FieldErrors,
 } from '@/lib/application-form'
 import { Stepper } from '@/components/application-ui'
+import { PARTS, errorsForPart, moveInChoices, occupantsMode, OCCUPANT_CHIPS, partIndexOfField } from '@/lib/application-steps'
 
 type Step = 'form' | 'review' | 'done'
 
@@ -42,6 +43,9 @@ export function JourneyApply({ listingId }: { listingId: string }) {
   const [form, setForm] = useState<ApplicationForm>(EMPTY)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [step, setStep] = useState<Step>('form')
+  const [part, setPart] = useState(0) // which small step of the form is showing
+  const [editContact, setEditContact] = useState(true) // name and phone: false means show them as prefilled details
+  const [pickDate, setPickDate] = useState(false) // true shows the normal date box instead of the quick picks
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<{ message: string; supportCode: string } | null>(null)
   const [caseRef, setCaseRef] = useState<string | null>(null)
@@ -107,6 +111,9 @@ export function JourneyApply({ listingId }: { listingId: string }) {
       const { data: profile } = await supabase.from('profiles').select('full_name, phone').eq('id', user.id).maybeSingle()
       if (profile) {
         setForm((p) => ({ ...p, fullName: profile.full_name ?? '', phone: profile.phone ?? '' }))
+        // If the saved name and phone already pass the same checks the form uses, show them as prefilled details.
+        const pre = validateApplication({ ...EMPTY, fullName: profile.full_name ?? '', phone: profile.phone ?? '' })
+        setEditContact(Boolean(pre.fullName || pre.phone))
       }
 
       // Already applied: go straight to that application's journey.
@@ -118,18 +125,35 @@ export function JourneyApply({ listingId }: { listingId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, router])
 
-  const goReview = () => {
-    const e = validateApplication(form)
+  // "Next" checks only the fields on this small step. The last step checks everything before the review.
+  const goNext = () => {
+    const all = validateApplication(form)
+    const last = part >= PARTS.length - 1
+    const e = last ? all : errorsForPart(all, part)
     setErrors(e)
     if (hasErrors(e)) {
       const first = Object.keys(e)[0]
-      document.getElementById(`field-${first}`)?.focus()
+      const target = partIndexOfField(first)
+      if (target !== part) setPart(target)
+      if (first === 'fullName' || first === 'phone') setEditContact(true)
+      setTimeout(() => document.getElementById(`field-${first}`)?.focus(), 0)
       return
     }
     setSubmitError(null)
-    setStep('review')
     window.scrollTo({ top: 0 })
+    if (!last) {
+      setPart(part + 1)
+      setTimeout(() => headingRef.current?.focus(), 0)
+      return
+    }
+    setStep('review')
     setTimeout(() => headingRef.current?.focus(), 0)
+  }
+
+  const goBackPart = () => {
+    setErrors({})
+    setPart((p) => Math.max(0, p - 1))
+    window.scrollTo({ top: 0 })
   }
 
   const handleSubmit = async () => {
@@ -153,6 +177,8 @@ export function JourneyApply({ listingId }: { listingId: string }) {
       if (hasErrors(e)) {
         setErrors(e)
         setStep('form')
+        setPart(partIndexOfField(Object.keys(e)[0]))
+        setEditContact(true)
         setTimeout(() => document.getElementById(`field-${Object.keys(e)[0]}`)?.focus(), 0)
         return
       }
@@ -327,11 +353,11 @@ export function JourneyApply({ listingId }: { listingId: string }) {
   return shell(
     <div className="w-full pb-12">
       <button
-        onClick={() => (step === 'review' ? setStep('form') : router.back())}
+        onClick={() => (step === 'review' ? (setPart(0), setStep('form')) : part > 0 ? goBackPart() : router.back())}
         disabled={submitting}
         className="inline-flex items-center gap-1 text-primary text-sm font-medium hover:underline mb-4 min-h-11 disabled:opacity-50"
       >
-        <ArrowLeft size={16} aria-hidden /> {step === 'review' ? 'Edit my details' : 'Back'}
+        <ArrowLeft size={16} aria-hidden /> {step === 'review' ? 'Edit my details' : part > 0 ? 'Previous step' : 'Back'}
       </button>
 
       <div className="grid lg:grid-cols-[1fr_22rem] gap-5 lg:gap-8 items-start">
@@ -340,33 +366,140 @@ export function JourneyApply({ listingId }: { listingId: string }) {
             {step === 'form' ? 'Apply to rent' : 'Review your application'}
           </h2>
           <p className="text-sm text-muted-foreground mt-1 mb-5">
-            {step === 'form' ? 'It takes about two minutes. No documents or payment needed.' : 'Check everything below. You can still go back and edit.'}
+            {step === 'form' ? `Step ${part + 1} of ${PARTS.length}. About two minutes. No documents or payment needed.` : 'Check everything below. You can still go back and edit.'}
           </p>
           <div className="mb-5"><Stepper steps={['Your details', 'Review', 'Submitted']} current={step === 'form' ? 0 : 1} /></div>
 
           {step === 'form' && (
-            <form noValidate onSubmit={(e) => { e.preventDefault(); goReview() }} className="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border">
-              <section className="p-5 sm:p-6 space-y-5" aria-labelledby="sec-about">
-                <div id="sec-about">{sectionTitle('About you', 'So EboHomes knows who is applying and how to reach you.')}</div>
-                {field('fullName', 'Full name', <input {...aria('fullName')} type="text" autoComplete="name" value={form.fullName} onChange={(e) => set('fullName', e.target.value)} className={ctl('fullName')} />)}
-                {field('phone', 'Phone number', <input {...aria('phone', true)} type="tel" inputMode="tel" autoComplete="tel" placeholder="0803 123 4567" value={form.phone} onChange={(e) => set('phone', e.target.value)} className={ctl('phone')} />, 'EboHomes uses this to reach you. It is not shown to the landlord at this stage.')}
-                {field('occupation', 'Occupation', <select {...aria('occupation', true)} value={form.occupation} onChange={(e) => set('occupation', e.target.value)} className={ctl('occupation')}><option value="">Select one</option>{OCCUPATIONS.map((o) => <option key={o} value={o}>{o}</option>)}</select>, "Employer details or documents are only requested later if they're needed.")}
-              </section>
-              <section className="p-5 sm:p-6 space-y-5" aria-labelledby="sec-move">
-                <div id="sec-move">{sectionTitle('Your move', 'When you would like to move in and who will live there.')}</div>
-                <div className="grid sm:grid-cols-2 gap-5">
-                  {field('moveInDate', 'Preferred move-in date', <input {...aria('moveInDate')} type="date" min={todayIso()} value={form.moveInDate} onChange={(e) => set('moveInDate', e.target.value)} className={ctl('moveInDate')} />)}
-                  {field('occupants', 'Number of occupants', <input {...aria('occupants', true)} type="number" inputMode="numeric" min={1} step={1} value={form.occupants} onChange={(e) => set('occupants', e.target.value)} className={ctl('occupants')} />, 'Including you.')}
+            <form noValidate onSubmit={(e) => { e.preventDefault(); goNext() }} className="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border">
+              <div className="px-5 pt-4 sm:px-6" aria-hidden>
+                <div className="flex gap-1.5">
+                  {PARTS.map((p, i) => (
+                    <span key={p.key} className={`h-1.5 flex-1 rounded-full ${i <= part ? 'bg-primary' : 'bg-border'}`} />
+                  ))}
                 </div>
-              </section>
-              <section className="p-5 sm:p-6 space-y-5" aria-labelledby="sec-more">
-                <div id="sec-more">{sectionTitle('Anything else?', 'Optional. Share anything that helps your application.')}</div>
-                {field('message', 'Message (optional)', <textarea {...aria('message', true)} rows={4} maxLength={MAX_MESSAGE + 200} value={form.message} onChange={(e) => set('message', e.target.value)} placeholder="For example: your work situation, or questions about the property." className={ctl('message')} />, `${form.message.trim().length}/${MAX_MESSAGE}`)}
-              </section>
+              </div>
+
+              {part === 0 && (
+                <section className="p-5 sm:p-6 space-y-5" aria-labelledby="sec-about">
+                  <div id="sec-about">{sectionTitle(PARTS[0].title, PARTS[0].why)}</div>
+
+                  {!editContact ? (
+                    <div className="rounded-xl border border-border bg-background p-4">
+                      <p className="text-xs font-semibold text-muted-foreground">From your EboHomes profile</p>
+                      <p className="mt-1 text-base font-bold text-foreground break-words">{form.fullName.trim().replace(/\s+/g, ' ')}</p>
+                      <p className="text-sm text-foreground">{form.phone.trim()}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">EboHomes uses your name to match your application to your verified account, and your phone to reach you. The landlord does not see your phone at this stage.</p>
+                      <button type="button" onClick={() => setEditContact(true)} className="mt-2 min-h-11 text-sm font-semibold text-primary underline">Change name or phone</button>
+                    </div>
+                  ) : (
+                    <>
+                      {field('fullName', 'Full name', <input {...aria('fullName', true)} type="text" autoComplete="name" value={form.fullName} onChange={(e) => set('fullName', e.target.value)} className={ctl('fullName')} />, 'First and last name, as on your ID. This lets EboHomes match your application to your verified account.')}
+                      {field('phone', 'Phone number', <input {...aria('phone', true)} type="tel" inputMode="tel" autoComplete="tel" placeholder="0803 123 4567" value={form.phone} onChange={(e) => set('phone', e.target.value)} className={ctl('phone')} />, 'EboHomes uses this to reach you. It is not shown to the landlord at this stage.')}
+                    </>
+                  )}
+
+                  <div>
+                    <p id="label-occupation" className="block text-sm font-semibold text-foreground mb-1.5">I am...</p>
+                    <div id="field-occupation" tabIndex={-1} role="group" aria-labelledby="label-occupation" aria-describedby={errors.occupation ? 'err-occupation' : 'hint-occupation'} className="flex flex-wrap gap-2">
+                      {OCCUPATIONS.map((o) => (
+                        <button
+                          key={o}
+                          type="button"
+                          aria-pressed={form.occupation === o}
+                          onClick={() => set('occupation', o)}
+                          className={`focus-ring min-h-11 rounded-full border px-4 text-sm font-semibold ${form.occupation === o ? 'border-primary bg-secondary text-primary' : 'border-border bg-card text-foreground'}`}
+                        >
+                          {o}
+                        </button>
+                      ))}
+                    </div>
+                    {!errors.occupation && <p id="hint-occupation" className="text-xs text-muted-foreground mt-1.5">Helps the landlord understand who is applying. Employer details or documents are only requested later if they are needed.</p>}
+                    {errors.occupation && <p id="err-occupation" role="alert" className="flex items-start gap-1 text-sm text-destructive mt-1.5"><AlertCircle size={14} className="shrink-0 mt-0.5" aria-hidden />{errors.occupation}</p>}
+                  </div>
+                </section>
+              )}
+
+              {part === 1 && (
+                <section className="p-5 sm:p-6 space-y-6" aria-labelledby="sec-move">
+                  <div id="sec-move">{sectionTitle(PARTS[1].title, PARTS[1].why)}</div>
+
+                  <div>
+                    <p id="label-move" className="block text-sm font-semibold text-foreground mb-1.5">When would you like to move in?</p>
+                    <div className="flex flex-wrap gap-2" role="group" aria-labelledby="label-move">
+                      {moveInChoices().map((c) => (
+                        <button
+                          key={c.date}
+                          type="button"
+                          aria-pressed={!pickDate && form.moveInDate === c.date}
+                          onClick={() => { setPickDate(false); set('moveInDate', c.date) }}
+                          className={`focus-ring min-h-11 rounded-full border px-4 text-sm font-semibold ${!pickDate && form.moveInDate === c.date ? 'border-primary bg-secondary text-primary' : 'border-border bg-card text-foreground'}`}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        aria-pressed={pickDate}
+                        onClick={() => setPickDate(true)}
+                        className={`focus-ring min-h-11 rounded-full border px-4 text-sm font-semibold ${pickDate ? 'border-primary bg-secondary text-primary' : 'border-border bg-card text-foreground'}`}
+                      >
+                        Pick a date
+                      </button>
+                    </div>
+                    {pickDate && (
+                      <input {...aria('moveInDate', true)} type="date" min={todayIso()} value={form.moveInDate} onChange={(e) => set('moveInDate', e.target.value)} className={`${ctl('moveInDate')} mt-2`} />
+                    )}
+                    {form.moveInDate && !errors.moveInDate && <p className="text-xs text-foreground mt-1.5">Preferred move-in: <span className="font-semibold">{formatMoveIn(form.moveInDate)}</span></p>}
+                    {!form.moveInDate && !errors.moveInDate && <p id="hint-moveInDate" className="text-xs text-muted-foreground mt-1.5">Your preferred date. It can be adjusted later with the landlord.</p>}
+                    {errors.moveInDate && <p id="err-moveInDate" role="alert" className="flex items-start gap-1 text-sm text-destructive mt-1.5"><AlertCircle size={14} className="shrink-0 mt-0.5" aria-hidden />{errors.moveInDate}</p>}
+                  </div>
+
+                  <div>
+                    <p id="label-occupants" className="block text-sm font-semibold text-foreground mb-1.5">How many people will live there?</p>
+                    <div className="flex flex-wrap gap-2" role="group" aria-labelledby="label-occupants">
+                      {OCCUPANT_CHIPS.map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          aria-pressed={form.occupants === String(n)}
+                          onClick={() => set('occupants', String(n))}
+                          className={`focus-ring min-h-11 min-w-11 rounded-full border px-4 text-sm font-semibold ${form.occupants === String(n) ? 'border-primary bg-secondary text-primary' : 'border-border bg-card text-foreground'}`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        aria-pressed={occupantsMode(form.occupants) === 'more'}
+                        onClick={() => { if (occupantsMode(form.occupants) !== 'more') set('occupants', '5') }}
+                        className={`focus-ring min-h-11 rounded-full border px-4 text-sm font-semibold ${occupantsMode(form.occupants) === 'more' ? 'border-primary bg-secondary text-primary' : 'border-border bg-card text-foreground'}`}
+                      >
+                        5 or more
+                      </button>
+                    </div>
+                    {occupantsMode(form.occupants) === 'more' && (
+                      <input {...aria('occupants', true)} type="number" inputMode="numeric" min={1} step={1} value={form.occupants} onChange={(e) => set('occupants', e.target.value)} className={`${ctl('occupants')} mt-2`} />
+                    )}
+                    {!errors.occupants && <p id="hint-occupants" className="text-xs text-muted-foreground mt-1.5">Including you. The landlord uses this to check the home fits.</p>}
+                    {errors.occupants && <p id="err-occupants" role="alert" className="flex items-start gap-1 text-sm text-destructive mt-1.5"><AlertCircle size={14} className="shrink-0 mt-0.5" aria-hidden />{errors.occupants}</p>}
+                  </div>
+                </section>
+              )}
+
+              {part === 2 && (
+                <section className="p-5 sm:p-6 space-y-5" aria-labelledby="sec-more">
+                  <div id="sec-more">{sectionTitle(PARTS[2].title, PARTS[2].why)}</div>
+                  {field('message', 'Note (optional)', <textarea {...aria('message', true)} rows={4} maxLength={MAX_MESSAGE + 200} value={form.message} onChange={(e) => set('message', e.target.value)} placeholder="For example: your work situation, or questions about the property." className={ctl('message')} />, `${form.message.trim().length}/${MAX_MESSAGE}. You can leave this empty.`)}
+                </section>
+              )}
+
               <div className="p-5 sm:p-6 space-y-4 bg-secondary/40 rounded-b-2xl">
                 {hasErrors(errors) && <p role="alert" className="text-sm text-destructive">Please fix the {Object.keys(errors).length === 1 ? 'highlighted field' : `${Object.keys(errors).length} highlighted fields`} to continue.</p>}
-                <p className="text-xs text-muted-foreground flex gap-2"><ShieldCheck size={16} className="shrink-0 text-primary" aria-hidden />A rental application only. It is not a payment, a viewing, or a reservation.</p>
-                <Button type="submit" className="w-full min-h-12 text-base bg-primary hover:bg-primary/90"><ClipboardCheck size={18} className="mr-2" aria-hidden /> Review application</Button>
+                <p className="text-xs text-muted-foreground flex gap-2"><ShieldCheck size={16} className="shrink-0 text-primary" aria-hidden />Free to apply. A rental application only. It is not a payment, a viewing, or a reservation.</p>
+                <Button type="submit" className="w-full min-h-12 text-base bg-primary hover:bg-primary/90">
+                  <ClipboardCheck size={18} className="mr-2" aria-hidden /> {part < PARTS.length - 1 ? 'Next' : 'Review application'}
+                </Button>
               </div>
             </form>
           )}
@@ -411,4 +544,4 @@ export function JourneyApply({ listingId }: { listingId: string }) {
       </div>
     </div>
   )
-}
+                    }
