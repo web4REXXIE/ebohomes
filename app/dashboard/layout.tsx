@@ -46,6 +46,7 @@ const NAV_GROUPS: AccountNavGroup[] = [
     items: [
       { label: 'My Properties', href: '/dashboard/listings', icon: List },
       { label: 'Add New Listing', href: '/list-property', icon: Plus },
+      { label: 'My Estates', href: '/dashboard/estates', icon: Building2 },
       { label: 'Inspection requests', href: '/dashboard/inspection-requests', icon: ClipboardCheck },
       { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
     ],
