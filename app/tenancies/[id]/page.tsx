@@ -7,6 +7,7 @@ import { ArrowRight, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { TenancyHub } from '@/components/tenancy-hub'
 import { RenewalPanel } from '@/components/renewal-panel'
+import { RentNoticeCard } from '@/components/rent-notice-card'
 
 type Access = 'checking' | 'owner' | 'other'
 
@@ -67,6 +68,9 @@ export default function TenantTenancyPage() {
           See the full tenancy record
           <ArrowRight size={16} aria-hidden />
         </Link>
+      </div>
+      <div className="mx-auto max-w-3xl px-4 pt-3 empty:hidden">
+        <RentNoticeCard role="tenant" tenancyId={id} />
       </div>
       <TenancyHub role="tenant" tenancyId={String(params?.id ?? '')} />
       <RenewalPanel role="tenant" tenancyId={String(params?.id ?? '')} />
