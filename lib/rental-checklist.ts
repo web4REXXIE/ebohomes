@@ -95,7 +95,7 @@ export function buildChecklist(inp: ChecklistInput): Checklist {
 
   let handover: ChecklistItem
   if (!paymentVerified) handover = { key: 'handover', title: 'Key handover confirmed', state: 'upcoming', label: 'Not started', detail: 'Handover comes after EboHomes verifies your payment.' }
-  else if (handoverConfirmed) handover = { key: 'handover', title: 'Key handover confirmed', state: 'done', label: 'Both confirmed', detail: 'You and the landlord both confirmed the key handover.' }
+  else if (handoverConfirmed) handover = { key: 'handover', title: 'Key handover confirmed', state: 'done', label: 'Handover complete', detail: 'The key handover is complete.' }
   else if (disputed) handover = { key: 'handover', title: 'Key handover confirmed', state: 'blocked', label: 'Disputed', detail: 'EboHomes is reviewing a handover concern. Wait for the outcome.' }
   else handover = { key: 'handover', title: 'Key handover confirmed', state: 'current', label: 'Next: collect your keys', detail: 'Confirm once you have received the keys. The landlord confirms their side too.' }
 
