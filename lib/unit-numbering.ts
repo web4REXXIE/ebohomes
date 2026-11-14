@@ -7,7 +7,8 @@ export type UnitDraft = { unit_label: string; floor_no: number | null; group_lab
 
 export type NumberingInput = {
   kind: EstateKind
-  floors?: number // block: number of floors
+  floors?: number // block: number of floors ABOVE the ground floor
+  groundCount?: number // block: flats on the ground floor (0 or empty means none). Numbered GA, GB, GC...
   perFloor?: number // block: flats on each floor (used when floorCounts is empty)
   floorCounts?: number[] // block: flats on floor 1, 2, 3... (overrides perFloor)
   count?: number // estate or hostel: how many
@@ -16,6 +17,7 @@ export type NumberingInput = {
 
 export const MAX_UNITS = 300
 export const MAX_FLOORS = 60
+export const GROUND_PREFIX = 'G'
 export const MAX_PER_FLOOR = 26 // A to Z
 
 export function floorWord(n: number): string {
@@ -43,8 +45,12 @@ export function buildUnits(input: NumberingInput): { units: UnitDraft[]; error: 
   }
 
   if (input.kind === 'block') {
-    const floors = whole(input.floors)
-    if (floors === null || floors < 1) return fail('Enter how many floors the building has.')
+    const ground = input.groundCount === undefined ? 0 : whole(input.groundCount)
+    if (ground === null || ground < 0) return fail('Enter how many flats are on the ground floor, or leave it empty.')
+    if (ground > MAX_PER_FLOOR) return fail(`A floor can have up to ${MAX_PER_FLOOR} flats here.`)
+    // With ground-floor flats, the floors above can be left empty (a ground-floor-only building).
+    const floors = input.floors === undefined && ground > 0 ? 0 : whole(input.floors)
+    if (floors === null || (floors < 1 && ground < 1)) return fail('Enter how many floors the building has.')
     if (floors > MAX_FLOORS) return fail(`A building can have up to ${MAX_FLOORS} floors here.`)
     const custom = input.floorCounts && input.floorCounts.length > 0 ? input.floorCounts : null
     const counts: number[] = []
@@ -55,7 +61,7 @@ export function buildUnits(input: NumberingInput): { units: UnitDraft[]; error: 
       if (c > MAX_PER_FLOOR) return fail(`A floor can have up to ${MAX_PER_FLOOR} flats here.`)
       counts.push(c)
     }
-    const total = counts.reduce((a, b) => a + b, 0)
+    const total = counts.reduce((a, b) => a + b, 0) + ground
     if (total > MAX_UNITS) return fail(`That is ${total} units. You can create up to ${MAX_UNITS} at a time.`)
     const units: UnitDraft[] = []
     // Top floor first, so the preview reads like the building.
@@ -63,6 +69,10 @@ export function buildUnits(input: NumberingInput): { units: UnitDraft[]; error: 
       for (let i = 0; i < counts[f - 1]; i++) {
         units.push({ unit_label: `${f}${letterFor(i)}`, floor_no: f, group_label: null })
       }
+    }
+    // Ground floor last, like the real building. The database accepts floor 0.
+    for (let i = 0; i < ground; i++) {
+      units.push({ unit_label: `${GROUND_PREFIX}${letterFor(i)}`, floor_no: 0, group_label: null })
     }
     return { units, error: null }
   }
