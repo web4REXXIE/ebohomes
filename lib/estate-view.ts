@@ -12,7 +12,8 @@ export type ViewUnit = {
 
 export type TileState = 'to_let' | 'unavailable'
 
-export type UnitGroup = { key: string; title: string; floor: number | null; units: ViewUnit[] }
+// building is only set for a compound (several buildings in one place). It is the building's name.
+export type UnitGroup = { key: string; title: string; floor: number | null; units: ViewUnit[]; building?: string | null }
 
 function floorWord(n: number): string {
   if (n === 0) return 'Ground'
@@ -33,9 +34,36 @@ export function naturalSort(a: string, b: string): number {
 }
 
 // Blocks (units with floors): one group per floor, top floor first.
+// Compounds (units with floors AND a building name): one group per building and floor, buildings in natural order.
 // Estates and hostels (no floors): one group per street or phase, in natural order. No label means one plain group.
 export function groupUnits(units: ViewUnit[]): UnitGroup[] {
   const hasFloors = units.some((u) => u.floor_no !== null)
+  const hasBuildings = hasFloors && units.some((u) => (u.group_label ?? '').trim() !== '')
+
+  if (hasBuildings) {
+    const names = [...new Set(units.map((u) => (u.group_label ?? '').trim()))].sort(naturalSort)
+    const out: UnitGroup[] = []
+    names.forEach((bName, bi) => {
+      const inBuilding = units.filter((u) => (u.group_label ?? '').trim() === bName)
+      const shownName = bName || 'Other'
+      const byFloor = new Map<number, ViewUnit[]>()
+      for (const u of inBuilding) {
+        const f = u.floor_no ?? 0
+        byFloor.set(f, [...(byFloor.get(f) ?? []), u])
+      }
+      for (const f of [...byFloor.keys()].sort((a, b) => b - a)) {
+        out.push({
+          key: `b${bi}-floor-${f}`,
+          title: `${shownName}, ${floorWord(f)} floor`,
+          floor: f,
+          building: shownName,
+          units: (byFloor.get(f) ?? []).sort((a, b) => naturalSort(a.unit_label, b.unit_label)),
+        })
+      }
+    })
+    return out
+  }
+
   if (hasFloors) {
     const byFloor = new Map<number, ViewUnit[]>()
     for (const u of units) {
@@ -64,6 +92,15 @@ export function groupUnits(units: ViewUnit[]): UnitGroup[] {
       floor: null,
       units: (byGroup.get(g) ?? []).sort((a, b) => naturalSort(a.unit_label, b.unit_label)),
     }))
+}
+
+// The building names of a compound, in order. Empty for a single building, an estate or a hostel.
+export function buildingNames(groups: UnitGroup[]): string[] {
+  const names: string[] = []
+  for (const g of groups) {
+    if (g.building && !names.includes(g.building)) names.push(g.building)
+  }
+  return names
 }
 
 export function countToLet(units: ViewUnit[], liveListingIds: ReadonlySet<string>): number {
