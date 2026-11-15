@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Building2, Home, Minus, Plus, Trees } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -14,6 +14,7 @@ type EstateRow = { id: string; name: string; kind: string; address_text: string 
 type MyListing = { id: string; title: string | null; location_text: string | null; status: string | null }
 
 // Stage A (Idea 1): one place to list a property, in plain words.
+// Stage B1: tap a flat or house that is not listed yet, then "List this flat" opens the listing form for it.
 // Landlords see "flat", "house" and "room". The database keeps its own names (estate, unit).
 // Choice 1 (one house or flat) goes straight to the listing form. Choice 3 (compound) comes in Stage D.
 type Choice = 'single' | 'building' | 'compound' | 'houses'
@@ -39,6 +40,10 @@ function noun(kind: string): [string, string] {
   if (kind === 'estate') return ['house', 'houses']
   if (kind === 'hostel') return ['room', 'rooms']
   return ['flat', 'flats']
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function tileClass(u: UnitRow): string {
@@ -108,11 +113,13 @@ export default function ListAPropertyPage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-  // Attach an existing listing to an empty flat or house
-  const [pickUnit, setPickUnit] = useState<{ id: string; label: string; estateName: string } | null>(null)
+  // The flat or house the landlord just tapped
+  const [pickUnit, setPickUnit] = useState<{ id: string; label: string; estateName: string; noun: string } | null>(null)
+  const [showAttach, setShowAttach] = useState(false)
   const [pickListingId, setPickListingId] = useState<string | null>(null)
   const [attaching, setAttaching] = useState(false)
   const [attachMsg, setAttachMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const loadEstates = async () => {
     setLoading(true)
@@ -144,6 +151,11 @@ export default function ListAPropertyPage() {
   useEffect(() => {
     loadEstates()
   }, [])
+
+  // When a flat is tapped, bring its card into view so nobody has to hunt for it.
+  useEffect(() => {
+    if (pickUnit) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [pickUnit, showAttach])
 
   // The database kind behind each plain choice.
   const kind: EstateKind = choice === 'houses' ? 'estate' : 'block'
@@ -227,12 +239,21 @@ export default function ListAPropertyPage() {
     for (const e of ownEstates) for (const u of e.units ?? []) if (u.listing_id) ids.add(u.listing_id)
     return ids
   }, [ownEstates])
-  const attachable = myListings.filter((l) => !placedIds.has(l.id))
+  // Rented and rejected listings cannot go on a flat, so they are not offered.
+  const attachable = myListings.filter((l) => !placedIds.has(l.id) && l.status !== 'rented' && l.status !== 'rejected')
 
-  const openPicker = (u: UnitRow, estateName: string) => {
-    setPickUnit({ id: u.id, label: u.unit_label, estateName })
+  const openPicker = (u: UnitRow, estate: EstateRow) => {
+    const [w] = noun(estate.kind)
+    setPickUnit({ id: u.id, label: u.unit_label, estateName: estate.name, noun: w })
+    setShowAttach(false)
     setPickListingId(null)
     setAttachMsg(null)
+  }
+
+  const closePicker = () => {
+    setPickUnit(null)
+    setShowAttach(false)
+    setPickListingId(null)
   }
 
   const attach = async () => {
@@ -245,9 +266,8 @@ export default function ListAPropertyPage() {
       setAttachMsg({ ok: false, text: error.message || 'Could not attach the listing. Try again.' })
       return
     }
-    setMsg({ ok: true, text: `The listing is now on ${pickUnit.label}, ${pickUnit.estateName}. Tenants see it once the listing is live.` })
-    setPickUnit(null)
-    setPickListingId(null)
+    setMsg({ ok: true, text: `The listing is now on ${cap(pickUnit.noun)} ${pickUnit.label}, ${pickUnit.estateName}. Tenants see it once the listing is live.` })
+    closePicker()
     loadEstates()
   }
 
@@ -458,57 +478,72 @@ export default function ListAPropertyPage() {
         )}
 
         {pickUnit && (
-          <div role="dialog" aria-label={`Attach a listing to ${pickUnit.label}`} className="space-y-3 rounded-card border-2 border-primary bg-card p-4">
+          <div ref={panelRef} role="dialog" aria-label={`${cap(pickUnit.noun)} ${pickUnit.label}`} className="space-y-3 rounded-card border-2 border-primary bg-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-semibold text-foreground">{pickUnit.label}, {pickUnit.estateName}</p>
-                <p className="text-xs text-muted-foreground">Choose the listing for this one.</p>
+                <p className="text-base font-bold text-foreground">{cap(pickUnit.noun)} {pickUnit.label}</p>
+                <p className="text-xs text-muted-foreground">{pickUnit.estateName}</p>
               </div>
-              <button type="button" onClick={() => setPickUnit(null)} className="focus-ring min-h-11 shrink-0 rounded-button px-3 text-sm font-semibold text-primary">Close</button>
+              <button type="button" onClick={closePicker} className="focus-ring min-h-11 shrink-0 rounded-button px-3 text-sm font-semibold text-primary">Close</button>
             </div>
 
-            {attachable.length === 0 ? (
-              <p className="rounded-card border border-border bg-background p-3 text-sm text-muted-foreground">
-                You have no listing waiting. Create a new listing, then come back here to attach it.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {attachable.map((l) => (
+            {!showAttach && (
+              <>
+                <Link
+                  href={`/list-property?unit=${pickUnit.id}`}
+                  className="focus-ring flex min-h-12 w-full items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground"
+                >
+                  List this {pickUnit.noun}
+                </Link>
+                {attachable.length > 0 && (
                   <button
-                    key={l.id}
                     type="button"
-                    onClick={() => setPickListingId(l.id)}
-                    aria-pressed={pickListingId === l.id}
-                    className={`focus-ring w-full rounded-button border px-3 py-2 text-left ${pickListingId === l.id ? 'border-primary bg-secondary' : 'border-border bg-card'}`}
+                    onClick={() => setShowAttach(true)}
+                    className="focus-ring min-h-11 w-full rounded-button border border-border bg-card px-4 text-sm font-semibold text-primary"
                   >
-                    <span className="block text-sm font-semibold text-foreground">{listingName(l)}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {l.location_text ? `${l.location_text} · ` : ''}{l.status ?? 'status unknown'}
-                    </span>
+                    Use a listing I already made
                   </button>
-                ))}
-              </div>
+                )}
+              </>
             )}
 
-            {attachMsg && (
-              <p role="alert" className={`rounded-card border p-3 text-sm ${attachMsg.ok ? 'border-success bg-success-soft text-success' : 'border-danger bg-danger-soft text-danger'}`}>
-                {attachMsg.text}
-              </p>
-            )}
+            {showAttach && (
+              <>
+                <p className="text-xs text-muted-foreground">Choose the listing for this {pickUnit.noun}.</p>
+                <div className="space-y-2">
+                  {attachable.map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setPickListingId(l.id)}
+                      aria-pressed={pickListingId === l.id}
+                      className={`focus-ring w-full rounded-button border px-3 py-2 text-left ${pickListingId === l.id ? 'border-primary bg-secondary' : 'border-border bg-card'}`}
+                    >
+                      <span className="block text-sm font-semibold text-foreground">{listingName(l)}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {l.location_text ? `${l.location_text} · ` : ''}{l.status ?? 'status unknown'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
 
-            <button
-              type="button"
-              onClick={attach}
-              disabled={attaching || !pickListingId}
-              className="focus-ring min-h-12 w-full rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50"
-            >
-              {attaching ? 'Attaching...' : 'Use this listing here'}
-            </button>
-            <p className="text-xs text-muted-foreground">
-              A listing sits on one flat or house.{' '}
-              <Link href="/list-property" className="font-semibold text-primary underline">Create a new listing</Link>{' '}
-              first if you do not have one yet.
-            </p>
+                {attachMsg && (
+                  <p role="alert" className={`rounded-card border p-3 text-sm ${attachMsg.ok ? 'border-success bg-success-soft text-success' : 'border-danger bg-danger-soft text-danger'}`}>
+                    {attachMsg.text}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={attach}
+                  disabled={attaching || !pickListingId}
+                  className="focus-ring min-h-12 w-full rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50"
+                >
+                  {attaching ? 'Attaching...' : 'Use this listing here'}
+                </button>
+                <button type="button" onClick={() => setShowAttach(false)} className="focus-ring min-h-11 w-full rounded-button px-4 text-sm font-semibold text-primary">Back</button>
+              </>
+            )}
           </div>
         )}
 
@@ -533,9 +568,9 @@ export default function ListAPropertyPage() {
                     <button
                       key={u.id}
                       type="button"
-                      onClick={() => openPicker(u, e.name)}
-                      title="Use a listing for this one"
-                      aria-label={`${u.unit_label}, not listed yet. Choose a listing for it`}
+                      onClick={() => openPicker(u, e)}
+                      title={`List ${oneE} ${u.unit_label}`}
+                      aria-label={`${cap(oneE)} ${u.unit_label}, not listed yet. Tap to list it`}
                       className={`focus-ring inline-flex min-h-11 items-center rounded-button px-3 text-xs font-semibold ${tileClass(u)}`}
                     >
                       {u.unit_label}
@@ -544,7 +579,7 @@ export default function ListAPropertyPage() {
                 ))}
                 {us.length > shown.length && <span className="px-1 py-1 text-xs text-muted-foreground">+{us.length - shown.length} more</span>}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">Dashed means not listed yet. Tap one to choose a listing for it.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Dashed means not listed yet. Tap one to list it.</p>
             </div>
           )
         })}
@@ -556,4 +591,4 @@ export default function ListAPropertyPage() {
       </section>
     </div>
   )
-              }
+                  }
