@@ -37,6 +37,7 @@ import { SearchAlertBar } from '@/components/search-alert-bar'
 import { useInspectedIds } from '@/lib/use-inspected-ids'
 import { rankListings } from '@/lib/listing-rank'
 import { useUnitInfo } from '@/lib/use-unit-info'
+import { BuildingsStrip } from '@/components/buildings-strip'
 import { sizedPhoto, photoSrcSet } from '@/lib/image-url'
 import { upfrontTotal } from '@/lib/property-display' // CHANGED: used for the upfront line on each card
 import { SmartImage } from '@/components/ui/smart-image'
@@ -1525,6 +1526,8 @@ function SearchContent() {
               )}
             </p>
           )}
+
+          <BuildingsStrip />
 
           <details className="group mt-1">
             <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
