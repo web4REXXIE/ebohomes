@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Building2, Home, Minus, Plus, Trees } from 'lucide-react'
+import { ArrowRight, Building2, Home, ImagePlus, Loader2, Minus, Plus, Trees } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   buildUnits, floorWord, MAX_FLOORS, MAX_PER_FLOOR,
@@ -10,11 +10,12 @@ import {
 } from '@/lib/unit-numbering'
 
 type UnitRow = { id: string; unit_label: string; floor_no: number | null; group_label: string | null; status: string; listing_id: string | null }
-type EstateRow = { id: string; name: string; kind: string; address_text: string | null; legacy_listing_id: string | null; units: UnitRow[] | null }
+type EstateRow = { id: string; name: string; kind: string; address_text: string | null; cover_photo_url: string | null; legacy_listing_id: string | null; units: UnitRow[] | null }
 type MyListing = { id: string; title: string | null; location_text: string | null; status: string | null }
 
 // Stage A (Idea 1): one place to list a property, in plain words.
 // Stage B1: tap a flat or house that is not listed yet, then "List this flat" opens the listing form for it.
+// Stage B3a: every building or estate needs an overview photo of the whole place. Listing a flat waits for it.
 // Landlords see "flat", "house" and "room". The database keeps its own names (estate, unit).
 // Choice 1 (one house or flat) goes straight to the listing form. Choice 3 (compound) comes in Stage D.
 type Choice = 'single' | 'building' | 'compound' | 'houses'
@@ -65,6 +66,22 @@ function listingName(l: MyListing): string {
   return t !== '' ? t : 'Untitled home'
 }
 
+// Uploads one photo to Cloudinary, the same way the listing form does. Returns the photo link.
+async function uploadCover(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('Choose a photo (JPG or PNG).')
+  if (file.size > 10 * 1024 * 1024) throw new Error('That photo is too large. Use one under 10MB.')
+  const data = new FormData()
+  data.append('file', file)
+  data.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!)
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+    { method: 'POST', body: data },
+  )
+  const json = await res.json()
+  if (!json.secure_url) throw new Error('The photo did not upload. Check your network and try again.')
+  return json.secure_url as string
+}
+
 // A number with minus and plus buttons. Easier than typing on a phone.
 function Stepper({ label, value, onChange, min, max }: { label: string; value: string; onChange: (v: string) => void; min: number; max: number }) {
   const n = Number.parseInt(value, 10)
@@ -113,8 +130,15 @@ export default function ListAPropertyPage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
+  // Stage B3a: the overview photo for a new place, and for places that already exist.
+  const [coverUrl, setCoverUrl] = useState('')
+  const [coverUploading, setCoverUploading] = useState(false)
+  const [coverMsg, setCoverMsg] = useState<string | null>(null)
+  const [cardBusy, setCardBusy] = useState<string | null>(null)
+  const [cardMsg, setCardMsg] = useState<{ id: string; text: string } | null>(null)
+
   // The flat or house the landlord just tapped
-  const [pickUnit, setPickUnit] = useState<{ id: string; label: string; estateName: string; noun: string } | null>(null)
+  const [pickUnit, setPickUnit] = useState<{ id: string; label: string; estateName: string; noun: string; hasCover: boolean } | null>(null)
   const [showAttach, setShowAttach] = useState(false)
   const [pickListingId, setPickListingId] = useState<string | null>(null)
   const [attaching, setAttaching] = useState(false)
@@ -132,7 +156,7 @@ export default function ListAPropertyPage() {
     const [estatesResult, listingsResult] = await Promise.all([
       supabase
         .from('estates')
-        .select('id, name, kind, address_text, legacy_listing_id, units(id, unit_label, floor_no, group_label, status, listing_id)')
+        .select('id, name, kind, address_text, cover_photo_url, legacy_listing_id, units(id, unit_label, floor_no, group_label, status, listing_id)')
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false }),
       supabase
@@ -199,6 +223,43 @@ export default function ListAPropertyPage() {
     setFloorCountsStr([])
     setCount('10')
     setGroupLabel('')
+    setCoverUrl('')
+    setCoverMsg(null)
+  }
+
+  // Photo for the place being created.
+  const onPickCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = e.target
+    const file = el.files?.[0]
+    if (!file) return
+    setCoverMsg(null)
+    setCoverUploading(true)
+    try {
+      setCoverUrl(await uploadCover(file))
+    } catch (err) {
+      setCoverMsg(err instanceof Error ? err.message : 'The photo did not upload. Try again.')
+    }
+    setCoverUploading(false)
+    el.value = ''
+  }
+
+  // Photo for a place that already exists (add one, or change it).
+  const onCardCover = async (estateId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = e.target
+    const file = el.files?.[0]
+    if (!file) return
+    setCardMsg(null)
+    setCardBusy(estateId)
+    try {
+      const url = await uploadCover(file)
+      const { error } = await supabase.rpc('set_estate_cover_photo', { p_estate: estateId, p_url: url })
+      if (error) throw new Error(error.message || 'Could not save the photo. Try again.')
+      await loadEstates()
+    } catch (err) {
+      setCardMsg({ id: estateId, text: err instanceof Error ? err.message : 'The photo did not save. Try again.' })
+    }
+    setCardBusy(null)
+    el.value = ''
   }
 
   const create = async () => {
@@ -207,23 +268,57 @@ export default function ListAPropertyPage() {
       setMsg({ ok: false, text: 'Enter a name for this place.' })
       return
     }
+    if (!coverUrl) {
+      setMsg({ ok: false, text: `Add an overview photo of the whole ${choice === 'houses' ? 'estate' : 'building'}.` })
+      return
+    }
     if (built.error) {
       setMsg({ ok: false, text: built.error })
       return
     }
+    const placeName = name.trim()
     setSaving(true)
     const { error } = await supabase.rpc('create_estate_with_units', {
-      p_name: name.trim(),
+      p_name: placeName,
       p_kind: kind,
       p_address: address.trim() || null,
       p_units: units,
     })
-    setSaving(false)
     if (error) {
+      setSaving(false)
       setMsg({ ok: false, text: error.message || 'Could not save this place. Try again.' })
       return
     }
-    setMsg({ ok: true, text: `Saved. ${plural(unitCount, one, many)} added to your places below. Nothing is public until you list one.` })
+
+    // Attach the overview photo to the place we just made (the newest one with this name).
+    let attached = false
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: row } = await supabase
+          .from('estates')
+          .select('id')
+          .eq('owner_id', user.id)
+          .eq('name', placeName)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (row) {
+          const { error: coverError } = await supabase.rpc('set_estate_cover_photo', { p_estate: (row as { id: string }).id, p_url: coverUrl })
+          attached = !coverError
+        }
+      }
+    } catch (err) {
+      console.error('Overview photo did not attach:', err)
+    }
+    setSaving(false)
+
+    setMsg({
+      ok: true,
+      text: attached
+        ? `Saved. ${plural(unitCount, one, many)} added to your places below. Nothing is public until you list one.`
+        : `Saved. ${plural(unitCount, one, many)} added, but the overview photo did not attach. Add it on the place card below.`,
+    })
     resetForm()
     setChoice(null)
     loadEstates()
@@ -244,7 +339,7 @@ export default function ListAPropertyPage() {
 
   const openPicker = (u: UnitRow, estate: EstateRow) => {
     const [w] = noun(estate.kind)
-    setPickUnit({ id: u.id, label: u.unit_label, estateName: estate.name, noun: w })
+    setPickUnit({ id: u.id, label: u.unit_label, estateName: estate.name, noun: w, hasCover: !!estate.cover_photo_url })
     setShowAttach(false)
     setPickListingId(null)
     setAttachMsg(null)
@@ -292,6 +387,7 @@ export default function ListAPropertyPage() {
   }
 
   const cardBase = 'focus-ring flex min-h-20 w-full items-center gap-3 rounded-card border border-border bg-card p-4 text-left hover:bg-secondary'
+  const wholeWord = choice === 'houses' ? 'estate' : 'building'
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 p-4 sm:p-6">
@@ -363,6 +459,38 @@ export default function ListAPropertyPage() {
             Street or landmark <span className="font-normal text-muted-foreground">(optional)</span>
             <input className={`${input} mt-1 font-normal`} value={address} maxLength={200} onChange={(e) => setAddress(e.target.value)} />
           </label>
+
+          {/* Stage B3a: the photo tenants see first. */}
+          <div>
+            <p className="text-sm font-semibold text-foreground">Photo of the whole {wholeWord} *</p>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Show the full {wholeWord} from outside, so tenants can see it before they pick a {one}.
+            </p>
+            {coverUrl ? (
+              <div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={coverUrl} alt={`Overview of ${name || wholeWord}`} className="h-44 w-full rounded-lg object-cover" />
+                <button type="button" onClick={() => setCoverUrl('')} className="focus-ring mt-1 min-h-11 text-sm font-semibold text-destructive">
+                  Remove photo
+                </button>
+              </div>
+            ) : (
+              <label
+                htmlFor="cover-new"
+                className="block min-h-14 cursor-pointer rounded-lg border-2 border-dashed border-border p-5 text-center hover:bg-secondary focus-within:ring-2 focus-within:ring-primary"
+              >
+                <ImagePlus size={28} className="mx-auto mb-1 text-muted-foreground" aria-hidden />
+                <p className="text-sm font-semibold text-foreground">Tap to add the overview photo</p>
+                {coverUploading && (
+                  <p role="status" className="mt-2 flex items-center justify-center gap-2 text-sm text-primary">
+                    <Loader2 size={14} className="animate-spin" aria-hidden /> Uploading...
+                  </p>
+                )}
+                <input id="cover-new" type="file" accept="image/*" onChange={onPickCover} disabled={coverUploading} className="sr-only" />
+              </label>
+            )}
+            {coverMsg && <p role="alert" className="mt-2 text-sm font-medium text-danger">{coverMsg}</p>}
+          </div>
 
           {choice === 'building' && (
             <div className="space-y-3">
@@ -457,7 +585,7 @@ export default function ListAPropertyPage() {
           <button
             type="button"
             onClick={create}
-            disabled={saving}
+            disabled={saving || coverUploading}
             className="focus-ring min-h-12 w-full rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save this place'}
@@ -489,13 +617,19 @@ export default function ListAPropertyPage() {
 
             {!showAttach && (
               <>
-                <Link
-                  href={`/list-property?unit=${pickUnit.id}`}
-                  className="focus-ring flex min-h-12 w-full items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground"
-                >
-                  List this {pickUnit.noun}
-                </Link>
-                {attachable.length > 0 && (
+                {pickUnit.hasCover ? (
+                  <Link
+                    href={`/list-property?unit=${pickUnit.id}`}
+                    className="focus-ring flex min-h-12 w-full items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground"
+                  >
+                    List this {pickUnit.noun}
+                  </Link>
+                ) : (
+                  <p role="status" className="rounded-card border border-border bg-background p-3 text-sm text-foreground">
+                    Add an overview photo of {pickUnit.estateName} first. Find it on the place card below, then tap this {pickUnit.noun} again.
+                  </p>
+                )}
+                {pickUnit.hasCover && attachable.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setShowAttach(true)}
@@ -551,6 +685,7 @@ export default function ListAPropertyPage() {
           const [oneE, manyE] = noun(e.kind)
           const us = [...(e.units ?? [])].sort((a, b) => (b.floor_no ?? 0) - (a.floor_no ?? 0) || a.unit_label.localeCompare(b.unit_label, undefined, { numeric: true }))
           const shown = us.slice(0, 48)
+          const busy = cardBusy === e.id
           return (
             <div key={e.id} className="rounded-card border border-border bg-card p-4">
               <div className="flex items-start justify-between gap-3">
@@ -560,6 +695,30 @@ export default function ListAPropertyPage() {
                 </div>
                 <p className="shrink-0 text-xs text-muted-foreground">{plural(us.length, oneE, manyE)}</p>
               </div>
+
+              {/* Stage B3a: the overview photo, or the way to add it. */}
+              {e.cover_photo_url ? (
+                <div className="mt-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={e.cover_photo_url} alt={`Overview of ${e.name}`} className="h-36 w-full rounded-lg object-cover" />
+                  <label htmlFor={`cover-${e.id}`} className="focus-ring mt-1 inline-flex min-h-11 cursor-pointer items-center text-sm font-semibold text-primary">
+                    {busy ? 'Uploading...' : 'Change overview photo'}
+                    <input id={`cover-${e.id}`} type="file" accept="image/*" onChange={(ev) => onCardCover(e.id, ev)} disabled={busy} className="sr-only" />
+                  </label>
+                </div>
+              ) : (
+                <label
+                  htmlFor={`cover-${e.id}`}
+                  className="mt-3 block min-h-14 cursor-pointer rounded-lg border-2 border-dashed border-primary p-4 text-center hover:bg-secondary focus-within:ring-2 focus-within:ring-primary"
+                >
+                  <ImagePlus size={24} className="mx-auto mb-1 text-primary" aria-hidden />
+                  <p className="text-sm font-semibold text-foreground">{busy ? 'Uploading...' : 'Add an overview photo of the whole place'}</p>
+                  <p className="text-xs text-muted-foreground">Needed before you can list a {oneE} here.</p>
+                  <input id={`cover-${e.id}`} type="file" accept="image/*" onChange={(ev) => onCardCover(e.id, ev)} disabled={busy} className="sr-only" />
+                </label>
+              )}
+              {cardMsg && cardMsg.id === e.id && <p role="alert" className="mt-2 text-sm font-medium text-danger">{cardMsg.text}</p>}
+
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {shown.map((u) => (
                   u.listing_id ? (
@@ -591,4 +750,4 @@ export default function ListAPropertyPage() {
       </section>
     </div>
   )
-                  }
+          }
