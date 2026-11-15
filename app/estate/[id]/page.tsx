@@ -35,10 +35,13 @@ function naira(n: number | null | undefined): string | null {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? `₦${n.toLocaleString('en-NG')}` : null
 }
 
+// Stage B3b: the landlord's overview photo of the whole building or estate is shown first.
+// It is read on its own, so if that read fails the page still works exactly as before.
 export default function EstateViewPage() {
   const params = useParams<{ id: string }>()
   const estateId = params?.id
   const [estate, setEstate] = useState<EstateInfo | null>(null)
+  const [cover, setCover] = useState<string | null>(null)
   const [units, setUnits] = useState<ViewUnit[]>([])
   const [listings, setListings] = useState<Record<string, ListingInfo>>({})
   const [resident, setResident] = useState<ResidentView>({ my_unit: null, occupied: new Set() })
@@ -99,6 +102,15 @@ export default function EstateViewPage() {
           .eq('status', 'approved')
         for (const row of (l ?? []) as ListingInfo[]) map[row.id] = row
       }
+      // Overview photo: read on its own. An error here just means no photo is shown.
+      let coverUrl: string | null = null
+      try {
+        const { data: c } = await supabase.from('estates').select('cover_photo_url').eq('id', estateId).maybeSingle()
+        const value = (c as { cover_photo_url?: string | null } | null)?.cover_photo_url
+        coverUrl = typeof value === 'string' && value.startsWith('https://') ? value : null
+      } catch {
+        coverUrl = null
+      }
       // Residents only: which door is mine, which doors are lived in. Anyone else gets nothing back.
       // If this fails, the page still works as a normal building view.
       const { data: rv, error: rvErr } = await supabase.rpc('estate_resident_view', { p_estate: estateId })
@@ -108,6 +120,7 @@ export default function EstateViewPage() {
         setResident({ my_unit: r.my_unit ?? null, occupied: new Set(Array.isArray(r.occupied) ? r.occupied : []) })
       }
       setEstate(e as EstateInfo)
+      setCover(coverUrl)
       setUnits(unitRows)
       setListings(map)
       setLoading(false)
@@ -184,6 +197,15 @@ export default function EstateViewPage() {
               {estate.address_text ? `, ${estate.address_text}` : ''}
               {` · ${units.length} ${units.length === 1 ? 'unit' : 'units'} · ${toLet} to let`}
             </p>
+
+            {cover && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={cover}
+                alt={`${estate.name} from outside`}
+                className="mt-3 h-52 w-full rounded-card object-cover sm:h-64"
+              />
+            )}
 
             <LightDeyCard estateId={estate.id} isResident={isResident} onStatus={setLight} />
 
@@ -322,4 +344,4 @@ export default function EstateViewPage() {
       <Footer />
     </>
   )
-}
+                                               }
