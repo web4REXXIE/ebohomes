@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Header } from '@/components/header'
@@ -8,13 +8,25 @@ import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
 import { displayTitle } from '@/lib/property-display'
+import { cleanMediaUrls } from '@/lib/property-media'
 import { groupUnits, buildingNames, unitState, countToLet, type ViewUnit } from '@/lib/estate-view'
 import { LightDeyCard } from '@/components/light-dey-card'
 import { BlockScene, CompoundScene } from '@/components/building-scene'
 import type { LightState } from '@/lib/light-status'
 
 type EstateInfo = { id: string; name: string; kind: string; address_text: string | null }
-type ListingInfo = { id: string; title: string | null; price_monthly: number | null; bedrooms: number | null; property_type: string | null; location_text: string | null }
+type ListingInfo = {
+  id: string
+  title: string | null
+  price_monthly: number | null
+  bedrooms: number | null
+  bathrooms: number | null
+  furnished: boolean | null
+  description: string | null
+  photos: unknown
+  property_type: string | null
+  location_text: string | null
+}
 type ResidentView = { my_unit: string | null; occupied: Set<string> }
 type TileTone = 'to_let' | 'taken' | 'mine' | 'neighbour'
 
@@ -37,6 +49,8 @@ function naira(n: number | null | undefined): string | null {
 
 // Stage B3b: the landlord's overview photo of the whole building or estate is shown first.
 // Stage D: a compound (several buildings) shows building chips. Pick one to see its floors and flats.
+// Stage E: the photo strip swipes and shows the tapped flat's own photos. The tapped flat shows its
+// details, and tenants can apply (which is how a viewing is requested) or open the full listing.
 export default function EstateViewPage() {
   const params = useParams<{ id: string }>()
   const estateId = params?.id
@@ -55,6 +69,9 @@ export default function EstateViewPage() {
   const [sending, setSending] = useState(false)
   const [light, setLight] = useState<LightState>('unknown')
   const [knockMsg, setKnockMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const [heroIndex, setHeroIndex] = useState(0)
+  const heroRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -98,7 +115,7 @@ export default function EstateViewPage() {
         // Only approved listings come back for tenants, so this is also the list of "live" listings.
         const { data: l } = await supabase
           .from('listings')
-          .select('id, title, price_monthly, bedrooms, property_type, location_text')
+          .select('id, title, price_monthly, bedrooms, bathrooms, furnished, description, photos, property_type, location_text')
           .in('id', ids)
           .eq('status', 'approved')
         for (const row of (l ?? []) as ListingInfo[]) map[row.id] = row
@@ -149,6 +166,40 @@ export default function EstateViewPage() {
   const isResident = resident.my_unit !== null
   const selectedIsMine = !!selected && selected.id === resident.my_unit
   const selectedIsNeighbour = !!selected && resident.occupied.has(selected.id)
+  const showFlatDetails = !selectedIsMine && !selectedIsNeighbour && selectedIsToLet && !!selectedListing
+
+  // Photo strip: the tapped flat's own photos come first, then the overview photo.
+  const flatPhotos = useMemo(
+    () => (showFlatDetails && selectedListing ? cleanMediaUrls(selectedListing.photos) : []),
+    [showFlatDetails, selectedListing],
+  )
+  const heroImages = useMemo(() => {
+    const list = [...flatPhotos]
+    if (cover && !list.includes(cover)) list.push(cover)
+    return list
+  }, [flatPhotos, cover])
+
+  // Start the strip at the first picture whenever a different flat is chosen.
+  useEffect(() => {
+    setHeroIndex(0)
+    if (heroRef.current) heroRef.current.scrollTo({ left: 0 })
+  }, [selectedId])
+
+  // Facts that really come from the data.
+  const lowestRent = useMemo(() => {
+    const rents = Object.values(listings)
+      .map((l) => l.price_monthly)
+      .filter((n): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0)
+    return rents.length > 0 ? Math.min(...rents) : null
+  }, [listings])
+
+  const toLetUnits = useMemo(
+    () =>
+      units
+        .filter((x) => unitState(x, live) === 'to_let' && x.listing_id && listings[x.listing_id])
+        .sort((a, b) => String(a.unit_label).localeCompare(String(b.unit_label), undefined, { numeric: true })),
+    [units, live, listings],
+  )
 
   const toneOf = (x: ViewUnit): TileTone => {
     if (x.id === resident.my_unit) return 'mine'
@@ -171,6 +222,17 @@ export default function EstateViewPage() {
     setKnockMsg(null)
   }
 
+  const pickFromList = (x: ViewUnit) => {
+    // In a compound, switch to the right building first so the chosen flat is visible in the picture.
+    if (isCompound) {
+      const g = groups.find((gr) => gr.units.some((u) => u.id === x.id))
+      if (g?.building) setBuildingKey(g.building)
+    }
+    selectUnit(x.id)
+    setShowAll(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const sendKnock = async (sticker: 'knock' | 'welcome' | 'howfar') => {
     if (!selected || sending) return
     setSending(true)
@@ -184,10 +246,16 @@ export default function EstateViewPage() {
     )
   }
 
+  const onHeroScroll = () => {
+    const el = heroRef.current
+    if (!el || el.clientWidth === 0) return
+    setHeroIndex(Math.round(el.scrollLeft / el.clientWidth))
+  }
+
   return (
     <>
       <Header />
-      <main className="mx-auto w-full max-w-2xl px-4 pb-56 pt-6 sm:px-6">
+      <main className="mx-auto w-full max-w-2xl px-4 pb-72 pt-6 sm:px-6">
         {loading && <p className="py-16 text-center text-sm text-muted-foreground" role="status">Loading the building...</p>}
         {!loading && notFound && (
           <div className="py-16 text-center">
@@ -200,22 +268,49 @@ export default function EstateViewPage() {
 
         {!loading && estate && (
           <>
-            <h1 className="text-2xl font-bold text-foreground">{estate.name}</h1>
+            {heroImages.length > 0 && (
+              <div className="relative">
+                <div
+                  ref={heroRef}
+                  onScroll={onHeroScroll}
+                  className="flex snap-x snap-mandatory overflow-x-auto rounded-card"
+                  aria-label="Photos"
+                >
+                  {heroImages.map((src, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={`${src}-${i}`}
+                      src={src}
+                      alt={i < flatPhotos.length ? `Unit ${selected?.unit_label ?? ''} photo ${i + 1}` : `${estate.name} from outside`}
+                      className="h-52 w-full shrink-0 snap-center object-cover sm:h-64"
+                    />
+                  ))}
+                </div>
+                {heroImages.length > 1 && (
+                  <span className="absolute bottom-2 right-2 rounded-chip bg-foreground/70 px-2.5 py-0.5 text-xs font-semibold text-background">
+                    {Math.min(heroIndex + 1, heroImages.length)} / {heroImages.length}
+                  </span>
+                )}
+                {flatPhotos.length > 0 && heroIndex < flatPhotos.length && (
+                  <span className="absolute left-2 top-2 rounded-chip bg-card/90 px-2.5 py-0.5 text-xs font-semibold text-foreground">
+                    Unit {selected?.unit_label}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <h1 className="mt-4 text-2xl font-bold text-foreground">{estate.name}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {isCompound ? 'Compound' : (KIND_LABEL[estate.kind] ?? 'Building')}
               {estate.address_text ? `, ${estate.address_text}` : ''}
-              {isCompound ? ` · ${buildings.length} buildings` : ''}
-              {` · ${units.length} ${units.length === 1 ? 'unit' : 'units'} · ${toLet} to let`}
             </p>
 
-            {cover && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={cover}
-                alt={`${estate.name} from outside`}
-                className="mt-3 h-52 w-full rounded-card object-cover sm:h-64"
-              />
-            )}
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-chip border border-border bg-card px-3 py-1 text-foreground">{units.length} {units.length === 1 ? 'unit' : 'units'}</span>
+              {isCompound && <span className="rounded-chip border border-border bg-card px-3 py-1 text-foreground">{buildings.length} buildings</span>}
+              <span className="rounded-chip border border-success bg-success-soft px-3 py-1 text-success">{toLet} to let</span>
+              {lowestRent && <span className="rounded-chip border border-border bg-card px-3 py-1 text-foreground">From {naira(lowestRent)} a month</span>}
+            </div>
 
             <LightDeyCard estateId={estate.id} isResident={isResident} onStatus={setLight} />
 
@@ -259,7 +354,43 @@ export default function EstateViewPage() {
               >
                 Only to let
               </button>
+              {toLetUnits.length > 0 && (
+                <button
+                  type="button"
+                  aria-expanded={showAll}
+                  onClick={() => setShowAll((v) => !v)}
+                  className="focus-ring min-h-11 rounded-button border border-border bg-card px-4 text-sm font-semibold text-primary"
+                >
+                  {showAll ? 'Hide list' : `View all (${toLetUnits.length})`}
+                </button>
+              )}
             </div>
+
+            {showAll && (
+              <ul className="mt-3 divide-y divide-border rounded-card border border-border bg-card" aria-label="All units to let">
+                {toLetUnits.map((x) => {
+                  const l = x.listing_id ? listings[x.listing_id] : undefined
+                  if (!l) return null
+                  return (
+                    <li key={x.id}>
+                      <button
+                        type="button"
+                        onClick={() => pickFromList(x)}
+                        className="focus-ring flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left"
+                      >
+                        <span className="text-sm font-semibold text-foreground">
+                          {x.group_label ? `${x.group_label}, ` : ''}Unit {x.unit_label}
+                          {typeof l.bedrooms === 'number' && l.bedrooms > 0 && (
+                            <span className="font-normal text-muted-foreground"> · {l.bedrooms} bed</span>
+                          )}
+                        </span>
+                        <span className="text-sm font-bold text-primary">{naira(l.price_monthly) ?? 'See price'}</span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
 
             {!isBlock && groups.length > 1 && (
               <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Filter by street or phase">
@@ -357,17 +488,51 @@ export default function EstateViewPage() {
             </div>
           )}
 
-          {!selectedIsMine && !selectedIsNeighbour && selectedIsToLet && selectedListing && (
-            <Link
-              href={`/listing/${selectedListing.id}`}
-              className="focus-ring mx-auto mt-3 flex min-h-12 max-w-2xl items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground"
-            >
-              See this flat
-            </Link>
+          {showFlatDetails && selectedListing && (
+            <div className="mx-auto mt-3 max-w-2xl">
+              <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                {typeof selectedListing.bedrooms === 'number' && selectedListing.bedrooms > 0 && (
+                  <span className="rounded-chip border border-border px-3 py-1 text-foreground">{selectedListing.bedrooms} {selectedListing.bedrooms === 1 ? 'bedroom' : 'bedrooms'}</span>
+                )}
+                {typeof selectedListing.bathrooms === 'number' && selectedListing.bathrooms > 0 && (
+                  <span className="rounded-chip border border-border px-3 py-1 text-foreground">{selectedListing.bathrooms} {selectedListing.bathrooms === 1 ? 'bathroom' : 'bathrooms'}</span>
+                )}
+                {selectedListing.furnished === true && (
+                  <span className="rounded-chip border border-border px-3 py-1 text-foreground">Furnished</span>
+                )}
+              </div>
+
+              {typeof selectedListing.description === 'string' && selectedListing.description.trim() !== '' && (
+                <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{selectedListing.description.trim()}</p>
+              )}
+
+              {flatPhotos.length > 0 && (
+                <div className="mt-3 flex gap-2 overflow-x-auto">
+                  {flatPhotos.slice(0, 4).map((src, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={`${src}-${i}`} src={src} alt={`Unit ${selected.unit_label} photo ${i + 1}`} className="h-20 w-28 shrink-0 rounded-md object-cover" />
+                  ))}
+                </div>
+              )}
+
+              <Link
+                href={`/journey/apply/${selectedListing.id}`}
+                className="focus-ring mt-4 flex min-h-12 items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground"
+              >
+                Apply to request a viewing
+              </Link>
+              <Link
+                href={`/listing/${selectedListing.id}`}
+                className="focus-ring mt-2 flex min-h-12 items-center justify-center rounded-button border border-border bg-card px-4 text-sm font-semibold text-foreground hover:bg-secondary"
+              >
+                See the full listing
+              </Link>
+              <p className="mt-2 text-center text-xs text-muted-foreground">Applying is free. You apply first, then ask for a viewing. No payment is taken here.</p>
+            </div>
           )}
         </div>
       )}
       <Footer />
     </>
   )
-}
+          }
