@@ -18,6 +18,8 @@ import { VerificationModal, useListingVerification } from '@/components/listing-
 // New: readable step labels on phones, sticky Back/Continue bar, inline messages instead of browser pop-ups,
 // keyboard-reachable upload boxes, and a fuller review step.
 // New: an unverified landlord can always tap Next on step 1. A popup then sends them to the verification page.
+// Stage B2: when opened with ?unit=<id> (from "List this flat"), the form shows which flat it is for, fills the
+// location from the building, and offers "Copy from another flat". Photos and video are never copied.
 
 const LocationPickerModal = dynamic(
   () => import('@/components/location-picker-modal').then((mod) => ({ default: mod.LocationPickerModal })),
@@ -55,6 +57,87 @@ const INPUT =
   'min-h-11 w-full rounded-lg border border-border bg-input px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
 const naira = (v: string) => (v ? `₦${Number(v).toLocaleString()}` : '—')
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+type FormShape = {
+  listingType: string
+  propertyType: string
+  title: string
+  bedrooms: string
+  bathrooms: string
+  toilets: string
+  furnished: string
+  description: string
+  amenities: string[]
+  monthlyRent: string
+  annualRent: string
+  serviceCharge: string
+  cautionDeposit: string
+  location: string
+  lat: number | null
+  lng: number | null
+  phoneNumber: string
+  availabilityDate: string
+}
+
+// The flat or house this listing is for, when the form was opened from "List this flat".
+type UnitCtx = { id: string; label: string; estateName: string; noun: string }
+
+// Another flat in the same building that already has a listing. Its details can be copied. Never its photos.
+type Sibling = { listingId: string; label: string; summary: string; data: Partial<FormShape> }
+
+type SiblingListingRow = {
+  id: string
+  listing_type: string | null
+  property_type: string | null
+  bedrooms: number | null
+  bathrooms: number | null
+  toilets: number | null
+  furnished: boolean | null
+  description: string | null
+  amenities: string[] | null
+  price_monthly: number | null
+  service_charge: number | null
+  caution_deposit: number | null
+  location_text: string | null
+  lat: number | null
+  lng: number | null
+  contact_info: string | null
+  availability_date: string | null
+}
+
+const SIBLING_COLUMNS =
+  'id, listing_type, property_type, bedrooms, bathrooms, toilets, furnished, description, amenities, price_monthly, service_charge, caution_deposit, location_text, lat, lng, contact_info, availability_date'
+
+function text(n: number | null | undefined): string {
+  return n === null || n === undefined ? '' : String(n)
+}
+
+function copyDataFrom(row: SiblingListingRow): Partial<FormShape> {
+  const monthly = text(row.price_monthly)
+  return {
+    listingType: row.listing_type === 'sale' ? 'sale' : 'rent',
+    propertyType: row.property_type ?? '',
+    bedrooms: text(row.bedrooms),
+    bathrooms: text(row.bathrooms),
+    toilets: text(row.toilets),
+    furnished: row.furnished ? 'yes' : 'no',
+    description: row.description ?? '',
+    amenities: Array.isArray(row.amenities) ? row.amenities : [],
+    monthlyRent: monthly,
+    annualRent: monthly ? String(Number(monthly) * 12) : '',
+    serviceCharge: text(row.service_charge),
+    cautionDeposit: text(row.caution_deposit),
+    location: row.location_text ?? '',
+    lat: row.lat,
+    lng: row.lng,
+    phoneNumber: row.contact_info ?? '',
+    availabilityDate: row.availability_date ?? '',
+  }
+}
 
 function Field({
   id,
@@ -140,7 +223,7 @@ export default function ListPropertyPage() {
   const [photos, setPhotos] = useState<string[]>([])
   const [photoHashes, setPhotoHashes] = useState<string[]>([])
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormShape>({
     listingType: 'rent',
     propertyType: '',
     title: '',
@@ -172,6 +255,12 @@ export default function ListPropertyPage() {
   const [submitError, setSubmitError] = useState('')
   const [authChecked, setAuthChecked] = useState(false)
 
+  // Stage B2: which flat or house this is for, and the other flats we can copy from.
+  const [unitCtx, setUnitCtx] = useState<UnitCtx | null>(null)
+  const [siblings, setSiblings] = useState<Sibling[]>([])
+  const [copyPick, setCopyPick] = useState('')
+  const [copiedFrom, setCopiedFrom] = useState<string | null>(null)
+
   // Verification: only a verified landlord can move past step 1.
   const { loading: verifLoading, canList, display: verifDisplay } = useListingVerification()
   const [showVerifyModal, setShowVerifyModal] = useState(false)
@@ -188,6 +277,75 @@ export default function ListPropertyPage() {
       setAuthChecked(true)
     })
   }, [router])
+
+  // Stage B2: when opened for a specific flat, learn which one, fill the location from the building,
+  // and find the other listed flats in that building. If anything fails, the form simply works as before.
+  useEffect(() => {
+    if (!authChecked) return
+    const unitParam = new URLSearchParams(window.location.search).get('unit')
+    if (!unitParam || !/^[0-9a-f-]{36}$/i.test(unitParam)) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: u } = await supabase.from('units').select('id, unit_label, estate_id').eq('id', unitParam).maybeSingle()
+        if (!u || cancelled) return
+        const unit = u as { id: string; unit_label: string; estate_id: string }
+        const { data: e } = await supabase.from('estates').select('id, name, kind, address_text').eq('id', unit.estate_id).maybeSingle()
+        if (!e || cancelled) return
+        const est = e as { id: string; name: string; kind: string; address_text: string | null }
+        const noun = est.kind === 'estate' ? 'house' : est.kind === 'hostel' ? 'room' : 'flat'
+        setUnitCtx({ id: unit.id, label: unit.unit_label, estateName: est.name, noun })
+        const address = (est.address_text ?? '').trim()
+        if (address) setFormData((p) => (p.location ? p : { ...p, location: address }))
+
+        const { data: sibUnits } = await supabase
+          .from('units')
+          .select('id, unit_label, listing_id')
+          .eq('estate_id', est.id)
+          .neq('id', unit.id)
+          .not('listing_id', 'is', null)
+        const sibRows = (sibUnits ?? []) as { id: string; unit_label: string; listing_id: string | null }[]
+        const ids = sibRows.map((r) => r.listing_id).filter((x): x is string => !!x)
+        if (ids.length === 0 || cancelled) return
+        const { data: ls } = await supabase.from('listings').select(SIBLING_COLUMNS).in('id', ids)
+        if (cancelled) return
+        const byId = new Map<string, SiblingListingRow>()
+        for (const row of (ls ?? []) as unknown as SiblingListingRow[]) byId.set(row.id, row)
+        const list: Sibling[] = []
+        for (const r of sibRows) {
+          const row = r.listing_id ? byId.get(r.listing_id) : undefined
+          if (!row) continue
+          const parts = [
+            row.bedrooms ? `${row.bedrooms} bed` : '',
+            row.property_type ?? '',
+            row.price_monthly ? `₦${row.price_monthly.toLocaleString()} a month` : '',
+          ].filter(Boolean)
+          list.push({
+            listingId: row.id,
+            label: `${cap(noun)} ${r.unit_label}`,
+            summary: parts.join(', ') || 'No details yet',
+            data: copyDataFrom(row),
+          })
+        }
+        list.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+        setSiblings(list)
+        if (list.length > 0) setCopyPick(list[0].listingId)
+      } catch (err) {
+        console.error('Could not load the flat details:', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [authChecked])
+
+  // Copy details from another flat. Photos and video are not touched, and neither is the title.
+  const applyCopy = () => {
+    const chosen = siblings.find((s) => s.listingId === copyPick)
+    if (!chosen) return
+    setFormData((prev) => ({ ...prev, ...chosen.data }))
+    setCopiedFrom(chosen.label)
+  }
 
   // On each step change, move to the top of the form and put focus on its heading (screen readers announce it).
   useEffect(() => {
@@ -391,6 +549,7 @@ export default function ListPropertyPage() {
   }
 
   const mediaBusy = uploading || videoUploading
+  const unitName = unitCtx ? `${cap(unitCtx.noun)} ${unitCtx.label}` : ''
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -398,13 +557,15 @@ export default function ListPropertyPage() {
 
       <main className="flex-1">
         <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-          <Link href="/dashboard" className="focus-ring mb-4 inline-flex min-h-11 items-center gap-2 font-medium text-primary hover:text-primary/80">
-            <ChevronLeft size={20} aria-hidden /> Back to dashboard
+          <Link href={unitCtx ? '/dashboard/estates' : '/dashboard'} className="focus-ring mb-4 inline-flex min-h-11 items-center gap-2 font-medium text-primary hover:text-primary/80">
+            <ChevronLeft size={20} aria-hidden /> {unitCtx ? 'Back to your places' : 'Back to dashboard'}
           </Link>
 
           <div className="mb-5">
-            <h1 className="mb-1 text-2xl font-bold text-foreground sm:text-3xl">Add New Listing</h1>
-            <p className="text-sm text-muted-foreground">Provide accurate details to help tenants find your property.</p>
+            <h1 className="mb-1 text-2xl font-bold text-foreground sm:text-3xl">{unitCtx ? `List ${unitName}` : 'Add New Listing'}</h1>
+            <p className="text-sm text-muted-foreground">
+              {unitCtx ? `${unitCtx.estateName}. Each ${unitCtx.noun} needs its own real photos.` : 'Provide accurate details to help tenants find your property.'}
+            </p>
           </div>
 
           {/* Step indicator: the name of the current step is always visible, also on small phones. */}
@@ -453,6 +614,39 @@ export default function ListPropertyPage() {
           {step === 1 && (
             <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest sm:p-6" aria-labelledby="step-heading">
               <h2 id="step-heading" ref={headingRef} tabIndex={-1} className="text-xl font-bold text-foreground outline-none">Property Details</h2>
+
+              {/* Stage B2: copy details from another flat in this building. Photos and video are never copied. */}
+              {unitCtx && siblings.length > 0 && (
+                <div className="space-y-2 rounded-lg border border-primary/30 bg-secondary p-3">
+                  <p className="text-sm font-semibold text-foreground">Same as another {unitCtx.noun}?</p>
+                  <p className="text-xs text-muted-foreground">
+                    Copy the details and rent, then change only what is different. Photos and video are never copied.
+                  </p>
+                  <label htmlFor="lp-copy-from" className="sr-only">Copy from</label>
+                  <select
+                    id="lp-copy-from"
+                    value={copyPick}
+                    onChange={(e) => setCopyPick(e.target.value)}
+                    className={INPUT}
+                  >
+                    {siblings.map((s) => (
+                      <option key={s.listingId} value={s.listingId}>{s.label}: {s.summary}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={applyCopy}
+                    className="focus-ring min-h-11 w-full rounded-lg border-2 border-primary bg-card px-4 text-sm font-semibold text-primary"
+                  >
+                    Copy details
+                  </button>
+                  {copiedFrom && (
+                    <p role="status" className="text-sm font-medium text-success">
+                      Copied from {copiedFrom}. Check each step. Add this {unitCtx.noun}&apos;s own photos in step 2.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <fieldset>
                 <legend className="mb-2 block text-sm font-semibold text-foreground">Listing Type *</legend>
@@ -606,7 +800,11 @@ export default function ListPropertyPage() {
           {step === 2 && (
             <section className="rounded-card border border-border bg-card p-4 shadow-rest sm:p-6" aria-labelledby="step-heading">
               <h2 id="step-heading" ref={headingRef} tabIndex={-1} className="mb-1 text-xl font-bold text-foreground outline-none">Property Photos (up to 10)</h2>
-              <p className="mb-4 text-sm text-muted-foreground">The first photo is the cover photo. Use clear, bright photos of the real property.</p>
+              <p className="mb-4 text-sm text-muted-foreground">
+                {unitCtx
+                  ? `The first photo is the cover photo. These must be photos of ${unitName} itself, not another ${unitCtx.noun}.`
+                  : 'The first photo is the cover photo. Use clear, bright photos of the real property.'}
+              </p>
 
               {photos.length < 10 && (
                 <label
@@ -719,7 +917,11 @@ export default function ListPropertyPage() {
             <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest sm:p-6" aria-labelledby="step-heading">
               <h2 id="step-heading" ref={headingRef} tabIndex={-1} className="text-xl font-bold text-foreground outline-none">Location</h2>
 
-              <Field id="lp-location" label="Neighborhood/Area *">
+              <Field
+                id="lp-location"
+                label="Neighborhood/Area *"
+                hint={unitCtx && formData.location ? `Filled in from ${unitCtx.estateName}. Change it only if it is wrong.` : undefined}
+              >
                 <input
                   id="lp-location"
                   type="text"
@@ -727,6 +929,7 @@ export default function ListPropertyPage() {
                   value={formData.location}
                   onChange={(e) => setFormData((p) => ({ ...p, location: e.target.value }))}
                   placeholder="e.g., Abakaliki GRA"
+                  aria-describedby={unitCtx && formData.location ? 'lp-location-hint' : undefined}
                   className={INPUT}
                 />
               </Field>
@@ -861,6 +1064,7 @@ export default function ListPropertyPage() {
                   title: 'Property',
                   edit: 1,
                   rows: [
+                    ...(unitCtx ? ([['Listing for', `${unitName}, ${unitCtx.estateName}`]] as [string, string][]) : []),
                     ['Title', formData.title || '—'],
                     ['Listing type', formData.listingType === 'sale' ? 'For sale' : 'For rent'],
                     ['Type', formData.propertyType],
@@ -980,4 +1184,4 @@ export default function ListPropertyPage() {
       )}
     </div>
   )
-                    }
+    }
