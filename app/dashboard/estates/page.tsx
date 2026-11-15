@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { ArrowRight, Building2, Home, ImagePlus, Loader2, Minus, Plus, Trees } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
-  buildUnits, floorWord, MAX_FLOORS, MAX_PER_FLOOR,
+  buildUnits, floorWord, MAX_FLOORS, MAX_PER_FLOOR, MAX_UNITS,
   type EstateKind, type UnitDraft,
 } from '@/lib/unit-numbering'
 
@@ -16,9 +16,22 @@ type MyListing = { id: string; title: string | null; location_text: string | nul
 // Stage A (Idea 1): one place to list a property, in plain words.
 // Stage B1: tap a flat or house that is not listed yet, then "List this flat" opens the listing form for it.
 // Stage B3a: every building or estate needs an overview photo of the whole place. Listing a flat waits for it.
+// Stage D: a compound with several buildings. It is still one place. Each flat keeps its building name in group_label
+// and is named A-1A, B-2C and so on, so two buildings never share a flat number.
 // Landlords see "flat", "house" and "room". The database keeps its own names (estate, unit).
-// Choice 1 (one house or flat) goes straight to the listing form. Choice 3 (compound) comes in Stage D.
+// Choice 1 (one house or flat) goes straight to the listing form.
 type Choice = 'single' | 'building' | 'compound' | 'houses'
+
+type Bldg = { name: string; floors: string; perFloor: string; ground: string }
+
+const MAX_BUILDINGS = 26
+const letterOf = (i: number) => String.fromCharCode(65 + i)
+const newBuilding = (i: number, from?: Bldg): Bldg => ({
+  name: `Building ${letterOf(i)}`,
+  floors: from?.floors ?? '4',
+  perFloor: from?.perFloor ?? '4',
+  ground: from?.ground ?? '',
+})
 
 const KIND_LABEL: Record<string, string> = {
   single_house: 'One house or flat',
@@ -64,6 +77,32 @@ function tileNote(u: UnitRow): string {
 function listingName(l: MyListing): string {
   const t = (l.title ?? '').trim()
   return t !== '' ? t : 'Untitled home'
+}
+
+// Works out the flats of a compound: one block per building, named A-1A, A-1B, B-1A and so on.
+function buildCompound(bs: Bldg[]): { units: UnitDraft[]; error: string | null } {
+  const all: UnitDraft[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < bs.length; i++) {
+    const b = bs[i]
+    const name = b.name.trim()
+    if (name === '') return { units: [], error: `Give building ${letterOf(i)} a name.` }
+    const key = name.toLowerCase()
+    if (seen.has(key)) return { units: [], error: `Two buildings are called "${name}". Give each one its own name.` }
+    seen.add(key)
+    const r = buildUnits({
+      kind: 'block',
+      floors: toNum(b.floors),
+      perFloor: toNum(b.perFloor),
+      groundCount: b.ground.trim() === '' ? undefined : (toNum(b.ground) ?? NaN),
+    })
+    if (r.error) return { units: [], error: `${name}: ${r.error}` }
+    for (const u of r.units) {
+      all.push({ unit_label: `${letterOf(i)}-${u.unit_label}`, floor_no: u.floor_no, group_label: name.slice(0, 60) })
+    }
+  }
+  if (all.length > MAX_UNITS) return { units: [], error: `That is ${all.length} flats. You can add up to ${MAX_UNITS} at a time.` }
+  return { units: all, error: null }
 }
 
 // Uploads one photo to Cloudinary, the same way the listing form does. Returns the photo link.
@@ -130,6 +169,10 @@ export default function ListAPropertyPage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
+  // Stage D: the buildings of a compound.
+  const [buildings, setBuildings] = useState<Bldg[]>([newBuilding(0)])
+  const [moreCount, setMoreCount] = useState('1')
+
   // Stage B3a: the overview photo for a new place, and for places that already exist.
   const [coverUrl, setCoverUrl] = useState('')
   const [coverUploading, setCoverUploading] = useState(false)
@@ -181,7 +224,7 @@ export default function ListAPropertyPage() {
     if (pickUnit) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [pickUnit, showAttach])
 
-  // The database kind behind each plain choice.
+  // The database kind behind each plain choice. A compound is stored as a block with building names.
   const kind: EstateKind = choice === 'houses' ? 'estate' : 'block'
 
   const floorsNum = toNum(floors)
@@ -207,7 +250,11 @@ export default function ListAPropertyPage() {
     [kind, floorsNum, perFloor, floorCountsNums, hasGround, groundStr, count, groupLabel],
   )
 
-  const units: UnitDraft[] = built.units
+  const compoundBuilt = useMemo(() => buildCompound(buildings), [buildings])
+
+  const isCompoundChoice = choice === 'compound'
+  const units: UnitDraft[] = isCompoundChoice ? compoundBuilt.units : built.units
+  const buildError: string | null = isCompoundChoice ? compoundBuilt.error : built.error
   const unitCount = units.length
   const [one, many] = noun(kind)
 
@@ -223,8 +270,28 @@ export default function ListAPropertyPage() {
     setFloorCountsStr([])
     setCount('10')
     setGroupLabel('')
+    setBuildings([newBuilding(0)])
+    setMoreCount('1')
     setCoverUrl('')
     setCoverMsg(null)
+  }
+
+  const updateBuilding = (i: number, patch: Partial<Bldg>) => {
+    setBuildings((prev) => prev.map((b, idx) => (idx === i ? { ...b, ...patch } : b)))
+  }
+
+  const removeBuilding = (i: number) => {
+    setBuildings((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev))
+  }
+
+  // New buildings copy the floors and flats of the last one. Names carry on: Building B, Building C...
+  const addBuildings = (n: number) => {
+    setBuildings((prev) => {
+      const out = [...prev]
+      const last = prev[prev.length - 1]
+      for (let k = 0; k < n && out.length < MAX_BUILDINGS; k++) out.push(newBuilding(out.length, last))
+      return out
+    })
   }
 
   // Photo for the place being created.
@@ -262,6 +329,8 @@ export default function ListAPropertyPage() {
     el.value = ''
   }
 
+  const wholeWord = choice === 'houses' ? 'estate' : choice === 'compound' ? 'compound' : 'building'
+
   const create = async () => {
     setMsg(null)
     if (name.trim().length < 1) {
@@ -269,11 +338,11 @@ export default function ListAPropertyPage() {
       return
     }
     if (!coverUrl) {
-      setMsg({ ok: false, text: `Add an overview photo of the whole ${choice === 'houses' ? 'estate' : 'building'}.` })
+      setMsg({ ok: false, text: `Add an overview photo of the whole ${wholeWord}.` })
       return
     }
-    if (built.error) {
-      setMsg({ ok: false, text: built.error })
+    if (buildError) {
+      setMsg({ ok: false, text: buildError })
       return
     }
     const placeName = name.trim()
@@ -387,7 +456,23 @@ export default function ListAPropertyPage() {
   }
 
   const cardBase = 'focus-ring flex min-h-20 w-full items-center gap-3 rounded-card border border-border bg-card p-4 text-left hover:bg-secondary'
-  const wholeWord = choice === 'houses' ? 'estate' : 'building'
+
+  // One flat or house tile on a place card.
+  const tileFor = (u: UnitRow, e: EstateRow, oneE: string) =>
+    u.listing_id ? (
+      <span key={u.id} title={tileNote(u)} className={`rounded-button px-2.5 py-1 text-xs font-semibold ${tileClass(u)}`}>{u.unit_label}</span>
+    ) : (
+      <button
+        key={u.id}
+        type="button"
+        onClick={() => openPicker(u, e)}
+        title={`List ${oneE} ${u.unit_label}`}
+        aria-label={`${cap(oneE)} ${u.unit_label}, not listed yet. Tap to list it`}
+        className={`focus-ring inline-flex min-h-11 items-center rounded-button px-3 text-xs font-semibold ${tileClass(u)}`}
+      >
+        {u.unit_label}
+      </button>
+    )
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 p-4 sm:p-6">
@@ -418,13 +503,14 @@ export default function ListAPropertyPage() {
             <ArrowRight size={16} aria-hidden className="text-muted-foreground" />
           </button>
 
-          <div className="flex min-h-20 w-full items-center gap-3 rounded-card border border-dashed border-border bg-card p-4 opacity-70">
-            <Building2 size={22} aria-hidden className="shrink-0 text-muted-foreground" />
+          <button type="button" onClick={() => { setChoice('compound'); setMsg(null) }} className={cardBase}>
+            <Building2 size={22} aria-hidden className="shrink-0 text-primary" />
             <span className="flex-1">
               <span className="block text-sm font-semibold text-foreground">A compound with several buildings</span>
-              <span className="block text-xs text-muted-foreground">Coming soon. For now, add each building on its own.</span>
+              <span className="block text-xs text-muted-foreground">Building A, Building B and so on, in one place.</span>
             </span>
-          </div>
+            <ArrowRight size={16} aria-hidden className="text-muted-foreground" />
+          </button>
 
           <button type="button" onClick={() => { setChoice('houses'); setMsg(null) }} className={cardBase}>
             <Trees size={22} aria-hidden className="shrink-0 text-primary" />
@@ -443,10 +529,12 @@ export default function ListAPropertyPage() {
         </p>
       )}
 
-      {(choice === 'building' || choice === 'houses') && (
+      {(choice === 'building' || choice === 'houses' || choice === 'compound') && (
         <section className="space-y-4 rounded-card border border-border bg-card p-4" aria-label="Add a place">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-bold text-foreground">{choice === 'building' ? 'Your building' : 'Your estate'}</h2>
+            <h2 className="text-lg font-bold text-foreground">
+              {choice === 'building' ? 'Your building' : choice === 'compound' ? 'Your compound' : 'Your estate'}
+            </h2>
             <button type="button" onClick={() => { setChoice(null); setMsg(null) }} className="focus-ring min-h-11 rounded-button px-3 text-sm font-semibold text-primary">Back</button>
           </div>
 
@@ -541,6 +629,59 @@ export default function ListAPropertyPage() {
             </div>
           )}
 
+          {choice === 'compound' && (
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground">Your buildings</p>
+
+              {buildings.map((b, i) => (
+                <div key={i} className="space-y-3 rounded-card border border-border bg-background p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">Building {letterOf(i)}</p>
+                    {buildings.length > 1 && (
+                      <button type="button" onClick={() => removeBuilding(i)} className="focus-ring min-h-11 rounded-button px-3 text-sm font-semibold text-destructive">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <label className="block text-sm font-semibold text-foreground">
+                    Name
+                    <input
+                      className={`${input} mt-1 font-normal`}
+                      value={b.name}
+                      maxLength={60}
+                      onChange={(e) => updateBuilding(i, { name: e.target.value })}
+                    />
+                  </label>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Stepper label="Floors above the ground" value={b.floors} onChange={(v) => updateBuilding(i, { floors: v })} min={1} max={MAX_FLOORS} />
+                    <Stepper label="Flats on each floor" value={b.perFloor} onChange={(v) => updateBuilding(i, { perFloor: v })} min={1} max={MAX_PER_FLOOR} />
+                  </div>
+                  <Stepper label="Flats on the ground floor (0 if none)" value={b.ground} onChange={(v) => updateBuilding(i, { ground: v })} min={0} max={MAX_PER_FLOOR} />
+                </div>
+              ))}
+
+              <div className="space-y-2 rounded-card border border-dashed border-border p-3">
+                <button
+                  type="button"
+                  onClick={() => addBuildings(1)}
+                  disabled={buildings.length >= MAX_BUILDINGS}
+                  className="focus-ring min-h-11 w-full rounded-button border border-primary bg-card px-4 text-sm font-semibold text-primary disabled:opacity-50"
+                >
+                  Add a building like {buildings[buildings.length - 1]?.name.trim() || `Building ${letterOf(buildings.length - 1)}`}
+                </button>
+                <Stepper label="Or add several at once" value={moreCount} onChange={setMoreCount} min={1} max={10} />
+                <button
+                  type="button"
+                  onClick={() => addBuildings(Math.max(1, Number.parseInt(moreCount, 10) || 1))}
+                  disabled={buildings.length >= MAX_BUILDINGS}
+                  className="focus-ring min-h-11 w-full rounded-button border border-border bg-card px-4 text-sm font-semibold text-foreground disabled:opacity-50"
+                >
+                  Add {Math.max(1, Number.parseInt(moreCount, 10) || 1)} more like the last one
+                </button>
+              </div>
+            </div>
+          )}
+
           {choice === 'houses' && (
             <div className="space-y-3">
               <Stepper label="How many houses?" value={count} onChange={setCount} min={1} max={300} />
@@ -552,8 +693,25 @@ export default function ListAPropertyPage() {
           )}
 
           <div className="rounded-card border border-border bg-background p-3" aria-live="polite">
-            {built.error ? (
-              <p className="text-xs text-muted-foreground">{built.error}</p>
+            {buildError ? (
+              <p className="text-xs text-muted-foreground">{buildError}</p>
+            ) : choice === 'compound' ? (
+              <>
+                <p className="text-sm font-semibold text-foreground">
+                  That makes {plural(buildings.length, 'building', 'buildings')} and {plural(unitCount, 'flat', 'flats')}.{' '}
+                  <span className="font-normal text-muted-foreground">Flats are named A-1A, A-1B, B-1A and so on.</span>
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {buildings.map((b, i) => {
+                    const n = units.filter((u) => u.group_label === b.name.trim().slice(0, 60)).length
+                    return (
+                      <li key={i} className="text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground">{b.name.trim()}</span>: {plural(n, 'flat', 'flats')}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </>
             ) : (
               <>
                 <p className="text-sm font-semibold text-foreground">
@@ -686,12 +844,22 @@ export default function ListAPropertyPage() {
           const us = [...(e.units ?? [])].sort((a, b) => (b.floor_no ?? 0) - (a.floor_no ?? 0) || a.unit_label.localeCompare(b.unit_label, undefined, { numeric: true }))
           const shown = us.slice(0, 48)
           const busy = cardBusy === e.id
+
+          // A compound: flats that have floors and a building name. Shown one fold-out section per building.
+          const isCompound = us.some((u) => u.floor_no !== null && (u.group_label ?? '').trim() !== '')
+          const buildingNames = isCompound
+            ? [...new Set(us.map((u) => (u.group_label ?? '').trim() || 'Other'))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+            : []
+
           return (
             <div key={e.id} className="rounded-card border border-border bg-card p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-foreground">{e.name}</p>
-                  <p className="text-xs text-muted-foreground">{KIND_LABEL[e.kind] ?? e.kind}{e.address_text ? `, ${e.address_text}` : ''}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isCompound ? `Compound with ${plural(buildingNames.length, 'building', 'buildings')}` : (KIND_LABEL[e.kind] ?? e.kind)}
+                    {e.address_text ? `, ${e.address_text}` : ''}
+                  </p>
                 </div>
                 <p className="shrink-0 text-xs text-muted-foreground">{plural(us.length, oneE, manyE)}</p>
               </div>
@@ -719,25 +887,30 @@ export default function ListAPropertyPage() {
               )}
               {cardMsg && cardMsg.id === e.id && <p role="alert" className="mt-2 text-sm font-medium text-danger">{cardMsg.text}</p>}
 
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {shown.map((u) => (
-                  u.listing_id ? (
-                    <span key={u.id} title={tileNote(u)} className={`rounded-button px-2.5 py-1 text-xs font-semibold ${tileClass(u)}`}>{u.unit_label}</span>
-                  ) : (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => openPicker(u, e)}
-                      title={`List ${oneE} ${u.unit_label}`}
-                      aria-label={`${cap(oneE)} ${u.unit_label}, not listed yet. Tap to list it`}
-                      className={`focus-ring inline-flex min-h-11 items-center rounded-button px-3 text-xs font-semibold ${tileClass(u)}`}
-                    >
-                      {u.unit_label}
-                    </button>
-                  )
-                ))}
-                {us.length > shown.length && <span className="px-1 py-1 text-xs text-muted-foreground">+{us.length - shown.length} more</span>}
-              </div>
+              {isCompound ? (
+                <div className="mt-3 space-y-2">
+                  {buildingNames.map((bn, bi) => {
+                    const inB = us.filter((u) => ((u.group_label ?? '').trim() || 'Other') === bn)
+                    const listed = inB.filter((u) => u.listing_id).length
+                    return (
+                      <details key={bn} open={buildingNames.length <= 2 || bi === 0} className="rounded-lg border border-border bg-background p-3">
+                        <summary className="focus-ring cursor-pointer text-sm font-semibold text-foreground">
+                          {bn} <span className="font-normal text-muted-foreground">· {plural(inB.length, oneE, manyE)}, {listed} listed</span>
+                        </summary>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {inB.slice(0, 80).map((u) => tileFor(u, e, oneE))}
+                          {inB.length > 80 && <span className="px-1 py-1 text-xs text-muted-foreground">+{inB.length - 80} more</span>}
+                        </div>
+                      </details>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {shown.map((u) => tileFor(u, e, oneE))}
+                  {us.length > shown.length && <span className="px-1 py-1 text-xs text-muted-foreground">+{us.length - shown.length} more</span>}
+                </div>
+              )}
               <p className="mt-2 text-xs text-muted-foreground">Dashed means not listed yet. Tap one to list it.</p>
             </div>
           )
@@ -750,4 +923,4 @@ export default function ListAPropertyPage() {
       </section>
     </div>
   )
-          }
+                  }
