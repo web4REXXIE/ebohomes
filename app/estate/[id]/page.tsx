@@ -8,7 +8,7 @@ import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
 import { displayTitle } from '@/lib/property-display'
-import { groupUnits, unitState, countToLet, type ViewUnit } from '@/lib/estate-view'
+import { groupUnits, buildingNames, unitState, countToLet, type ViewUnit } from '@/lib/estate-view'
 import { LightDeyCard } from '@/components/light-dey-card'
 import { BlockScene, CompoundScene } from '@/components/building-scene'
 import type { LightState } from '@/lib/light-status'
@@ -36,7 +36,7 @@ function naira(n: number | null | undefined): string | null {
 }
 
 // Stage B3b: the landlord's overview photo of the whole building or estate is shown first.
-// It is read on its own, so if that read fails the page still works exactly as before.
+// Stage D: a compound (several buildings) shows building chips. Pick one to see its floors and flats.
 export default function EstateViewPage() {
   const params = useParams<{ id: string }>()
   const estateId = params?.id
@@ -51,6 +51,7 @@ export default function EstateViewPage() {
   const [onlyToLet, setOnlyToLet] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [groupKey, setGroupKey] = useState<string>('all')
+  const [buildingKey, setBuildingKey] = useState<string>('')
   const [sending, setSending] = useState(false)
   const [light, setLight] = useState<LightState>('unknown')
   const [knockMsg, setKnockMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -134,6 +135,14 @@ export default function EstateViewPage() {
   const live = useMemo(() => new Set(Object.keys(listings)), [listings])
   const groups = useMemo(() => groupUnits(units), [units])
   const toLet = useMemo(() => countToLet(units, live), [units, live])
+  const buildings = useMemo(() => buildingNames(groups), [groups])
+  const isCompound = buildings.length > 0
+  const activeBuilding = isCompound ? (buildings.includes(buildingKey) ? buildingKey : buildings[0]) : ''
+  // For a compound only the chosen building's floors are shown. Otherwise everything, as before.
+  const baseGroups = isCompound ? groups.filter((g) => g.building === activeBuilding) : groups
+  const toLetIn = (name: string) =>
+    groups.filter((g) => g.building === name).reduce((n, g) => n + countToLet(g.units, live), 0)
+
   const selected = units.find((x) => x.id === selectedId) ?? null
   const selectedListing = selected?.listing_id ? listings[selected.listing_id] : undefined
   const selectedIsToLet = selected ? unitState(selected, live) === 'to_let' : false
@@ -148,7 +157,7 @@ export default function EstateViewPage() {
   }
 
   const isBlock = groups.some((g) => g.floor !== null)
-  const visibleGroups = groups
+  const visibleGroups = baseGroups
     .filter((g) => isBlock || groupKey === 'all' || g.key === groupKey)
     .map((g) => ({ ...g, shown: onlyToLet ? g.units.filter((x) => unitState(x, live) === 'to_let') : g.units }))
     .filter((g) => g.shown.length > 0)
@@ -193,8 +202,9 @@ export default function EstateViewPage() {
           <>
             <h1 className="text-2xl font-bold text-foreground">{estate.name}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {KIND_LABEL[estate.kind] ?? 'Building'}
+              {isCompound ? 'Compound' : (KIND_LABEL[estate.kind] ?? 'Building')}
               {estate.address_text ? `, ${estate.address_text}` : ''}
+              {isCompound ? ` · ${buildings.length} buildings` : ''}
               {` · ${units.length} ${units.length === 1 ? 'unit' : 'units'} · ${toLet} to let`}
             </p>
 
@@ -209,8 +219,24 @@ export default function EstateViewPage() {
 
             <LightDeyCard estateId={estate.id} isResident={isResident} onStatus={setLight} />
 
+            {isCompound && (
+              <div className="mt-4 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Choose a building">
+                {buildings.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    aria-pressed={activeBuilding === b}
+                    onClick={() => { setBuildingKey(b); setSelectedId(null) }}
+                    className={`focus-ring min-h-11 shrink-0 rounded-button border px-4 text-sm font-semibold ${activeBuilding === b ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground'}`}
+                  >
+                    {b} <span className="font-normal opacity-80">· {toLetIn(b)} to let</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              {isBlock && groups.length > 3 && (
+              {isBlock && baseGroups.length > 3 && (
                 <label className="flex items-center gap-2 text-sm text-foreground">
                   <span className="font-semibold">Jump to floor</span>
                   <select
@@ -219,7 +245,7 @@ export default function EstateViewPage() {
                     onChange={(e) => { if (e.target.value) jumpTo(e.target.value) }}
                   >
                     <option value="" disabled>Choose</option>
-                    {groups.map((g) => (
+                    {baseGroups.map((g) => (
                       <option key={g.key} value={g.key}>{g.title}</option>
                     ))}
                   </select>
@@ -256,12 +282,12 @@ export default function EstateViewPage() {
             </p>
 
             {isBlock ? (
-              <BlockScene name={estate.name} groups={visibleGroups} toneOf={toneOf} selectedId={selectedId} onSelect={selectUnit} light={light} />
+              <BlockScene name={isCompound ? `${estate.name}, ${activeBuilding}` : estate.name} groups={visibleGroups} toneOf={toneOf} selectedId={selectedId} onSelect={selectUnit} light={light} />
             ) : (
               <CompoundScene name={estate.name} groups={visibleGroups} toneOf={toneOf} selectedId={selectedId} onSelect={selectUnit} light={light} />
             )}
 
-            {onlyToLet && toLet === 0 && <p className="mt-3 text-sm text-muted-foreground">Nothing is to let here right now.</p>}
+            {onlyToLet && visibleGroups.length === 0 && <p className="mt-3 text-sm text-muted-foreground">Nothing is to let {isCompound ? 'in this building' : 'here'} right now.</p>}
 
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2 border-success bg-card" aria-hidden />To let</span>
@@ -344,4 +370,4 @@ export default function EstateViewPage() {
       <Footer />
     </>
   )
-                                               }
+}
