@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { ArrowLeft, ArrowRight, Check, Home as HomeIcon } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
 import { groupUnits, buildingNames, unitState, countToLet, type ViewUnit } from '@/lib/estate-view'
 import { LightDeyCard } from '@/components/light-dey-card'
-import { BlockScene, CompoundScene } from '@/components/building-scene'
+import { BlockScene } from '@/components/building-scene'
 import type { LightState } from '@/lib/light-status'
 
 type EstateInfo = { id: string; name: string; kind: string; address_text: string | null }
@@ -31,6 +32,8 @@ const KIND_LABEL: Record<string, string> = {
   hostel: 'Hostel',
 }
 
+const TONE_NOTE: Record<TileTone, string> = { to_let: 'To let', taken: 'Taken', mine: 'You', neighbour: 'Neighbour' }
+
 const STICKERS: { key: 'knock' | 'welcome' | 'howfar'; icon: string; label: string }[] = [
   { key: 'knock', icon: '👋', label: 'Knock knock' },
   { key: 'welcome', icon: '🎉', label: 'Welcome, neighbour' },
@@ -41,11 +44,13 @@ function naira(n: number | null | undefined): string | null {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? `₦${n.toLocaleString('en-NG')}` : null
 }
 
-// Stage B3b: the landlord's overview photo of the whole building or estate is shown first.
-// Stage D: a compound (several buildings) shows building chips. Pick one to see its floors and flats.
-// Stage E (simplified): tapping a flat that is to let opens that flat's full listing page, where the
-// photos, details, Apply and viewing already live. The small sheet below is only for flats that are
-// not available, and for residents (their own door, and neighbours' doors to greet).
+// Stage E2: the tenant building page, polished.
+// - Top bar with a back button, the name and a one-line summary.
+// - Houses and estates show a clean "Units" card (a tile grid with a tick on flats that are to let).
+//   Blocks of flats keep the floor-by-floor building picture.
+// - A sticky button takes the tenant to the flat's listing page, where Apply and viewing already live.
+// - The small sheet for taken flats and neighbours sits above the bottom bar and the help button.
+// Only facts that come from the data are shown. Nothing is claimed about water, security or verification.
 export default function EstateViewPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -149,7 +154,7 @@ export default function EstateViewPage() {
   const buildings = useMemo(() => buildingNames(groups), [groups])
   const isCompound = buildings.length > 0
   const activeBuilding = isCompound ? (buildings.includes(buildingKey) ? buildingKey : buildings[0]) : ''
-  // For a compound only the chosen building's floors are shown. Otherwise everything, as before.
+  // For a compound only the chosen building's floors are shown. Otherwise everything.
   const baseGroups = isCompound ? groups.filter((g) => g.building === activeBuilding) : groups
   const toLetIn = (name: string) =>
     groups.filter((g) => g.building === name).reduce((n, g) => n + countToLet(g.units, live), 0)
@@ -191,6 +196,13 @@ export default function EstateViewPage() {
     document.getElementById(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  const openList = () => {
+    setShowAll(true)
+    window.setTimeout(() => {
+      document.getElementById('to-let-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+  }
+
   // A flat that is to let goes straight to its full listing page. Anything else opens the small sheet.
   const selectUnit = (id: string) => {
     const unit = units.find((x) => x.id === id)
@@ -222,10 +234,13 @@ export default function EstateViewPage() {
     )
   }
 
+  const kindText = isCompound ? 'Compound' : (KIND_LABEL[estate?.kind ?? ''] ?? 'Building')
+  const singleToLet = toLetUnits.length === 1 ? toLetUnits[0] : null
+
   return (
     <>
       <Header />
-      <main className="mx-auto w-full max-w-2xl px-4 pb-56 pt-6 sm:px-6">
+      <main className="mx-auto w-full max-w-2xl px-4 pb-56 pt-4 sm:px-6">
         {loading && <p className="py-16 text-center text-sm text-muted-foreground" role="status">Loading the building...</p>}
         {!loading && notFound && (
           <div className="py-16 text-center">
@@ -238,23 +253,36 @@ export default function EstateViewPage() {
 
         {!loading && estate && (
           <>
+            {/* Top bar */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                aria-label="Go back"
+                className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-card text-foreground"
+              >
+                <ArrowLeft size={20} aria-hidden />
+              </button>
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-bold text-foreground">{estate.name}</h1>
+                <p className="truncate text-xs text-muted-foreground">
+                  {kindText} · {units.length} {units.length === 1 ? 'unit' : 'units'} · {toLet} to let
+                </p>
+              </div>
+            </div>
+
             {cover && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={cover}
                 alt={`${estate.name} from outside`}
-                className="h-52 w-full rounded-card object-cover sm:h-64"
+                className="mt-3 h-52 w-full rounded-card object-cover sm:h-64"
               />
             )}
 
-            <h1 className="mt-4 text-2xl font-bold text-foreground">{estate.name}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {isCompound ? 'Compound' : (KIND_LABEL[estate.kind] ?? 'Building')}
-              {estate.address_text ? `, ${estate.address_text}` : ''}
-            </p>
+            {estate.address_text && <p className="mt-3 text-sm text-muted-foreground">{estate.address_text}</p>}
 
             <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-              <span className="rounded-chip border border-border bg-card px-3 py-1 text-foreground">{units.length} {units.length === 1 ? 'unit' : 'units'}</span>
               {isCompound && <span className="rounded-chip border border-border bg-card px-3 py-1 text-foreground">{buildings.length} buildings</span>}
               <span className="rounded-chip border border-success bg-success-soft px-3 py-1 text-success">{toLet} to let</span>
               {lowestRent && <span className="rounded-chip border border-border bg-card px-3 py-1 text-foreground">From {naira(lowestRent)} a month</span>}
@@ -302,7 +330,7 @@ export default function EstateViewPage() {
               >
                 Only to let
               </button>
-              {toLetUnits.length > 0 && (
+              {isBlock && toLetUnits.length > 0 && (
                 <button
                   type="button"
                   aria-expanded={showAll}
@@ -314,30 +342,7 @@ export default function EstateViewPage() {
               )}
             </div>
 
-            {showAll && (
-              <ul className="mt-3 divide-y divide-border rounded-card border border-border bg-card" aria-label="All units to let">
-                {toLetUnits.map((x) => {
-                  const l = x.listing_id ? listings[x.listing_id] : undefined
-                  if (!l) return null
-                  return (
-                    <li key={x.id}>
-                      <Link
-                        href={`/listing/${l.id}`}
-                        className="focus-ring flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left"
-                      >
-                        <span className="text-sm font-semibold text-foreground">
-                          {x.group_label ? `${x.group_label}, ` : ''}Unit {x.unit_label}
-                          {typeof l.bedrooms === 'number' && l.bedrooms > 0 && (
-                            <span className="font-normal text-muted-foreground"> · {l.bedrooms} bed</span>
-                          )}
-                        </span>
-                        <span className="text-sm font-bold text-primary">{naira(l.price_monthly) ?? 'See price'}</span>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+            {isBlock && showAll && <ToLetList units={toLetUnits} listings={listings} />}
 
             {!isBlock && groups.length > 1 && (
               <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Filter by street or phase">
@@ -364,7 +369,49 @@ export default function EstateViewPage() {
             {isBlock ? (
               <BlockScene name={isCompound ? `${estate.name}, ${activeBuilding}` : estate.name} groups={visibleGroups} toneOf={toneOf} selectedId={selectedId} onSelect={selectUnit} light={light} />
             ) : (
-              <CompoundScene name={estate.name} groups={visibleGroups} toneOf={toneOf} selectedId={selectedId} onSelect={selectUnit} light={light} />
+              <section className="mt-3 rounded-card border border-border bg-card p-4" aria-label="Units">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-foreground">Units</h2>
+                    <p className="text-xs text-muted-foreground">Select a unit to view details and apply</p>
+                  </div>
+                  {toLetUnits.length > 0 && (
+                    <button
+                      type="button"
+                      aria-expanded={showAll}
+                      onClick={() => setShowAll((v) => !v)}
+                      className="focus-ring inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-button border border-primary px-4 text-sm font-semibold text-primary"
+                    >
+                      {showAll ? 'Hide list' : 'View all'}
+                      <ArrowRight size={14} aria-hidden />
+                    </button>
+                  )}
+                </div>
+
+                {showAll && <ToLetList units={toLetUnits} listings={listings} />}
+
+                <div className="mt-3 space-y-4">
+                  {visibleGroups.map((g) => (
+                    <div key={g.key} id={g.key} className="scroll-mt-24">
+                      {groups.length > 1 && (
+                        <h3 className="mb-2 w-fit rounded-chip bg-secondary px-3 py-1 text-sm font-semibold text-foreground">{g.title}</h3>
+                      )}
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {g.shown.map((x) => (
+                          <UnitTile
+                            key={x.id}
+                            unit={x}
+                            tone={toneOf(x)}
+                            selected={x.id === selectedId}
+                            light={light}
+                            onSelect={selectUnit}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
 
             {onlyToLet && visibleGroups.length === 0 && <p className="mt-3 text-sm text-muted-foreground">Nothing is to let {isCompound ? 'in this building' : 'here'} right now.</p>}
@@ -384,10 +431,36 @@ export default function EstateViewPage() {
         )}
       </main>
 
+      {/* Sticky action: only when something is to let and no sheet is open. */}
+      {!loading && estate && !selected && toLetUnits.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[4.75rem] z-30 px-4 sm:bottom-4">
+          <div className="pointer-events-auto mx-auto max-w-2xl">
+            {singleToLet && singleToLet.listing_id ? (
+              <Link
+                href={`/listing/${singleToLet.listing_id}`}
+                className="focus-ring flex min-h-12 items-center justify-between rounded-button bg-primary px-5 text-base font-bold text-primary-foreground shadow-lg"
+              >
+                Apply to view · Unit {singleToLet.unit_label}
+                <ArrowRight size={18} aria-hidden />
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={openList}
+                className="focus-ring flex min-h-12 w-full items-center justify-between rounded-button bg-primary px-5 text-base font-bold text-primary-foreground shadow-lg"
+              >
+                See flats to let ({toLetUnits.length})
+                <ArrowRight size={18} aria-hidden />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {selected && (
-        <div className="fixed inset-x-0 bottom-0 z-40 max-h-[50vh] overflow-y-auto rounded-t-modal border-t border-border bg-card px-4 pb-6 pt-4 shadow-lg" role="dialog" aria-label={`Unit ${selected.unit_label}`}>
-          <div className="mx-auto flex max-w-2xl items-start justify-between gap-3">
-            <div>
+        <div className="fixed inset-x-0 bottom-0 z-40 max-h-[60vh] overflow-y-auto rounded-t-modal border-t border-border bg-card px-4 pb-24 pt-4 shadow-lg sm:pb-6" role="dialog" aria-label={`Unit ${selected.unit_label}`}>
+          <div className="mx-auto flex max-w-2xl items-start justify-between gap-3 pr-14">
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">
                 {selected.floor_no !== null ? `Floor ${selected.floor_no}, ` : ''}unit {selected.unit_label}
               </p>
@@ -430,5 +503,83 @@ export default function EstateViewPage() {
       )}
       <Footer />
     </>
+  )
+}
+
+// A list of every flat or house that is to let. Each row opens that listing.
+function ToLetList({ units, listings }: { units: ViewUnit[]; listings: Record<string, ListingInfo> }) {
+  return (
+    <ul id="to-let-list" className="mt-3 divide-y divide-border rounded-card border border-border bg-card" aria-label="All units to let">
+      {units.map((x) => {
+        const l = x.listing_id ? listings[x.listing_id] : undefined
+        if (!l) return null
+        return (
+          <li key={x.id}>
+            <Link
+              href={`/listing/${l.id}`}
+              className="focus-ring flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left"
+            >
+              <span className="text-sm font-semibold text-foreground">
+                {x.group_label ? `${x.group_label}, ` : ''}Unit {x.unit_label}
+                {typeof l.bedrooms === 'number' && l.bedrooms > 0 && (
+                  <span className="font-normal text-muted-foreground"> · {l.bedrooms} bed</span>
+                )}
+              </span>
+              <span className="text-sm font-bold text-primary">{naira(l.price_monthly) ?? 'See price'}</span>
+            </Link>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+// One house or unit in the Units card. A green tick means it is to let.
+function UnitTile({
+  unit,
+  tone,
+  selected,
+  light,
+  onSelect,
+}: {
+  unit: ViewUnit
+  tone: TileTone
+  selected: boolean
+  light: LightState
+  onSelect: (id: string) => void
+}) {
+  const lived = tone === 'mine' || tone === 'neighbour'
+  const lit = lived && light === 'on'
+  const dim = lived && light === 'off'
+  const toneClass =
+    tone === 'to_let'
+      ? 'border-success bg-success-soft text-success'
+      : tone === 'mine'
+        ? 'border-primary bg-primary text-primary-foreground'
+        : tone === 'neighbour'
+          ? lit
+            ? 'border-featured/60 bg-featured/25 text-foreground'
+            : 'border-primary/40 bg-secondary text-foreground'
+          : 'border-transparent bg-muted text-muted-foreground'
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(unit.id)}
+      aria-pressed={selected}
+      aria-label={`Unit ${unit.unit_label}, ${TONE_NOTE[tone].toLowerCase()}`}
+      className={`focus-ring relative flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border-2 px-2 py-2 text-sm font-bold transition ${toneClass} ${dim ? 'opacity-70' : ''} ${selected ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+    >
+      {tone === 'to_let' && (
+        <span aria-hidden className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-success text-primary-foreground">
+          <Check size={12} strokeWidth={3} />
+        </span>
+      )}
+      {lived && light !== 'unknown' && (
+        <span aria-hidden className="absolute -right-1 -top-2 text-sm leading-none">{light === 'on' ? '💡' : '🕯️'}</span>
+      )}
+      <HomeIcon size={18} aria-hidden className="mb-0.5" />
+      <span className="text-base leading-tight">{unit.unit_label}</span>
+      <span className="text-[11px] font-normal leading-tight">{TONE_NOTE[tone]}</span>
+    </button>
   )
 }
