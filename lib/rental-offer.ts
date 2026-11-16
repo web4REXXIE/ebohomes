@@ -5,7 +5,11 @@ export type OfferStatus = 'offered' | 'countered' | 'accepted' | 'declined' | 'e
 
 export const OFFER_LIVE: readonly OfferStatus[] = ['offered', 'countered', 'accepted']
 export const OFFER_PERIODS = ['monthly', 'yearly'] as const
-export const MAX_CHARGES = 8
+// Fixed list of charge names. A landlord cannot invent a charge: each name can be used once per offer.
+// Rent and the caution deposit have their own lines. These mirror eb_offer_charges_total in the database.
+// Viewing or inspection fees and agency commission are not allowed as tenant charges.
+export const ALLOWED_CHARGES = ['Service charge', 'Agreement fee', 'Legal fee', 'Maintenance fee', 'Estate dues'] as const
+export const MAX_CHARGES = ALLOWED_CHARGES.length
 export const MAX_VERSIONS = 6
 export const OFFER_MIN_HOURS = 24
 export const OFFER_MAX_HOURS = 336
@@ -124,7 +128,8 @@ export function validateOfferInput(
     const blank = label === '' && (amountRaw === '' || amountRaw == null)
     if (blank) continue
     const amount = toNumber(amountRaw)
-    if (label.length < 2 || label.length > 60) { e.charges = 'Each charge needs a name of 2 to 60 characters.'; break }
+    if (!(ALLOWED_CHARGES as readonly string[]).includes(label)) { e.charges = 'Choose each charge from the list. Other names are not allowed.'; break }
+    if (charges.some((c) => c.label === label)) { e.charges = 'Each charge can only be listed once.'; break }
     if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000_000) { e.charges = 'Each charge needs an amount above zero.'; break }
     charges.push({ label, amount })
   }
@@ -227,4 +232,4 @@ export function offerWaitingOn(o: OfferLike, now: Date = new Date()): 'landlord'
   if (o.status !== 'offered') return 'none'
   if (isOfferExpired(o.expires_at, now)) return 'none'
   return o.landlord_confirmed_at ? 'tenant' : 'landlord'
-                             }
+}
