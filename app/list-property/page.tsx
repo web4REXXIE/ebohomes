@@ -546,7 +546,9 @@ export default function ListPropertyPage() {
     }
 
     // Step 2 of 2: the lister shows they may list this property (reviewed per property by EboHomes).
-    router.push(`/dashboard/authority/${newListing.id}`)
+    // A flat or house inside a place returns to the overview afterwards (back=places).
+    const fromPlace = new URLSearchParams(window.location.search).get('unit')
+    router.push(`/dashboard/authority/${newListing.id}${fromPlace ? '?back=places' : ''}`)
   }
 
   if (!authChecked) {
