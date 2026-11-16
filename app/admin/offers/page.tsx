@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { fmtDate, naira } from '@/lib/case-status'
 import { OFFER_COLUMNS, OfferTerms, type Offer } from '@/components/rental-offer-panel'
 import {
+  ALLOWED_CHARGES,
   OFFER_DEFAULT_HOURS,
   OFFER_LIVE,
   OFFER_STATUS_LABEL,
@@ -71,7 +72,11 @@ function seedForm(o: Offer | null, l: Listing | undefined, app: App): Form {
       duration_months: String(o.duration_months),
       start_date: o.start_date,
       deposit_amount: String(o.deposit_amount),
-      charges: (Array.isArray(o.charges) ? o.charges : []).map((c) => ({ label: c.label, amount: String(c.amount) })),
+      // An older offer may carry a free-typed name. It is blanked so the admin picks a name from the list.
+      charges: (Array.isArray(o.charges) ? o.charges : []).map((c) => ({
+        label: (ALLOWED_CHARGES as readonly string[]).includes(c.label) ? c.label : '',
+        amount: String(c.amount),
+      })),
       payment_schedule: o.payment_schedule ?? '',
       notice_days: o.notice_days == null ? '' : String(o.notice_days),
       house_rules: o.house_rules ?? '',
@@ -414,15 +419,20 @@ export default function AdminOffersPage() {
 
                     <div className="space-y-2">
                       <p className="text-xs font-semibold">Other charges (optional)</p>
+                      <p className="text-xs text-muted-foreground">Pick from the list. Each charge can be used once. Rent and the caution deposit are separate lines.</p>
                       {form.charges.map((c, i) => (
                         <div key={i} className="flex gap-2">
-                          <input
+                          <select
                             aria-label="Charge name"
-                            placeholder="Name"
                             value={c.label}
                             onChange={(e) => setF({ charges: form.charges.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })}
                             className={field}
-                          />
+                          >
+                            <option value="">Choose a charge</option>
+                            {ALLOWED_CHARGES.filter((name) => name === c.label || !form.charges.some((x) => x.label === name)).map((name) => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
                           <input
                             aria-label="Charge amount"
                             placeholder="Amount"
@@ -441,7 +451,7 @@ export default function AdminOffersPage() {
                           </button>
                         </div>
                       ))}
-                      {form.charges.length < 8 && (
+                      {form.charges.length < ALLOWED_CHARGES.length && (
                         <button type="button" onClick={() => setF({ charges: [...form.charges, { label: '', amount: '' }] })} className="min-h-11 text-xs font-semibold text-primary underline">
                           Add a charge
                         </button>
@@ -502,4 +512,4 @@ export default function AdminOffersPage() {
       {dialog}
     </div>
   )
-                    }
+                                                   }
