@@ -10,6 +10,7 @@ import { classifyTenancyLoad, TENANCY_LOAD_ERROR_TEXT, TENANCY_NOT_FOUND_TEXT } 
 import { PaymentSubmissionForm, SubmissionList, type Sub } from '@/components/payment-submission-form'
 import { fmtDate } from '@/lib/case-status'
 import { canPay, summarisePayments, CHARGE_LABEL } from '@/lib/payment-complete'
+import { feeLines, type FeeBreakdown } from '@/lib/fee-lines'
 import { sizedPhoto } from '@/lib/image-url'
 import { SmartImage } from '@/components/ui/smart-image'
 
@@ -29,6 +30,8 @@ export default function PaySubmissionPage() {
   const [copied, setCopied] = useState(false)
   const [renewal, setRenewal] = useState<{ id: string; new_rent: number; new_end_date: string } | null>(null)
   const [renewalProblem, setRenewalProblem] = useState<string | null>(null)
+  // Idea 15: the itemised lines from the accepted offer. If anything fails to load, the page works without it.
+  const [breakdown, setBreakdown] = useState<FeeBreakdown | null>(null)
 
   const loadSubs = useCallback(async () => {
     const { data } = await supabase.from('payment_submissions')
@@ -49,6 +52,22 @@ export default function PaySubmissionPage() {
       const { data: tr } = await supabase.from('rental_terms').select('id, rent_amount, deposit_amount, fees_amount')
         .eq('tenancy_id', tenancyId).eq('status', 'signed').order('version', { ascending: false }).limit(1)
       setTerms(tr?.[0] ?? null)
+      try {
+        const signed = tr?.[0]
+        const { data: tn } = await supabase.from('tenancies').select('application_id').eq('id', tenancyId).maybeSingle()
+        const appId = (tn as { application_id: string | null } | null)?.application_id
+        if (signed && appId) {
+          const { data: of } = await supabase.from('rental_offers').select('charges')
+            .eq('application_id', appId).eq('status', 'accepted').order('version', { ascending: false }).limit(1)
+          const charges = (of?.[0] as { charges?: unknown } | undefined)?.charges
+          if (Array.isArray(charges)) {
+            const expected = Number(signed.rent_amount) + Number(signed.deposit_amount) + Number(signed.fees_amount)
+            setBreakdown(feeLines(signed.rent_amount, signed.deposit_amount, charges, expected))
+          }
+        }
+      } catch {
+        // The itemised list is extra. The page still shows the signed amounts below.
+      }
       const { data: l } = await supabase.from('listings').select('photos').eq('id', found.row.listing_id).maybeSingle()
       const p = Array.isArray(l?.photos) ? l!.photos.find((x: unknown) => typeof x === 'string') : null
       setPhoto(typeof p === 'string' ? p : null)
@@ -102,6 +121,28 @@ export default function PaySubmissionPage() {
           <p className="text-muted-foreground">Tenancy {t.tenancy_code ?? ''}{t.start_date ? ` · ${t.start_date}` : ''}{t.end_date ? ` to ${t.end_date}` : ''}</p>
         </div>
       </section>
+
+      {!renewal && breakdown && (
+        <section className="space-y-2 rounded-xl border border-border bg-card p-4 text-sm" aria-label="How your total is made up">
+          <p className="text-xs font-semibold text-muted-foreground">How your total is made up</p>
+          <ul className="divide-y divide-border">
+            {breakdown.lines.map((l) => (
+              <li key={l.name} className="flex items-center justify-between py-1.5">
+                <span className={l.amount === null ? 'text-muted-foreground' : ''}>{l.name}</span>
+                {l.amount === null ? <span className="text-muted-foreground">Not charged</span> : <b>{naira(l.amount)}</b>}
+              </li>
+            ))}
+          </ul>
+          {breakdown.complete ? (
+            <p className="flex items-center justify-between border-t border-border pt-2 text-base font-bold">
+              <span>Total amount due</span><span>{naira(breakdown.total)}</span>
+            </p>
+          ) : (
+            <p className="rounded-lg bg-secondary p-3 text-xs text-muted-foreground">The total is not shown because these lines do not match your signed agreement. Contact EboHomes before you pay.</p>
+          )}
+          <p className="text-xs text-muted-foreground">Every line comes from your signed agreement. Nothing is added at payment time.</p>
+        </section>
+      )}
 
       <section className="space-y-2 rounded-xl border border-border bg-card p-4 text-sm">
         <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><ShieldCheck size={14} aria-hidden /> {renewal ? 'Amount due for your renewal' : 'Amounts in your signed agreement'}</p>
