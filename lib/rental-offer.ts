@@ -8,7 +8,7 @@ export const OFFER_PERIODS = ['monthly', 'yearly'] as const
 // Fixed list of charge names. A landlord cannot invent a charge: each name can be used once per offer.
 // Rent and the caution deposit have their own lines. These mirror eb_offer_charges_total in the database.
 // Viewing or inspection fees and agency commission are not allowed as tenant charges.
-export const ALLOWED_CHARGES = ['Service charge', 'Agreement fee', 'Legal fee', 'Maintenance fee', 'Estate dues'] as const
+export const ALLOWED_CHARGES = ['Service charge', 'Agreement fee', 'Legal fee', 'Estate dues', 'Water', 'Electricity', 'Generator', 'Waste disposal'] as const
 export const MAX_CHARGES = ALLOWED_CHARGES.length
 export const MAX_VERSIONS = 6
 export const OFFER_MIN_HOURS = 24
