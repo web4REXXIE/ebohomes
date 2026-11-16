@@ -217,7 +217,7 @@ function LandlordSections({ userId }: { userId: string }) {
   ]
 
   const QUICK_ACTIONS = [
-    { label: 'Add new property', sub: 'List a property', icon: Plus, href: '/list-property', color: 'bg-emerald-50 text-emerald-900' },
+    { label: 'Add new property', sub: 'List a property', icon: Plus, href: '/dashboard/estates', color: 'bg-emerald-50 text-emerald-900' },
     { label: 'My properties', sub: 'Status of each one', icon: List, href: '/dashboard/listings', color: 'bg-blue-50 text-blue-900' },
     { label: 'Viewings', sub: 'Appointments for your properties', icon: CalendarClock, href: '/dashboard/viewings', color: 'bg-purple-50 text-purple-900' },
     { label: 'Applications', sub: 'Tenants who applied', icon: FileText, href: '/dashboard/applications', color: 'bg-amber-50 text-amber-900' },
