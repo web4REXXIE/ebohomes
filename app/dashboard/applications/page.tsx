@@ -97,6 +97,11 @@ export default function LandlordApplicationsPage() {
     void load()
   }, [load])
 
+  // Opened from the dashboard's "Needs you" list: ?tab=closed shows the decided applications, where offers sit.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'closed') setTab('closed')
+  }, [])
+
   const { listings, inspected } = usePropertyData(useMemo(() => apps.map((a) => a.listing_id), [apps]))
 
   const open = useMemo(() => apps.filter((a) => OPEN.includes(a.status)), [apps])
