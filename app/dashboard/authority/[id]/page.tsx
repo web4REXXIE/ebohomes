@@ -273,7 +273,9 @@ export default function ListingAuthorityPage() {
       return
     }
     // Sent. Move on to the listings page so the lister is not left on this form.
-    router.replace('/dashboard/listings?sent=authority')
+    // A flat or house listed from a place returns to that place's overview.
+    const backToPlaces = new URLSearchParams(window.location.search).get('back') === 'places'
+    router.replace(backToPlaces ? '/dashboard/estates' : '/dashboard/listings?sent=authority')
   }
 
   if (loading) return <p className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" aria-hidden /> Loading...</p>
@@ -454,7 +456,7 @@ export default function ListingAuthorityPage() {
           <p className="text-center text-xs text-muted-foreground">{activeDocs.length} active document{activeDocs.length === 1 ? '' : 's'}</p>
         </>
       ) : (
-        <Link href="/dashboard/listings"
+        <Link href={typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('back') === 'places' ? '/dashboard/estates' : '/dashboard/listings'}
           className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
           Back to my listings
         </Link>
