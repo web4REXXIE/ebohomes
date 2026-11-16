@@ -62,8 +62,8 @@ export function buildNeedsYou(inp: NeedsInput): { items: NeedsItem[]; partial: b
       text:
         'EboHomes proposed terms that differ from your listing. The tenant sees them only after you confirm.' +
         (x.left ? ` ${x.left}.` : ''),
-      // Offers sit on approved applications, so they are under "Decided and closed" on that page.
-      href: '/dashboard/applications',
+      // Offers sit on approved applications, so they are under "Decided and closed" on that page. ?tab=closed opens that tab.
+      href: '/dashboard/applications?tab=closed',
       cta: 'Review the terms',
     })
   })
