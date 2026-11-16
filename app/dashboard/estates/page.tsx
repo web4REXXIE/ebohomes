@@ -60,18 +60,29 @@ function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-function tileClass(u: UnitRow): string {
-  if (!u.listing_id) return 'border border-dashed border-border bg-card text-muted-foreground'
-  if (u.status === 'available') return 'border border-success bg-card text-success'
-  return 'border border-transparent bg-muted text-muted-foreground'
+// Stage 2 (Idea 1): what a flat or house looks like on the overview.
+type TileState = 'not_listed' | 'waiting' | 'live' | 'reserved' | 'rented' | 'paused' | 'attention' | 'listed'
+
+const TILE_META: Record<TileState, { label: string; cls: string }> = {
+  not_listed: { label: 'Not listed', cls: 'border border-dashed border-border bg-card text-muted-foreground' },
+  waiting: { label: 'In review', cls: 'border border-warning bg-warning-soft text-warning' },
+  live: { label: 'Live', cls: 'border border-success bg-success-soft text-success' },
+  reserved: { label: 'Reserved', cls: 'border border-primary bg-secondary text-primary' },
+  rented: { label: 'Rented', cls: 'border border-transparent bg-muted text-muted-foreground' },
+  paused: { label: 'Paused', cls: 'border border-border bg-card text-muted-foreground' },
+  attention: { label: 'Needs you', cls: 'border border-danger bg-danger-soft text-danger' },
+  listed: { label: 'Listed', cls: 'border border-border bg-card text-foreground' },
 }
 
-function tileNote(u: UnitRow): string {
-  if (!u.listing_id) return 'Not listed yet'
-  if (u.status === 'available') return 'To let'
-  if (u.status === 'reserved') return 'Reserved'
-  if (u.status === 'rented') return 'Taken'
-  return 'Off market'
+function tileState(u: UnitRow, listingStatus: string | undefined): TileState {
+  if (!u.listing_id) return 'not_listed'
+  if (u.status === 'rented' || listingStatus === 'rented') return 'rented'
+  if (u.status === 'reserved') return 'reserved'
+  if (listingStatus === undefined) return 'listed'
+  if (listingStatus === 'approved') return 'live'
+  if (listingStatus === 'paused') return 'paused'
+  if (listingStatus === 'rejected' || listingStatus === 'suspended') return 'attention'
+  return 'waiting'
 }
 
 function listingName(l: MyListing): string {
@@ -187,6 +198,8 @@ export default function ListAPropertyPage() {
   const [attaching, setAttaching] = useState(false)
   const [attachMsg, setAttachMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  // Tapping a flat that already has a listing opens a small sheet with its status.
+  const [viewUnit, setViewUnit] = useState<{ listingId: string; label: string; estateName: string; noun: string; state: TileState } | null>(null)
 
   const loadEstates = async () => {
     setLoading(true)
@@ -221,8 +234,8 @@ export default function ListAPropertyPage() {
 
   // When a flat is tapped, bring its card into view so nobody has to hunt for it.
   useEffect(() => {
-    if (pickUnit) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [pickUnit, showAttach])
+    if (pickUnit || viewUnit) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [pickUnit, viewUnit, showAttach])
 
   // The database kind behind each plain choice. A compound is stored as a block with building names.
   const kind: EstateKind = choice === 'houses' ? 'estate' : 'block'
@@ -406,8 +419,18 @@ export default function ListAPropertyPage() {
   // Rented and rejected listings cannot go on a flat, so they are not offered.
   const attachable = myListings.filter((l) => !placedIds.has(l.id) && l.status !== 'rented' && l.status !== 'rejected')
 
+  const statusById = useMemo(() => new Map(myListings.map((l) => [l.id, l.status ?? ''])), [myListings])
+  const stateOf = (u: UnitRow): TileState => tileState(u, u.listing_id ? statusById.get(u.listing_id) || undefined : undefined)
+
   const openPicker = (u: UnitRow, estate: EstateRow) => {
     const [w] = noun(estate.kind)
+    if (u.listing_id) {
+      setPickUnit(null)
+      setShowAttach(false)
+      setViewUnit({ listingId: u.listing_id, label: u.unit_label, estateName: estate.name, noun: w, state: stateOf(u) })
+      return
+    }
+    setViewUnit(null)
     setPickUnit({ id: u.id, label: u.unit_label, estateName: estate.name, noun: w, hasCover: !!estate.cover_photo_url })
     setShowAttach(false)
     setPickListingId(null)
@@ -415,6 +438,7 @@ export default function ListAPropertyPage() {
   }
 
   const closePicker = () => {
+    setViewUnit(null)
     setPickUnit(null)
     setShowAttach(false)
     setPickListingId(null)
@@ -457,22 +481,76 @@ export default function ListAPropertyPage() {
 
   const cardBase = 'focus-ring flex min-h-20 w-full items-center gap-3 rounded-card border border-border bg-card p-4 text-left hover:bg-secondary'
 
-  // One flat or house tile on a place card.
-  const tileFor = (u: UnitRow, e: EstateRow, oneE: string) =>
-    u.listing_id ? (
-      <span key={u.id} title={tileNote(u)} className={`rounded-button px-2.5 py-1 text-xs font-semibold ${tileClass(u)}`}>{u.unit_label}</span>
-    ) : (
+  // One flat or house tile on a place card. Colour and a word both show the status.
+  const tileFor = (u: UnitRow, e: EstateRow, oneE: string) => {
+    const st = stateOf(u)
+    return (
       <button
         key={u.id}
         type="button"
         onClick={() => openPicker(u, e)}
-        title={`List ${oneE} ${u.unit_label}`}
-        aria-label={`${cap(oneE)} ${u.unit_label}, not listed yet. Tap to list it`}
-        className={`focus-ring inline-flex min-h-11 items-center rounded-button px-3 text-xs font-semibold ${tileClass(u)}`}
+        aria-label={`${cap(oneE)} ${u.unit_label}, ${TILE_META[st].label}. Tap to open`}
+        className={`focus-ring flex min-h-12 flex-col items-center justify-center rounded-button px-1 py-1 text-sm font-semibold ${TILE_META[st].cls}`}
       >
-        {u.unit_label}
+        <span>{u.unit_label}</span>
+        <span className="text-[11px] font-normal leading-tight">{TILE_META[st].label}</span>
       </button>
     )
+  }
+
+  // Flats in floor rows, top floor first. Houses and rooms (no floors) are one grid.
+  const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const unitsView = (list: UnitRow[], e: EstateRow, oneE: string, prefix: string) => {
+    const hasFloors = list.some((u) => u.floor_no !== null)
+    if (!hasFloors) {
+      return (
+        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+          {list.slice(0, 120).map((u) => tileFor(u, e, oneE))}
+          {list.length > 120 && <span className="px-1 py-1 text-xs text-muted-foreground">+{list.length - 120} more</span>}
+        </div>
+      )
+    }
+    const byFloor = new Map<number, UnitRow[]>()
+    for (const u of list) byFloor.set(u.floor_no ?? 0, [...(byFloor.get(u.floor_no ?? 0) ?? []), u])
+    const floors = [...byFloor.keys()].sort((a, b) => b - a)
+    return (
+      <div className="space-y-2">
+        {floors.length >= 10 && (
+          <label className="flex items-center gap-2 text-xs font-semibold text-foreground">
+            Jump to floor
+            <select
+              defaultValue=""
+              onChange={(ev) => { if (ev.target.value) jumpTo(ev.target.value) }}
+              className="min-h-11 rounded-button border border-border bg-card px-2 text-sm font-normal"
+            >
+              <option value="" disabled>Choose</option>
+              {floors.map((f) => <option key={f} value={`${prefix}-f${f}`}>{f === 0 ? 'Ground' : floorWord(f)}</option>)}
+            </select>
+          </label>
+        )}
+        {floors.map((f) => (
+          <div key={f} id={`${prefix}-f${f}`} className="scroll-mt-4">
+            <p className="mb-1 text-xs font-semibold text-muted-foreground">{floorWord(f)} floor</p>
+            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">{(byFloor.get(f) ?? []).map((u) => tileFor(u, e, oneE))}</div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // One line for the top of a place card: "40 flats: 6 live, 2 in review, 32 not listed."
+  const summaryOf = (us: UnitRow[], oneE: string, manyE: string) => {
+    const c: Record<TileState, number> = { not_listed: 0, waiting: 0, live: 0, reserved: 0, rented: 0, paused: 0, attention: 0, listed: 0 }
+    for (const u of us) c[stateOf(u)]++
+    const parts: string[] = []
+    if (c.live) parts.push(`${c.live} live`)
+    if (c.waiting) parts.push(`${c.waiting} in review`)
+    if (c.reserved) parts.push(`${c.reserved} reserved`)
+    if (c.rented) parts.push(`${c.rented} rented`)
+    if (c.paused + c.attention + c.listed) parts.push(`${c.paused + c.attention + c.listed} to check`)
+    if (c.not_listed) parts.push(`${c.not_listed} not listed`)
+    return `${plural(us.length, oneE, manyE)}: ${parts.join(', ')}.`
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 p-4 sm:p-6">
@@ -763,6 +841,36 @@ export default function ListAPropertyPage() {
           <p className="rounded-card border border-border bg-card p-4 text-sm text-muted-foreground">Nothing here yet. Choose what you are adding above.</p>
         )}
 
+        {viewUnit && (
+          <div ref={panelRef} role="dialog" aria-label={`${cap(viewUnit.noun)} ${viewUnit.label}`} className="space-y-3 rounded-card border-2 border-primary bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-bold text-foreground">{cap(viewUnit.noun)} {viewUnit.label}</p>
+                <p className="text-xs text-muted-foreground">{viewUnit.estateName}</p>
+              </div>
+              <button type="button" onClick={closePicker} className="focus-ring min-h-11 shrink-0 rounded-button px-3 text-sm font-semibold text-primary">Close</button>
+            </div>
+            <p className={`inline-block rounded-chip px-2.5 py-1 text-xs font-semibold ${TILE_META[viewUnit.state].cls}`}>{TILE_META[viewUnit.state].label}</p>
+            <p className="text-xs text-muted-foreground">
+              {viewUnit.state === 'live' && 'Tenants can see and apply for this one.'}
+              {viewUnit.state === 'waiting' && 'EboHomes is reviewing it. Tenants see it once it is live.'}
+              {viewUnit.state === 'reserved' && 'A tenant has reserved it. It stays reserved until the handover is done.'}
+              {viewUnit.state === 'rented' && 'This one is rented.'}
+              {viewUnit.state === 'paused' && 'It is paused and hidden from tenants. Open My Properties to confirm it is still available.'}
+              {viewUnit.state === 'attention' && 'This listing was rejected or suspended. Open it to see why.'}
+              {viewUnit.state === 'listed' && 'This one has a listing.'}
+            </p>
+            <Link href={`/dashboard/edit/${viewUnit.listingId}`} className="focus-ring flex min-h-12 w-full items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground">
+              Edit listing
+            </Link>
+            {(viewUnit.state === 'live' || viewUnit.state === 'reserved') && (
+              <Link href={`/listing/${viewUnit.listingId}`} className="focus-ring flex min-h-12 w-full items-center justify-center rounded-button border border-border bg-card px-4 text-sm font-semibold text-primary">
+                View as a tenant sees it
+              </Link>
+            )}
+          </div>
+        )}
+
         {pickUnit && (
           <div ref={panelRef} role="dialog" aria-label={`${cap(pickUnit.noun)} ${pickUnit.label}`} className="space-y-3 rounded-card border-2 border-primary bg-card p-4">
             <div className="flex items-start justify-between gap-3">
@@ -842,7 +950,6 @@ export default function ListAPropertyPage() {
         {ownEstates.map((e) => {
           const [oneE, manyE] = noun(e.kind)
           const us = [...(e.units ?? [])].sort((a, b) => (b.floor_no ?? 0) - (a.floor_no ?? 0) || a.unit_label.localeCompare(b.unit_label, undefined, { numeric: true }))
-          const shown = us.slice(0, 48)
           const busy = cardBusy === e.id
 
           // A compound: flats that have floors and a building name. Shown one fold-out section per building.
@@ -861,8 +968,8 @@ export default function ListAPropertyPage() {
                     {e.address_text ? `, ${e.address_text}` : ''}
                   </p>
                 </div>
-                <p className="shrink-0 text-xs text-muted-foreground">{plural(us.length, oneE, manyE)}</p>
               </div>
+              <p className="mt-2 text-sm font-semibold text-foreground">{summaryOf(us, oneE, manyE)}</p>
 
               {/* Stage B3a: the overview photo, or the way to add it. */}
               {e.cover_photo_url ? (
@@ -897,21 +1004,15 @@ export default function ListAPropertyPage() {
                         <summary className="focus-ring cursor-pointer text-sm font-semibold text-foreground">
                           {bn} <span className="font-normal text-muted-foreground">· {plural(inB.length, oneE, manyE)}, {listed} listed</span>
                         </summary>
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {inB.slice(0, 80).map((u) => tileFor(u, e, oneE))}
-                          {inB.length > 80 && <span className="px-1 py-1 text-xs text-muted-foreground">+{inB.length - 80} more</span>}
-                        </div>
+                        <div className="mt-3">{unitsView(inB, e, oneE, `${e.id}-b${bi}`)}</div>
                       </details>
                     )
                   })}
                 </div>
               ) : (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {shown.map((u) => tileFor(u, e, oneE))}
-                  {us.length > shown.length && <span className="px-1 py-1 text-xs text-muted-foreground">+{us.length - shown.length} more</span>}
-                </div>
+                <div className="mt-3">{unitsView(us, e, oneE, e.id)}</div>
               )}
-              <p className="mt-2 text-xs text-muted-foreground">Dashed means not listed yet. Tap one to list it.</p>
+              <p className="mt-3 text-xs text-muted-foreground">Dashed: not listed, tap to list it. Green: live. Amber: in review. Grey: rented.</p>
             </div>
           )
         })}
