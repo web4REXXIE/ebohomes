@@ -14,6 +14,7 @@ import {
 import { TONE_CLASS } from '@/lib/viewing-status'
 import { OWNER_LISTING_COLUMNS } from '@/lib/listing-columns'
 import { authorityStatusInfo } from '@/lib/listing-authority'
+import { RankTipsCard } from '@/components/rank-tips-card'
 
 const AUTHORITY_TONE: Record<string, string> = {
   neutral: 'border-slate-300 bg-slate-50 text-slate-800',
@@ -458,6 +459,8 @@ export default function MyListingsPage() {
                           )}
                         </div>
                       )}
+
+                      {listing.status === 'approved' && <RankTipsCard listing={listing} inspected={inspected.has(listing.id)} />}
 
                       <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${AUTHORITY_TONE[auth.tone]}`}>
                         <p className="flex items-center gap-1.5 font-bold"><ShieldCheck size={13} aria-hidden /> {auth.label}</p>
