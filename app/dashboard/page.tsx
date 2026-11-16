@@ -146,7 +146,7 @@ export default function DashboardOverview() {
   })
 
   const QUICK_ACTIONS = [
-    { label: 'Add new property', sub: 'List a property', icon: Plus, href: '/list-property' },
+    { label: 'Add new property', sub: 'List a property', icon: Plus, href: '/dashboard/estates' },
     { label: 'My properties', sub: 'Status of each one', icon: List, href: '/dashboard/listings' },
     { label: 'Viewings', sub: 'Appointments for your properties', icon: CalendarClock, href: '/dashboard/viewings' },
     { label: 'Applications', sub: 'Tenants who applied', icon: FileText, href: '/dashboard/applications' },
@@ -165,7 +165,7 @@ export default function DashboardOverview() {
             <p className="text-sm text-white/85">Here is where each of your properties stands.</p>
           </div>
           <Link
-            href="/list-property"
+            href="/dashboard/estates"
             className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-forest"
           >
             <Plus size={16} aria-hidden /> Add new property
