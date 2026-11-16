@@ -116,10 +116,19 @@ function text(n: number | null | undefined): string {
   return n === null || n === undefined ? '' : String(n)
 }
 
-// Copies the details that are the same from flat to flat. It never copies the money (rent, service charge,
-// caution deposit) or the available-from date: every flat has its own, so the landlord types them fresh.
+// Copies the details that are the same from flat to flat, including the rent, service charge and caution deposit.
+// The landlord must check them before submitting: step 4 shows a notice, and nothing is published by copying.
+// The available-from date is copied only if it is still today or later. A date in the past would be wrong.
+// Photos and video are never copied.
 function copyDataFrom(row: SiblingListingRow): Partial<FormShape> {
+  const today = new Date().toISOString().slice(0, 10)
+  const date = row.availability_date && row.availability_date >= today ? row.availability_date : ''
   return {
+    monthlyRent: text(row.price_monthly),
+    annualRent: row.price_monthly ? String(row.price_monthly * 12) : '',
+    serviceCharge: text(row.service_charge),
+    cautionDeposit: text(row.caution_deposit),
+    availabilityDate: date,
     listingType: row.listing_type === 'sale' ? 'sale' : 'rent',
     propertyType: row.property_type ?? '',
     bedrooms: text(row.bedrooms),
@@ -616,7 +625,7 @@ export default function ListPropertyPage() {
                 <div className="space-y-2 rounded-lg border border-primary/30 bg-secondary p-3">
                   <p className="text-sm font-semibold text-foreground">Same as another {unitCtx.noun}?</p>
                   <p className="text-xs text-muted-foreground">
-                    Copy the details, then change only what is different. Rent, charges, the available-from date, photos and video are never copied. Type those fresh for this {unitCtx.noun}.
+                    Copy the details, including the rent and charges, then change only what is different. Photos and video are never copied. Nothing is submitted until you finish the last step.
                   </p>
                   <label htmlFor="lp-copy-from" className="sr-only">Copy from</label>
                   <select
@@ -638,7 +647,7 @@ export default function ListPropertyPage() {
                   </button>
                   {copiedFrom && (
                     <p role="status" className="text-sm font-medium text-success">
-                      Copied from {copiedFrom}. Type this {unitCtx.noun}&apos;s rent, charges and dates in step 4, and add its own photos in step 2.
+                      Copied from {copiedFrom}. Check the rent and charges in step 4 for this {unitCtx.noun}, and add its own photos in step 2.
                     </p>
                   )}
                 </div>
@@ -958,6 +967,12 @@ export default function ListPropertyPage() {
           {step === 4 && (
             <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest sm:p-6" aria-labelledby="step-heading">
               <h2 id="step-heading" ref={headingRef} tabIndex={-1} className="text-xl font-bold text-foreground outline-none">Pricing &amp; Contact</h2>
+
+              {copiedFrom && unitCtx && (
+                <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-900">
+                  The rent and charges below were copied from {copiedFrom}. Check each amount is right for {unitCtx.noun === 'room' ? 'this room' : `this ${unitCtx.noun}`} before you continue.
+                </p>
+              )}
 
               <Field id="lp-rent" label="Monthly Rent (₦) *">
                 <input
