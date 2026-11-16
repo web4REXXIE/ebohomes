@@ -20,6 +20,7 @@ type Info = {
   floor: number | null
   estateId: string
   estateName: string
+  kind: string
 }
 type Peek = { units: ViewUnit[]; live: Set<string> }
 
@@ -48,7 +49,7 @@ export function UnitBadge({ listingId, className = '' }: { listingId: string; cl
         const row = data as unknown as UnitRow
         const estate = Array.isArray(row.estates) ? row.estates[0] : row.estates
         if (!estate || estate.kind === 'single_house') return
-        setInfo({ unitId: row.id, unit: row.unit_label, floor: row.floor_no, estateId: estate.id, estateName: estate.name })
+        setInfo({ unitId: row.id, unit: row.unit_label, floor: row.floor_no, estateId: estate.id, estateName: estate.name, kind: estate.kind })
 
         // The picture of the building. If this part fails, the card is still shown without it.
         try {
@@ -102,6 +103,35 @@ export function UnitBadge({ listingId, className = '' }: { listingId: string; cl
     }
   }, [peek, info])
 
+  // Say plainly what this place is and where the flat sits: a flat in a building, a flat in a building of a compound,
+  // a house in an estate, a room in a hostel.
+  const place = useMemo(() => {
+    if (!info) return null
+    const all = peek?.units ?? []
+    const hasFloors = all.some((u) => u.floor_no !== null)
+    const hasBuildings = hasFloors && all.some((u) => (u.group_label ?? '').trim() !== '')
+    const me = all.find((u) => u.id === info.unitId)
+    const bName = (me?.group_label ?? '').trim()
+    if (hasBuildings) {
+      return {
+        word: 'compound',
+        eyebrow: 'Part of a compound',
+        sentence: `A flat in ${bName || 'one of the buildings'}, inside ${info.estateName} (a compound).`,
+      }
+    }
+    if (info.kind === 'hostel') {
+      return { word: 'hostel', eyebrow: 'Part of a hostel', sentence: `A room in ${info.estateName} (a hostel).` }
+    }
+    if (info.kind === 'estate' && !hasFloors) {
+      return { word: 'estate', eyebrow: 'Part of an estate', sentence: `A house in ${info.estateName} (an estate).` }
+    }
+    return {
+      word: 'building',
+      eyebrow: 'Part of a building',
+      sentence: `A flat${info.floor !== null ? ` on floor ${info.floor}` : ''} in ${info.estateName} (a building).`,
+    }
+  }, [info, peek])
+
   if (!info) return null
 
   const summary = view ? `${view.total} ${view.total === 1 ? 'unit' : 'units'}, ${view.toLet} to let` : null
@@ -114,7 +144,7 @@ export function UnitBadge({ listingId, className = '' }: { listingId: string; cl
     >
       <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
         <Building2 size={14} aria-hidden className="shrink-0" />
-        This flat is part of a building
+        {place?.eyebrow ?? 'Part of a building'}
       </p>
 
       <p className="mt-1 text-base text-foreground">
@@ -122,6 +152,7 @@ export function UnitBadge({ listingId, className = '' }: { listingId: string; cl
         {info.floor !== null ? `, floor ${info.floor}` : ''}
         <span className="text-muted-foreground">, {info.estateName}</span>
       </p>
+      {place && <p className="mt-1 text-sm text-muted-foreground">{place.sentence}</p>}
 
       {view && (
         <div className="mt-3 rounded-md bg-secondary p-3" role="img" aria-label={summary ?? undefined}>
@@ -164,7 +195,7 @@ export function UnitBadge({ listingId, className = '' }: { listingId: string; cl
       )}
 
       <span className="mt-3 flex min-h-12 items-center justify-center gap-2 rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground">
-        View building
+        View {place?.word ?? 'building'}
         <ArrowRight size={16} aria-hidden className="transition-transform group-hover:translate-x-1 group-active:translate-x-1 motion-reduce:transition-none" />
       </span>
     </Link>
