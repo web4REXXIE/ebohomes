@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { useInspectedIds } from '@/lib/use-inspected-ids'
 import {
   Home,
   CheckCircle2,
@@ -23,14 +22,15 @@ import {
   Building2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { PropertySummary, type PropertyLite } from '@/components/property-summary'
-import { listingIsLive } from '@/lib/property-display'
-import { groupListings, isNewlyApproved, listingStatusInfo } from '@/lib/listing-status'
-import { TONE_CLASS } from '@/lib/viewing-status'
+import { displayTitle } from '@/lib/property-display'
+import { groupListings, isNewlyApproved } from '@/lib/listing-status'
 import { OWNER_LISTING_COLUMNS } from '@/lib/listing-columns'
 import { landlordVerificationDisplay, type VerificationDisplayState } from '@/lib/landlord-verification'
 import { MetricCard, ToneChip } from '@/components/dashboard-ui'
 import { StillAvailableCard } from '@/components/still-available-card'
+import { NeedsYou } from '@/components/needs-you'
+import { buildNeedsYou } from '@/lib/needs-you'
+import { pickListingToConfirm } from '@/lib/availability-check'
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
 
@@ -55,9 +55,10 @@ export default function DashboardOverview() {
   const [activityFailed, setActivityFailed] = useState(false)
   // null = could not be loaded. Shown as a dash, never as zero.
   const [openApplications, setOpenApplications] = useState<number | null>(null)
+  // Offers waiting for this landlord to confirm. null = could not be loaded. Shown as "could not check", never as "none".
+  const [offers, setOffers] = useState<{ id: string; listing_id: string; expires_at: string | null }[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
-  const inspected = useInspectedIds(listings.map((l) => l.id))
 
   const load = async () => {
     setLoading(true)
@@ -68,12 +69,14 @@ export default function DashboardOverview() {
       return
     }
 
-    const [pRes, lRes, nRes, aRes] = await Promise.all([
+    const [pRes, lRes, nRes, aRes, oRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('listings').select(`${OWNER_LISTING_COLUMNS}, properties(public_id)`).eq('landlord_id', user.id).order('created_at', { ascending: false }),
       supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
       // Applications on this landlord's properties that nobody has decided yet. Same filter family as the sidebar badge, read only.
       supabase.from('applications').select('*', { count: 'exact', head: true }).eq('landlord_id', user.id).in('status', ['pending', 'info_requested']),
+      // Offers EboHomes issued that differ from the listing. The tenant cannot see them until this landlord confirms.
+      supabase.from('rental_offers').select('id, listing_id, expires_at').eq('landlord_id', user.id).eq('status', 'offered').eq('offered_by_role', 'admin').is('landlord_confirmed_at', null),
     ])
     if (lRes.error) setFailed(true)
     setProfileFailed(Boolean(pRes.error) || !pRes.data)
@@ -82,6 +85,7 @@ export default function DashboardOverview() {
     setActivityFailed(Boolean(nRes.error))
     setActivity(nRes.data ?? [])
     setOpenApplications(aRes.error ? null : aRes.count ?? 0)
+    setOffers(oRes.error ? null : ((oRes.data ?? []) as { id: string; listing_id: string; expires_at: string | null }[]))
     setLoading(false)
   }
 
@@ -93,6 +97,11 @@ export default function DashboardOverview() {
   const justApproved = useMemo(() => listings.filter((l) => isNewlyApproved(l, Date.now() - SEVEN_DAYS)), [listings])
   const rentedCount = useMemo(() => listings.filter((l) => l.status === 'rented').length, [listings])
   const verification = useMemo(() => landlordVerificationDisplay(profileFailed ? null : profile), [profile, profileFailed])
+  // Properties the "Still available?" card should ask about: 4 days or less left, or already paused by the check. The reminder starts at day 10.
+  const dueListings = useMemo(
+    () => listings.filter((l) => { const p = pickListingToConfirm([l]); return !!p && p.daysLeft <= 4 }),
+    [listings]
+  )
 
   if (loading) {
     return (
@@ -120,29 +129,21 @@ export default function DashboardOverview() {
     { label: 'Open applications', hint: 'Not yet decided', value: openApplications, icon: FileText, tone: 'neutral' as const, href: '/dashboard/applications' },
   ]
 
-  // One clear next step, chosen from real records only. Listing-based steps are skipped when listings failed to load.
-  type Next = { title: string; text: string; href: string; cta: string }
-  const next: Next | null = (() => {
-    if (!failed && listings.length === 0) {
-      return { title: 'Add your first property', text: 'Tenants can only find a property after you list it and EboHomes approves it.', href: '/list-property', cta: 'Add new property' }
-    }
-    if (verification.needsAction) {
-      return verification.state === 'rejected'
-        ? { title: 'Update your verification details', text: 'EboHomes did not approve your last submission. The reason is on the Get Verified page.', href: '/dashboard/verify', cta: verification.actionLabel }
-        : { title: 'Complete your verification', text: verification.detail, href: '/dashboard/verify', cta: verification.actionLabel }
-    }
-    if (!failed && groups.attention.length > 0) {
-      const n = groups.attention.length
-      return { title: `${n} ${n === 1 ? 'property needs' : 'properties need'} your attention`, text: 'EboHomes did not approve or has hidden these. Read the reason on each one.', href: '/dashboard/listings#group-attention', cta: 'See what to fix' }
-    }
-    if (openApplications !== null && openApplications > 0) {
-      return { title: `${openApplications} open ${openApplications === 1 ? 'application' : 'applications'}`, text: 'Tenants have applied. EboHomes decides each one, and you can add your recommendation.', href: '/dashboard/applications', cta: 'Open applications' }
-    }
-    if (!failed) {
-      return { title: 'You are up to date', text: 'Nothing needs your action right now.', href: '/dashboard/listings', cta: 'View my properties' }
-    }
-    return null
-  })()
+  // One list of everything that needs the landlord. See lib/needs-you.ts for the order and the rules.
+  const needs = buildNeedsYou({
+    now: Date.now(),
+    listingsLoaded: !failed,
+    listingCount: listings.length,
+    attention: groups.attention.map((l) => ({
+      id: l.id,
+      title: displayTitle(l as any),
+      status: l.status,
+      reason: l.status === 'suspended' ? l.suspension_reason ?? null : l.rejection_reason ?? null,
+    })),
+    offers: offers === null ? null : offers.map((o) => ({ id: o.id, title: displayTitle(listings.find((l) => l.id === o.listing_id) as any), expires_at: o.expires_at })),
+    verification: { needsAction: verification.needsAction, rejected: verification.state === 'rejected', detail: verification.detail, actionLabel: verification.actionLabel },
+    openApplications,
+  })
 
   const QUICK_ACTIONS = [
     { label: 'Add new property', sub: 'List a property', icon: Plus, href: '/list-property' },
@@ -153,8 +154,6 @@ export default function DashboardOverview() {
     { label: 'Payments', sub: 'Recorded and verified', icon: CreditCard, href: '/dashboard/payments' },
   ]
 
-  // The properties that need a decision or a wait, most urgent first.
-  const watch = [...groups.attention, ...groups.review].slice(0, 4)
   const VerifyIcon = VERIFY_ICON[verification.state]
 
   return (
@@ -198,26 +197,20 @@ export default function DashboardOverview() {
         </div>
       )}
 
-      {!failed && <StillAvailableCard
-          listings={listings}
-          onChanged={async () => {
-            // Quiet refresh of the listings only, so the card's thank-you message stays on screen.
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-            const { data } = await supabase.from('listings').select(`${OWNER_LISTING_COLUMNS}, properties(public_id)`).eq('landlord_id', user.id).order('created_at', { ascending: false })
-            if (data) setListings(data)
-          }}
-        />}
-
-      {next && (
-        <section aria-labelledby="next-step" className="mb-6 rounded-card border border-border border-l-4 border-l-primary bg-card p-4 shadow-rest sm:p-5">
-          <h2 id="next-step" className="text-base font-bold text-foreground">{next.title}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{next.text}</p>
-          <Link href={next.href} className="focus-ring mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
-            {next.cta} <ArrowRight size={14} aria-hidden />
-          </Link>
-        </section>
-      )}
+      <NeedsYou items={needs.items} partial={needs.partial} dueCount={failed ? 0 : dueListings.length} onRetry={load}>
+        {!failed && (
+          <StillAvailableCard
+            listings={dueListings}
+            onChanged={async () => {
+              // Quiet refresh of the listings only, so the card's thank-you message stays on screen.
+              const { data: { user } } = await supabase.auth.getUser()
+              if (!user) return
+              const { data } = await supabase.from('listings').select(`${OWNER_LISTING_COLUMNS}, properties(public_id)`).eq('landlord_id', user.id).order('created_at', { ascending: false })
+              if (data) setListings(data)
+            }}
+          />
+        )}
+      </NeedsYou>
 
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3">
         {METRICS.map((m) => (
@@ -248,53 +241,6 @@ export default function DashboardOverview() {
           {verification.actionLabel} <ArrowRight size={12} aria-hidden />
         </Link>
       </section>
-
-      <div className="mb-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-foreground">What needs your attention</h2>
-          <Link href="/dashboard/listings" className="focus-ring inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-primary">
-            All properties <ArrowRight size={12} aria-hidden />
-          </Link>
-        </div>
-        {failed ? (
-          <div className="rounded-card border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground">
-            Properties could not be loaded, so this list is unavailable.
-          </div>
-        ) : watch.length === 0 ? (
-          <div className="rounded-card border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground">
-            {listings.length === 0
-              ? 'You have not added a property yet.'
-              : 'Nothing needs your attention right now. Your other properties are live, paused or rented.'}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {watch.map((l) => {
-              const info = listingStatusInfo(l.status)
-              return (
-                <div key={l.id} className="rounded-card border border-border bg-card p-4 shadow-rest">
-                  <span className={`mb-3 inline-block rounded-full border px-2.5 py-1 text-xs font-bold ${TONE_CLASS[info.tone]}`}>{info.label}</span>
-                  <PropertySummary
-                    compact
-                    listing={l as PropertyLite}
-                    inspected={inspected.has(l.id)}
-                    href={listingIsLive(l.status) ? `/listing/${l.id}` : undefined}
-                  />
-                  <p className="mt-3 text-sm text-foreground">{info.meaning}</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">Next: <span className="font-normal">{info.next}</span></p>
-                  {l.status === 'rejected' && l.rejection_reason && (
-                    <p className="mt-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
-                      <span className="font-semibold">Reason from EboHomes:</span> {l.rejection_reason}
-                    </p>
-                  )}
-                  <Link href={`/dashboard/listings#listing-${l.id}`} className="focus-ring mt-3 inline-flex min-h-11 items-center rounded-full border border-border px-4 text-xs font-bold text-foreground hover:bg-secondary">
-                    Open this property
-                  </Link>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
 
       <div className="mb-8">
         <h2 className="mb-3 text-lg font-bold text-foreground">Go to</h2>
@@ -342,4 +288,4 @@ export default function DashboardOverview() {
       </div>
     </div>
   )
-}
+      }
