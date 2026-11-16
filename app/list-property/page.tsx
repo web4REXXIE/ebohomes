@@ -116,8 +116,9 @@ function text(n: number | null | undefined): string {
   return n === null || n === undefined ? '' : String(n)
 }
 
+// Copies the details that are the same from flat to flat. It never copies the money (rent, service charge,
+// caution deposit) or the available-from date: every flat has its own, so the landlord types them fresh.
 function copyDataFrom(row: SiblingListingRow): Partial<FormShape> {
-  const monthly = text(row.price_monthly)
   return {
     listingType: row.listing_type === 'sale' ? 'sale' : 'rent',
     propertyType: row.property_type ?? '',
@@ -127,15 +128,10 @@ function copyDataFrom(row: SiblingListingRow): Partial<FormShape> {
     furnished: row.furnished ? 'yes' : 'no',
     description: row.description ?? '',
     amenities: Array.isArray(row.amenities) ? row.amenities : [],
-    monthlyRent: monthly,
-    annualRent: monthly ? String(Number(monthly) * 12) : '',
-    serviceCharge: text(row.service_charge),
-    cautionDeposit: text(row.caution_deposit),
     location: row.location_text ?? '',
     lat: row.lat,
     lng: row.lng,
     phoneNumber: row.contact_info ?? '',
-    availabilityDate: row.availability_date ?? '',
   }
 }
 
@@ -620,7 +616,7 @@ export default function ListPropertyPage() {
                 <div className="space-y-2 rounded-lg border border-primary/30 bg-secondary p-3">
                   <p className="text-sm font-semibold text-foreground">Same as another {unitCtx.noun}?</p>
                   <p className="text-xs text-muted-foreground">
-                    Copy the details and rent, then change only what is different. Photos and video are never copied.
+                    Copy the details, then change only what is different. Rent, charges, the available-from date, photos and video are never copied. Type those fresh for this {unitCtx.noun}.
                   </p>
                   <label htmlFor="lp-copy-from" className="sr-only">Copy from</label>
                   <select
@@ -642,7 +638,7 @@ export default function ListPropertyPage() {
                   </button>
                   {copiedFrom && (
                     <p role="status" className="text-sm font-medium text-success">
-                      Copied from {copiedFrom}. Check each step. Add this {unitCtx.noun}&apos;s own photos in step 2.
+                      Copied from {copiedFrom}. Type this {unitCtx.noun}&apos;s rent, charges and dates in step 4, and add its own photos in step 2.
                     </p>
                   )}
                 </div>
