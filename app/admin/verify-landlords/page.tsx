@@ -33,6 +33,14 @@ type Landlord = {
   rejection_reason: string | null
 }
 
+// One row of the landlord_trust view: a guide for reviewers. It never approves or bans anyone.
+type TrustRow = {
+  landlord_id: string
+  score: number
+  level: string
+  reasons: string[] | null
+}
+
 type Tab = VerificationBucket
 
 const TAB_LABEL: Record<Tab, string> = {
@@ -54,6 +62,7 @@ export default function VerifyLandlordsPage() {
   const [selfieSignedUrl, setSelfieSignedUrl] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [actionError, setActionError] = useState('')
+  const [trust, setTrust] = useState<Record<string, TrustRow>>({})
 
   const fetchLandlords = useCallback(async () => {
     setLoading(true)
@@ -68,6 +77,17 @@ export default function VerifyLandlordsPage() {
   }, [])
 
   useEffect(() => { fetchLandlords() }, [fetchLandlords])
+
+  // Read only: the same landlord_trust view the old Landlord trust page read. If it fails, the score is simply not shown.
+  useEffect(() => {
+    const loadTrust = async () => {
+      const { data } = await supabase.from('landlord_trust').select('*').limit(1000)
+      const m: Record<string, TrustRow> = {}
+      ;(data ?? []).forEach((r: any) => { m[r.landlord_id] = r as TrustRow })
+      setTrust(m)
+    }
+    loadTrust()
+  }, [])
 
   function statusOf(l: Landlord): Tab {
     return verificationBucket(l)
@@ -253,6 +273,7 @@ export default function VerifyLandlordsPage() {
                   <p className="text-xs text-muted-foreground truncate">{l.business_name ?? l.phone ?? ''}</p>
                   <p className="text-xs text-muted-foreground">
                     Joined {new Date(l.created_at).toLocaleDateString()}
+                    {trust[l.id] ? ` · Trust ${trust[l.id].score}` : ''}
                   </p>
                 </div>
               </button>
@@ -330,6 +351,27 @@ export default function VerifyLandlordsPage() {
                   <p className="text-xs text-destructive mt-1">
                     <span className="font-semibold">Reason:</span> {selected.rejection_reason}
                   </p>
+                )}
+              </div>
+
+              <div className="bg-card border border-border rounded-lg p-5">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="font-semibold text-foreground">Trust score</h3>
+                  {trust[selected.id] ? (
+                    <p className="text-sm font-semibold capitalize">{trust[selected.id].score} · {trust[selected.id].level}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No score yet</p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  A guide for reviewers. It moves up and down with behaviour and never approves or bans anyone.
+                </p>
+                {trust[selected.id] && (trust[selected.id].reasons ?? []).length > 0 && (
+                  <ul className="text-xs text-muted-foreground list-disc pl-4 mt-2">
+                    {(trust[selected.id].reasons ?? []).map((x) => (
+                      <li key={x}>{x}</li>
+                    ))}
+                  </ul>
                 )}
               </div>
 
