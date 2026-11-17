@@ -22,7 +22,7 @@ const NAV_GROUPS: AccountNavGroup[] = [
       {
         href: '/admin/property-review', label: 'Properties', icon: Building2,
         alsoActive: [
-          '/admin/listing-authority', '/admin/holds', '/admin/disputes', '/admin/verify-landlords',
+          '/admin/listing-authority', '/admin/holds', '/admin/verify-landlords',
           '/admin/inspections', '/admin/remote-inspections', '/admin/remote-inspection-reviews', '/admin/surroundings',
         ],
       },
