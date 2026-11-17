@@ -107,8 +107,8 @@ assert.equal([...layout.matchAll(/href: '/g)].length, EXPECTED_SIDEBAR_COUNT, 's
 // Every shared landlord link is reachable from the sidebar.
 for (const l of links.LANDLORD_LINKS) assert.ok(layout.includes(`href: '${l.href}'`), `shared link ${l.href} is not in the sidebar`)
 assert.ok(links.LANDLORD_LINKS.some((l) => l.href === '/dashboard/inspection-requests'), 'Inspection requests must be in LANDLORD_LINKS')
-// Tenant links are not changed by this stage.
-assert.equal(links.TENANT_LINKS.length, 8)
+// Tenant links: reduced to four by the tenant menu simplification.
+assert.equal(links.TENANT_LINKS.length, 4)
 assert.equal(links.dashboardLinks('landlord'), links.LANDLORD_LINKS)
 assert.equal(links.dashboardLinks('tenant'), links.TENANT_LINKS)
 // Badges keep their data sources.
