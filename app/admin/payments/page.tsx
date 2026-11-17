@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { getPaymentState, PAYMENT_STATE_LABEL, type PaymentState } from '@/lib/payment-status'
 import { PropertySummary, usePropertyData } from '@/components/property-summary'
 import { useConfirm } from '@/components/confirm-dialog'
+import { AdminPageHeader, EmptyState, ErrorState, LoadingState, StatusChip, type AdminState } from '@/components/admin-ui'
 
 type Payment = {
   id: string
@@ -36,13 +37,14 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'rejected', label: 'Rejected' },
 ]
 
-const BADGE: Record<PaymentState, string> = {
-  verified: 'border border-emerald-300 bg-emerald-50 text-emerald-900',
-  legacy_confirmed: 'border border-amber-300 bg-amber-50 text-amber-900',
-  awaiting_verification: 'border border-amber-300 bg-amber-50 text-amber-900',
-  pending: 'border border-slate-300 bg-slate-100 text-slate-800',
-  rejected: 'border border-red-300 bg-red-50 text-red-900',
-  other: 'border border-slate-300 bg-slate-100 text-slate-800',
+// One fixed state per payment state. The chip always shows the wording as text with an icon.
+const STATE: Record<PaymentState, AdminState> = {
+  verified: 'success',
+  legacy_confirmed: 'pending',
+  awaiting_verification: 'pending',
+  pending: 'neutral',
+  rejected: 'danger',
+  other: 'neutral',
 }
 
 const LIMIT = 500
@@ -211,53 +213,53 @@ export default function AdminPaymentsPage() {
 
   if (access === 'checking') {
     return (
-      <div className="flex justify-center py-16">
-        <Loader2 className="animate-spin text-primary" size={26} aria-label="Checking access" />
+      <div className="mx-auto max-w-4xl p-4 md:p-6">
+        <LoadingState label="Checking access..." />
       </div>
     )
   }
   if (access === 'denied') {
-    return <p className="text-center py-16 text-sm text-muted-foreground">Only EboHomes administrators can review payments.</p>
+    return <p className="py-16 text-center text-sm text-muted-foreground">Only EboHomes administrators can review payments.</p>
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-foreground mb-1">Payments</h1>
-      <p className="text-sm text-muted-foreground mb-4">
-        Landlords record payments. Only an EboHomes administrator can verify or reject them. EboHomes does not move money.
-      </p>
+    <div className="mx-auto max-w-4xl p-4 md:p-6">
+      <AdminPageHeader
+        title="Payments"
+        description="Landlords record payments. Only an EboHomes administrator can verify or reject them. EboHomes does not move money."
+      />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+      <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
           { label: 'All', value: counts.all },
           { label: 'Awaiting review', value: counts.awaiting },
           { label: 'Confirmed', value: counts.confirmed },
           { label: 'Rejected', value: counts.rejected },
         ].map((c) => (
-          <div key={c.label} className="bg-card border border-border rounded-lg p-3">
+          <div key={c.label} className="rounded-lg border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">{c.label}</p>
             <p className="text-xl font-bold text-foreground">{c.value}</p>
           </div>
         ))}
       </div>
       {counts.legacyConfirmed > 0 && (
-        <p className="text-xs text-muted-foreground mb-2">
+        <p className="mb-2 text-xs text-muted-foreground">
           {counts.legacyConfirmed} confirmed record{counts.legacyConfirmed === 1 ? '' : 's'} have no verifier on file (older
           records). They are not counted as verified and need manual review outside this page.
         </p>
       )}
       {payments.length >= LIMIT && (
-        <p className="text-xs text-muted-foreground mb-2">Showing the latest {LIMIT} payments. Counts cover these only.</p>
+        <p className="mb-2 text-xs text-muted-foreground">Showing the latest {LIMIT} payments. Counts cover these only.</p>
       )}
 
-      <div className="flex gap-2 my-3 overflow-x-auto">
+      <div className="my-3 flex gap-2 overflow-x-auto">
         {FILTERS.map((f) => (
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
             aria-pressed={filter === f.key}
-            className={`min-h-11 px-4 rounded-full text-sm font-medium border whitespace-nowrap ${
-              filter === f.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-foreground'
+            className={`focus-ring min-h-11 whitespace-nowrap rounded-full border px-4 text-sm font-medium ${
+              filter === f.key ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-foreground'
             }`}
           >
             {f.label}
@@ -266,7 +268,7 @@ export default function AdminPaymentsPage() {
         <button
           onClick={loadPayments}
           disabled={loading || !!busyId}
-          className="ml-auto min-h-11 px-4 rounded-full text-sm font-medium border border-border disabled:opacity-50"
+          className="focus-ring ml-auto min-h-11 rounded-full border border-border px-4 text-sm font-medium disabled:opacity-50"
         >
           Refresh
         </button>
@@ -275,8 +277,8 @@ export default function AdminPaymentsPage() {
       {notice && (
         <p
           role={notice.ok ? 'status' : 'alert'}
-          className={`text-sm font-medium rounded-md border px-3 py-2 mb-3 ${
-            notice.ok ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-red-300 bg-red-50 text-red-900'
+          className={`mb-3 rounded-md border px-3 py-2 text-sm font-medium ${
+            notice.ok ? 'border-success/30 bg-success-soft text-success' : 'border-danger/30 bg-danger-soft text-danger'
           }`}
         >
           {notice.text}
@@ -284,18 +286,11 @@ export default function AdminPaymentsPage() {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="animate-spin text-primary" size={26} aria-label="Loading payments" />
-        </div>
+        <LoadingState label="Loading payments..." />
       ) : loadError ? (
-        <div className="text-center py-12 border border-dashed border-border rounded-lg">
-          <p role="alert" className="text-sm font-medium text-red-900 mb-3 px-4">Could not load payments: {loadError}</p>
-          <button onClick={loadPayments} className="min-h-11 px-4 text-sm text-primary font-semibold">Try again</button>
-        </div>
+        <ErrorState message={`Could not load payments: ${loadError}`} onRetry={loadPayments} />
       ) : visible.length === 0 ? (
-        <p className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
-          No payments in this view.
-        </p>
+        <EmptyState title="No payments in this view" />
       ) : (
         <div className="space-y-3">
           {visible.map((p) => {
@@ -303,20 +298,18 @@ export default function AdminPaymentsPage() {
             const rowBusy = busyId === p.id
             const rejecting = rejectingId === p.id
             return (
-              <div key={p.id} className="bg-card border border-border rounded-xl p-4">
+              <div key={p.id} className="rounded-xl border border-border bg-card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-lg font-bold text-foreground">{money(p.amount)}</p>
-                    <p className="text-xs text-muted-foreground capitalize">
+                    <p className="text-xs capitalize text-muted-foreground">
                       {p.type ?? 'payment'} · {methodLabel(p.payment_method)}
                     </p>
                   </div>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${BADGE[state]}`}>
-                    {PAYMENT_STATE_LABEL[state]}
-                  </span>
+                  <StatusChip state={STATE[state]}>{PAYMENT_STATE_LABEL[state]}</StatusChip>
                 </div>
 
-                <div className="mt-3 text-sm text-foreground space-y-2">
+                <div className="mt-3 space-y-2 text-sm text-foreground">
                   <PropertySummary
                     compact
                     listing={p.listing_id ? propertyData[p.listing_id] : undefined}
@@ -335,19 +328,19 @@ export default function AdminPaymentsPage() {
                 </div>
 
                 {possibleDuplicates.has(p.id) && (
-                  <p className="mt-2 text-xs rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-2 py-1.5">
+                  <p className="mt-2 rounded-md border border-warning/30 bg-warning-soft px-2 py-1.5 text-xs text-warning">
                     Possible duplicate: another payment with the same amount was recorded for this tenancy within{' '}
                     {DUPLICATE_WINDOW_SECONDS} seconds. Check before verifying.
                   </p>
                 )}
                 {p.status === 'recorded' && p.confirmed_at && (
-                  <p className="mt-2 text-xs rounded-md bg-secondary text-muted-foreground px-2 py-1.5">
+                  <p className="mt-2 rounded-md bg-secondary px-2 py-1.5 text-xs text-muted-foreground">
                     This older record has a confirmed date ({when(p.confirmed_at)}) but its status is still recorded. It is
                     not verified.
                   </p>
                 )}
                 {p.status === 'confirmed' && !p.verified_by && (
-                  <p className="mt-2 text-xs rounded-md bg-secondary text-muted-foreground px-2 py-1.5">
+                  <p className="mt-2 rounded-md bg-secondary px-2 py-1.5 text-xs text-muted-foreground">
                     Marked confirmed in an older record, but no administrator is recorded as verifying it.
                   </p>
                 )}
@@ -375,13 +368,13 @@ export default function AdminPaymentsPage() {
                           onChange={(e) => setReason(e.target.value)}
                           disabled={!!busyId}
                           rows={3}
-                          className="w-full border border-border rounded-md px-3 py-2.5 text-sm bg-background"
+                          className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm"
                         />
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => onReject(p)}
                             disabled={!!busyId || !reason.trim()}
-                            className="flex min-h-11 items-center gap-2 px-4 rounded-md bg-red-700 text-white text-sm font-semibold disabled:opacity-50"
+                            className="focus-ring flex min-h-11 items-center gap-2 rounded-md bg-danger px-4 text-sm font-semibold text-white disabled:opacity-50"
                           >
                             {rowBusy && <Loader2 size={14} className="animate-spin" aria-hidden />}
                             Confirm rejection
@@ -389,7 +382,7 @@ export default function AdminPaymentsPage() {
                           <button
                             onClick={() => { setRejectingId(null); setReason('') }}
                             disabled={!!busyId}
-                            className="min-h-11 px-4 rounded-md border border-border text-sm font-semibold disabled:opacity-50"
+                            className="focus-ring min-h-11 rounded-md border border-border px-4 text-sm font-semibold disabled:opacity-50"
                           >
                             Cancel
                           </button>
@@ -400,7 +393,7 @@ export default function AdminPaymentsPage() {
                         <button
                           onClick={() => onVerify(p)}
                           disabled={!!busyId}
-                          className="flex min-h-11 items-center gap-2 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50"
+                          className="focus-ring flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
                         >
                           {rowBusy && <Loader2 size={14} className="animate-spin" aria-hidden />}
                           Verify Payment
@@ -408,7 +401,7 @@ export default function AdminPaymentsPage() {
                         <button
                           onClick={() => { setRejectingId(p.id); setReason(''); setNotice(null) }}
                           disabled={!!busyId}
-                          className="min-h-11 px-4 rounded-md border border-border text-sm font-semibold disabled:opacity-50"
+                          className="focus-ring min-h-11 rounded-md border border-border px-4 text-sm font-semibold disabled:opacity-50"
                         >
                           Reject Payment
                         </button>
@@ -424,4 +417,4 @@ export default function AdminPaymentsPage() {
       {dialog}
     </div>
   )
-}
+                        }
