@@ -49,7 +49,9 @@ const landlordHrefs = hrefs(landlord)
 assert.ok(tenantHrefs.every((h) => !h.startsWith('/dashboard')), 'tenant menu has no landlord pages')
 assert.ok(!landlordHrefs.includes('/home') && !landlordHrefs.includes('/saved'), 'landlord menu has no tenant pages')
 assert.equal(landlordHrefs.length, 16, 'landlord menu has its 15 destinations plus Notifications')
-assert.equal(tenantHrefs.length, 11, 'tenant menu still has its 11 destinations')
+assert.equal(tenantHrefs.length, 7, 'tenant menu has 5 main destinations (Home, Find a home, My application, My home, Inbox) plus ID Verification and Profile')
+// Pages that left the menu stay highlighted under the entry they belong to.
+for (const p of ['/saved', '/alerts', '/inspections', '/viewings', '/applications', '/handovers', '/notifications']) assert.ok(tenant.includes(`'${p}'`), `tenant menu keeps ${p} under its entry`)
 
 // Drift guard: every link in the shared list (header drop-down and bottom bar) is in that role's menu.
 for (const l of links.TENANT_LINKS) assert.ok(tenantHrefs.includes(l.href), `tenant menu is missing ${l.href}`)
