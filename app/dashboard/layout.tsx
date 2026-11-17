@@ -5,70 +5,75 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   LayoutDashboard,
-  List,
-  Plus,
-  MessageCircle,
-  BarChart3,
-  CreditCard,
-  User,
-  HelpCircle,
-  Star,
-  Bell,
-  ShieldCheck,
-  BadgeCheck,
   Building2,
-  FileText,
-  CalendarClock,
-  ClipboardCheck,
   KeyRound,
+  CreditCard,
+  MessageCircle,
+  Bell,
+  User,
+  Star,
   LogOut,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
 import { useNotifications } from '@/components/notification-provider'
 import { AccountShell, navItemClass, type AccountNavGroup } from '@/components/account-shell'
+import { SectionTabs } from '@/components/section-tabs'
 import { landlordVerificationDisplay } from '@/lib/landlord-verification'
 
-// Landlord menu: the same 16 destinations as before, now in 4 groups instead of 5, in the same order of use
-// as the tenant menu. Nothing was removed.
-// - Inspection requests and Analytics sit under Properties, because both are about the landlord's properties.
-// - Professional Profile and My Company sit under Account.
-// - "Get Verified" is now "Verification" (it reads wrongly once the landlord is verified). It keeps its
-//   small "Action needed" marker, which only shows while the landlord still has something to do.
-// Badges, active-route rules, the access check and logout are unchanged.
+// Landlord menu, simplified: six places instead of sixteen.
+//   Home, Properties, Rentals, Money, Inbox (Messages and Notifications) and Account.
+// Nothing was removed. The pages that used to have their own entry are now tabs at the top of their section
+// (see lib/landlord-sections.ts and components/section-tabs.tsx), and the entry stays highlighted on all of them:
+//   Properties: List a property, Inspection requests, Analytics (and the edit and authority pages)
+//   Rentals:    Viewings, Tenancies
+//   Money:      Payouts, Payout account
+//   Account:    Verification, Professional profile, My company, Help
+// Badges, the access check and logout are unchanged. The Applications badge sits on Rentals, the Verification
+// "Action needed" marker sits on Account.
 const NAV_GROUPS: AccountNavGroup[] = [
   {
     title: null,
-    items: [{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true }],
-  },
-  {
-    title: 'Properties',
     items: [
-      { label: 'My Properties', href: '/dashboard/listings', icon: List },
-      { label: 'List a property', href: '/dashboard/estates', icon: Plus },
-      { label: 'Inspection requests', href: '/dashboard/inspection-requests', icon: ClipboardCheck },
-      { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
+      { label: 'Home', href: '/dashboard', icon: LayoutDashboard, exact: true },
+      {
+        label: 'Properties',
+        href: '/dashboard/listings',
+        icon: Building2,
+        alsoActive: ['/dashboard/estates', '/dashboard/edit', '/dashboard/authority', '/dashboard/inspection-requests', '/dashboard/analytics'],
+      },
+      {
+        label: 'Rentals',
+        href: '/dashboard/applications',
+        icon: KeyRound,
+        badgeKey: 'applications',
+        alsoActive: ['/dashboard/viewings', '/dashboard/tenancies'],
+      },
+      {
+        label: 'Money',
+        href: '/dashboard/payments',
+        icon: CreditCard,
+        alsoActive: ['/dashboard/payouts', '/dashboard/payout-account'],
+      },
     ],
   },
   {
-    title: 'Tenants and rent',
+    title: 'Inbox',
     items: [
-      { label: 'Applications', href: '/dashboard/applications', icon: FileText, badgeKey: 'applications' },
-      { label: 'Viewings', href: '/dashboard/viewings', icon: CalendarClock },
-      { label: 'Tenancies', href: '/dashboard/tenancies', icon: KeyRound },
-      { label: 'Payments', href: '/dashboard/payments', icon: CreditCard },
       { label: 'Messages', href: '/dashboard/messages', icon: MessageCircle, badgeKey: 'messages' },
+      { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
     ],
   },
   {
-    title: 'Account',
+    title: null,
     items: [
-      { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
-      { label: 'Verification', href: '/dashboard/verify', icon: ShieldCheck, badgeKey: 'verification' },
-      { label: 'Profile', href: '/dashboard/profile', icon: User },
-      { label: 'Professional Profile', href: '/dashboard/professional', icon: BadgeCheck },
-      { label: 'My Company', href: '/dashboard/company', icon: Building2 },
-      { label: 'Help & Support', href: '/contact', icon: HelpCircle },
+      {
+        label: 'Account',
+        href: '/dashboard/profile',
+        icon: User,
+        badgeKey: 'verification',
+        alsoActive: ['/dashboard/verify', '/dashboard/professional', '/dashboard/company', '/dashboard/settings'],
+      },
     ],
   },
 ]
@@ -231,6 +236,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       }
     >
+      <SectionTabs />
       {children}
     </AccountShell>
   )
