@@ -2,71 +2,56 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  LayoutDashboard, ClipboardCheck, ClipboardList, Users, ShieldCheck, BadgeCheck,
-  BarChart3, CreditCard, MessageSquare, LogOut, Building2, Loader2, ShieldAlert, MapPin,
-} from 'lucide-react'
+import { LayoutDashboard, Building2, KeyRound, Wallet, ShieldAlert, Archive, LogOut, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { AccountShell, navItemClass, type AccountNavGroup } from '@/components/account-shell'
+import { SectionTabs } from '@/components/section-tabs'
+import { ADMIN_SECTIONS } from '@/lib/admin-sections'
 
-// Stage 18: the same admin destinations as before, regrouped by the job they belong to.
-// New: "Verify Tenants" sits next to "Verify Landlords". Nothing else was removed, renamed or added.
-// Stage 17's shared shell draws the sidebar and the phone menu.
+// The admin menu has six places instead of nine groups and 37 entries:
+//   Overview, Properties, Rentals, Money, Trust & Issues and Records.
+// The pages that used to have their own entry are now tabs at the top of their section
+// (see lib/admin-sections.ts and components/section-tabs.tsx), and the entry stays highlighted on all of them.
 // The access check below is unchanged: only a profile with role 'admin' gets in.
+// Stage 17's shared shell draws the sidebar and the phone menu.
 const NAV_GROUPS: AccountNavGroup[] = [
-  { title: null, items: [{ href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true }] },
-  { title: 'Users and organisations', items: [
-    { href: '/admin/users', label: 'Manage Users', icon: Users },
-    { href: '/admin/professionals', label: 'Professionals', icon: BadgeCheck },
-    { href: '/admin/organizations', label: 'Companies', icon: Building2 },
-    { href: '/admin/trust', label: 'Landlord Trust', icon: BarChart3 },
-    { href: '/admin/staff-roles', label: 'Staff Roles', icon: ShieldCheck },
-  ] },
-  { title: 'Properties and listings', items: [
-    { href: '/admin/property-review', label: 'Property Review', icon: ClipboardCheck },
-    { href: '/admin/listing-authority', label: 'Listing Authority', icon: ShieldCheck },
-    { href: '/admin/surroundings', label: 'Surroundings', icon: MapPin },
-    { href: '/admin/holds', label: 'Property Holds', icon: ShieldCheck },
-  ] },
-  { title: 'Verification and trust', items: [
-    { href: '/admin/verify-landlords', label: 'Verify Landlords', icon: ShieldCheck },
-    { href: '/admin/verify-tenants', label: 'Verify Tenants', icon: ShieldCheck },
-    { href: '/admin/operations', label: 'Trust Operations', icon: ShieldCheck },
-    { href: '/admin/risk', label: 'Risk Alerts', icon: ShieldAlert },
-    { href: '/admin/cases', label: 'Cases', icon: ClipboardList },
-    { href: '/admin/disputes', label: 'Disputes', icon: ShieldCheck },
-  ] },
-  { title: 'Inspections', items: [
-    { href: '/admin/inspections', label: 'Inspections', icon: ClipboardList },
-    { href: '/admin/remote-inspections', label: 'Remote Inspections', icon: ClipboardList },
-    { href: '/admin/remote-inspection-reviews', label: 'Remote Reviews', icon: ClipboardCheck },
-    { href: '/admin/remote-inspection-disputes', label: 'Remote Disputes', icon: ClipboardList },
-    { href: '/admin/inspection-payouts', label: 'Inspector Payouts', icon: CreditCard },
-  ] },
-  { title: 'Applications and rentals', items: [
-    { href: '/admin/applications', label: 'Applications', icon: ClipboardCheck },
-    { href: '/admin/offers', label: 'Rental Offers', icon: ClipboardList },
-    { href: '/admin/reservations', label: 'Reservations', icon: ShieldCheck },
-    { href: '/admin/finalization', label: 'Rental Finalization', icon: ShieldAlert },
-    { href: '/admin/viewings', label: 'Viewings', icon: ClipboardList },
-    { href: '/admin/handovers', label: 'Handovers', icon: ShieldCheck },
-  ] },
-  { title: 'Transactions and payments', items: [
-    { href: '/admin/payments', label: 'Payments', icon: CreditCard },
-    { href: '/admin/payment-submissions', label: 'Payment Evidence', icon: ShieldCheck },
-    { href: '/admin/payouts', label: 'Landlord Payouts', icon: CreditCard },
-    { href: '/admin/payout-accounts', label: 'Payout Accounts', icon: CreditCard },
-    { href: '/admin/payee-requests', label: 'Rent Payees', icon: CreditCard },
-  ] },
-  { title: 'Messages', items: [
-    { href: '/admin/support', label: 'Support Inbox', icon: MessageSquare },
-    { href: '/admin/messages', label: 'Message History', icon: MessageSquare },
-    { href: '/admin/contact-messages', label: 'Contact Messages', icon: MessageSquare },
-  ] },
-  { title: 'Reports and records', items: [
-    { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
-    { href: '/admin/audit-log', label: 'Audit Log', icon: ClipboardList },
-  ] },
+  {
+    title: null,
+    items: [
+      { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
+      {
+        href: '/admin/property-review', label: 'Properties', icon: Building2,
+        alsoActive: [
+          '/admin/listing-authority', '/admin/holds', '/admin/disputes', '/admin/verify-landlords',
+          '/admin/inspections', '/admin/remote-inspections', '/admin/remote-inspection-reviews', '/admin/surroundings',
+        ],
+      },
+      {
+        href: '/admin/applications', label: 'Rentals', icon: KeyRound,
+        alsoActive: [
+          '/admin/verify-tenants', '/admin/viewings', '/admin/offers', '/admin/reservations',
+          '/admin/finalization', '/admin/handovers', '/admin/cases',
+        ],
+      },
+      {
+        href: '/admin/payment-submissions', label: 'Money', icon: Wallet,
+        alsoActive: [
+          '/admin/payments', '/admin/payouts', '/admin/payout-accounts', '/admin/payee-requests', '/admin/inspection-payouts',
+        ],
+      },
+      {
+        href: '/admin/operations', label: 'Trust & Issues', icon: ShieldAlert,
+        alsoActive: [
+          '/admin/risk', '/admin/reports', '/admin/remote-inspection-disputes', '/admin/trust',
+          '/admin/support', '/admin/contact-messages',
+        ],
+      },
+      {
+        href: '/admin/audit-log', label: 'Records', icon: Archive,
+        alsoActive: ['/admin/users', '/admin/professionals', '/admin/organizations', '/admin/staff-roles'],
+      },
+    ],
+  },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -150,6 +135,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </button>
       }
     >
+      <SectionTabs sections={ADMIN_SECTIONS} />
       <main>{children}</main>
     </AccountShell>
   )
