@@ -19,7 +19,9 @@ const tenantBlock = links.split('export const TENANT_LINKS')[1].split(']')[0]
 for (const [, href] of tenantBlock.matchAll(/href: '([^']+)'/g)) {
   assert.ok(layout.includes(`href: '${href}'`), `sidebar is missing ${href}`)
 }
-for (const href of ['/saved', '/profile', '/search']) assert.ok(layout.includes(`href: '${href}'`), `sidebar is missing ${href}`)
+for (const href of ['/profile', '/search']) assert.ok(layout.includes(`href: '${href}'`), `sidebar is missing ${href}`)
+// Saved homes has no entry of its own any more. It stays highlighted under "Find a home" and is still in the header and bottom bar.
+assert.ok(layout.includes("'/saved'"), 'saved homes stays under Find a home')
 
 // Access check, live counters and logout are still connected
 assert.ok(/profileData\.role === 'landlord'/.test(layout) && /router\.push\('\/dashboard'\)/.test(layout), 'landlords are still sent to /dashboard')
