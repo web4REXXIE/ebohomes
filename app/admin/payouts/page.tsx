@@ -1,407 +1,249 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getPaymentState, PAYMENT_STATE_LABEL, type PaymentState } from '@/lib/payment-status'
-import { PropertySummary, usePropertyData } from '@/components/property-summary'
-import { useConfirm } from '@/components/confirm-dialog'
 import { AdminPageHeader, EmptyState, ErrorState, LoadingState, StatusChip, type AdminState } from '@/components/admin-ui'
+import { Pagination, SearchBox, usePaged } from '@/components/list-controls'
+import { ADMIN_STATUS_LABEL, PROOF_ACCEPT, PROOF_BUCKET, validatePaid, validatePrepare, validateProofMeta, type PayoutStatus } from '@/lib/payout'
 
-type Payment = {
-  id: string
-  tenancy_id: string | null
-  listing_id: string | null
-  user_id: string | null
-  recorded_by: string | null
-  type: string | null
-  amount: number | string | null
-  payment_method: string | null
-  reference: string | null
-  status: string | null
-  review_note: string | null
-  receipt_code: string | null
-  created_at: string | null
-  confirmed_at: string | null
-  verified_by: string | null
-  verified_at: string | null
-}
+// Landlord payouts. EboHomes pays the landlord by bank transfer, outside the app, and records it here.
+// Three steps: prepare (admin 1), approve (a second admin), then send the money and record it with proof.
+// Every rule is enforced again by the API and the database. This page only collects the input.
 
-type Filter = 'all' | 'awaiting' | 'confirmed' | 'rejected'
-type Notice = { ok: boolean; text: string } | null
-
+type Filter = 'candidates' | 'progress' | 'done'
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'awaiting', label: 'Awaiting review' },
-  { key: 'confirmed', label: 'Confirmed' },
-  { key: 'rejected', label: 'Rejected' },
+  { key: 'progress', label: 'In progress' },
+  { key: 'candidates', label: 'Ready to prepare' },
+  { key: 'done', label: 'Completed' },
 ]
 
-// One fixed state per payment state. The chip always shows the status as text with an icon.
-const STATE: Record<PaymentState, AdminState> = {
-  verified: 'success', legacy_confirmed: 'pending', awaiting_verification: 'pending', pending: 'neutral', rejected: 'danger', other: 'neutral',
+const naira = (n: number | string | null) => (n == null ? 'n/a' : '\u20A6' + Number(n).toLocaleString('en-NG', { maximumFractionDigits: 2 }))
+const when = (s?: string | null) => (s ? new Date(s).toLocaleString('en-NG') : 'n/a')
+const field = 'w-full min-h-11 rounded-lg border border-border bg-input px-3 py-2 text-base'
+// One fixed state per payout status. The chip always shows the status as text with an icon.
+const STATE: Record<PayoutStatus, AdminState> = {
+  pending: 'pending', approved: 'info', paid: 'pending', confirmed: 'success', disputed: 'danger', cancelled: 'neutral',
 }
 
-const LIMIT = 500
-// Same tenancy, same amount, recorded within this many seconds = flag for a human to look at.
-const DUPLICATE_WINDOW_SECONDS = 120
-
-const isReviewable = (p: Payment) => p.status === 'recorded' || p.status === 'pending'
-const money = (v: number | string | null) => `₦${(Number(v) || 0).toLocaleString('en-NG')}`
-const when = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
-const methodLabel = (m: string | null) =>
-  m === 'bank_transfer' ? 'Bank transfer' : m === 'cash' ? 'Cash' : m === 'card' ? 'Card' : m ?? '—'
-
-function friendlyError(err: { message?: string; code?: string }): string {
-  const msg = err.message ?? 'Something went wrong.'
-  if (err.code === '42501' || /not allowed|permission|admin|authori[sz]/i.test(msg)) {
-    return `You do not have permission to review payments. (${msg})`
-  }
-  return msg
+async function api(path: string, init?: RequestInit) {
+  const t = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+  const res = await fetch(path, { ...init, headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } })
+  const j = await res.json().catch(() => null)
+  return { ok: res.ok, j, status: res.status }
 }
 
-export default function AdminPaymentsPage() {
-  const { confirm, dialog } = useConfirm()
-  const [access, setAccess] = useState<'checking' | 'ok' | 'denied'>('checking')
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [payments, setPayments] = useState<Payment[]>([])
-  const [names, setNames] = useState<Record<string, string>>({})
-  const [filter, setFilter] = useState<Filter>('awaiting')
-  const [notice, setNotice] = useState<Notice>(null)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [rejectingId, setRejectingId] = useState<string | null>(null)
-  const [reason, setReason] = useState('')
-  const busyRef = useRef(false)
+export default function AdminPayouts() {
+  const [filter, setFilter] = useState<Filter>('progress')
+  const [items, setItems] = useState<any[] | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [q, setQ] = useState('')
 
-  // Role check is for a good experience only. The database enforces the real rule.
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { if (active) setAccess('denied'); return }
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
-      if (active) setAccess(profile?.role === 'admin' ? 'ok' : 'denied')
-    })()
-    return () => { active = false }
-  }, [])
+  const load = useCallback(async () => {
+    setItems(null); setErr(null)
+    const r = await api(`/api/admin/payouts?filter=${filter}`)
+    if (!r.ok) { setErr(r.j?.error ?? `Could not load the list (HTTP ${r.status}).`); setItems([]); return }
+    setItems(r.j.items ?? [])
+  }, [filter])
+  useEffect(() => { load() }, [load])
 
-  // Does not touch `notice`, so a success message survives the refresh that follows a review.
-  const loadPayments = useCallback(async () => {
-    setLoading(true)
-    setLoadError(null)
-
-    const { data, error } = await supabase
-      .from('payments')
-      .select(
-        'id, tenancy_id, listing_id, user_id, recorded_by, type, amount, payment_method, reference, status, review_note, receipt_code, created_at, confirmed_at, verified_by, verified_at'
-      )
-      .order('created_at', { ascending: false })
-      .limit(LIMIT)
-
-    if (error) {
-      setLoadError(friendlyError(error))
-      setLoading(false)
-      return
-    }
-
-    const rows = (data ?? []) as Payment[]
-    setPayments(rows)
-
-    // Names only: no email or phone.
-    const personIds = Array.from(
-      new Set(rows.flatMap((r) => [r.user_id, r.recorded_by, r.verified_by]).filter(Boolean))
-    ) as string[]
-
-    if (personIds.length) {
-      const { data: people } = await supabase.from('profiles').select('id, full_name').in('id', personIds)
-      setNames(Object.fromEntries((people ?? []).map((x: any) => [x.id, x.full_name || 'Unnamed'])))
-    } else {
-      setNames({})
-    }
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    if (access === 'ok') loadPayments()
-  }, [access, loadPayments])
-
-  const counts = useMemo(() => {
-    const c = { all: payments.length, awaiting: 0, confirmed: 0, rejected: 0, legacyConfirmed: 0 }
-    for (const p of payments) {
-      if (isReviewable(p)) c.awaiting++
-      else if (p.status === 'confirmed') {
-        c.confirmed++
-        if (!p.verified_by) c.legacyConfirmed++
-      } else if (p.status === 'rejected') c.rejected++
-    }
-    return c
-  }, [payments])
-
-  // Flag, never change: payments that look like repeats of each other.
-  const possibleDuplicates = useMemo(() => {
-    const flagged = new Set<string>()
-    for (let i = 0; i < payments.length; i++) {
-      for (let j = i + 1; j < payments.length; j++) {
-        const a = payments[i], b = payments[j]
-        if (!a.tenancy_id || a.tenancy_id !== b.tenancy_id) continue
-        if (Number(a.amount) !== Number(b.amount) || !a.created_at || !b.created_at) continue
-        const gap = Math.abs(new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) / 1000
-        if (gap <= DUPLICATE_WINDOW_SECONDS) { flagged.add(a.id); flagged.add(b.id) }
-      }
-    }
-    return flagged
-  }, [payments])
-
-  const visible = useMemo(() => {
-    if (filter === 'awaiting') return payments.filter(isReviewable)
-    if (filter === 'confirmed') return payments.filter((p) => p.status === 'confirmed')
-    if (filter === 'rejected') return payments.filter((p) => p.status === 'rejected')
-    return payments
-  }, [payments, filter])
-
-  // Photos and details for every property in the list. Hooks must stay above the early returns.
-  const { listings: propertyData, inspected } = usePropertyData(
-    useMemo(() => payments.map((p) => p.listing_id).filter(Boolean) as string[], [payments])
-  )
-
-  const review = async (id: string, decision: 'confirmed' | 'rejected', why: string | null) => {
-    if (busyRef.current) return
-    busyRef.current = true
-    setBusyId(id)
-    setNotice(null)
-
-    const { error } = await supabase.rpc('admin_review_payment', {
-      p_payment_id: id,
-      p_decision: decision,
-      p_reason: why,
-    })
-
-    busyRef.current = false
-    setBusyId(null)
-
-    if (error) {
-      setNotice({ ok: false, text: friendlyError(error) })
-      return
-    }
-    setNotice({ ok: true, text: decision === 'confirmed' ? 'Payment verified.' : 'Payment rejected.' })
-    setRejectingId(null)
-    setReason('')
-    await loadPayments()
-  }
-
-  const onVerify = async (p: Payment) => {
-    if (busyRef.current) return
-    if (!(await confirm({ title: 'Verify this payment?', message: `Verify this ${money(p.amount)} payment? Only do this after checking the money was really paid.`, confirmLabel: 'Verify payment' }))) return
-    review(p.id, 'confirmed', null)
-  }
-
-  const onReject = (p: Payment) => {
-    const why = reason.trim()
-    if (!why) {
-      setNotice({ ok: false, text: 'Enter a reason before rejecting a payment.' })
-      return
-    }
-    review(p.id, 'rejected', why)
-  }
-
-  if (access === 'checking') {
-    return (
-      <LoadingState label="Checking access..." />
-    )
-  }
-  if (access === 'denied') {
-    return <p className="text-center py-16 text-sm text-muted-foreground">Only EboHomes administrators can review payments.</p>
-  }
+  // Search only narrows what is shown. The full list is still loaded.
+  const needle = q.trim().toLowerCase()
+  const shown = (items ?? []).filter((x) => !needle || String(x.landlord_name ?? '').toLowerCase().includes(needle))
+  const paged = usePaged(shown, 25)
+  const candidates = filter === 'candidates'
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto">
-      <AdminPageHeader title="Payments" description="Landlords record payments. Only an EboHomes administrator can verify or reject them. EboHomes does not move money." />
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-        {[
-          { label: 'All', value: counts.all },
-          { label: 'Awaiting review', value: counts.awaiting },
-          { label: 'Confirmed', value: counts.confirmed },
-          { label: 'Rejected', value: counts.rejected },
-        ].map((c) => (
-          <div key={c.label} className="bg-card border border-border rounded-lg p-3">
-            <p className="text-xs text-muted-foreground">{c.label}</p>
-            <p className="text-xl font-bold text-foreground">{c.value}</p>
-          </div>
-        ))}
-      </div>
-      {counts.legacyConfirmed > 0 && (
-        <p className="text-xs text-muted-foreground mb-2">
-          {counts.legacyConfirmed} confirmed record{counts.legacyConfirmed === 1 ? '' : 's'} have no verifier on file (older
-          records). They are not counted as verified and need manual review outside this page.
-        </p>
-      )}
-      {payments.length >= LIMIT && (
-        <p className="text-xs text-muted-foreground mb-2">Showing the latest {LIMIT} payments. Counts cover these only.</p>
-      )}
-
-      <div className="flex gap-2 my-3 overflow-x-auto">
+    <div className="mx-auto max-w-3xl space-y-4 p-4">
+      <AdminPageHeader title="Landlord payouts" description="Money collected for a landlord is sent to their approved bank account. EboHomes records each transfer here." />
+      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Payout stage">
         {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            aria-pressed={filter === f.key}
-            className={`min-h-11 px-4 rounded-full text-sm font-medium border whitespace-nowrap ${
-              filter === f.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-foreground'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-        <button
-          onClick={loadPayments}
-          disabled={loading || !!busyId}
-          className="focus-ring ml-auto min-h-11 px-4 rounded-full text-sm font-medium border border-border disabled:opacity-50"
-        >
-          Refresh
-        </button>
+          <button key={f.key} role="tab" aria-selected={filter === f.key} onClick={() => { setFilter(f.key); setOpenId(null); setQ(''); paged.setPage(1) }}
+            className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${filter === f.key ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card'}`}>{f.label}</button>))}
       </div>
-
-      {notice && (
-        <div className="mb-3">
-          {notice.ok
-            ? <p role="status" className="rounded-md border border-success/30 bg-success-soft px-3 py-2 text-sm font-medium text-success">{notice.text}</p>
-            : <ErrorState message={notice.text} />}
-        </div>
-      )}
-
-      {loading ? (
-        <LoadingState label="Loading payments..." />
-      ) : loadError ? (
-        <ErrorState message={`Could not load payments: ${loadError}`} onRetry={loadPayments} />
-      ) : visible.length === 0 ? (
-        <EmptyState title="No payments in this view" text="Payments that match this filter will appear here." />
-      ) : (
-        <div className="space-y-3">
-          {visible.map((p) => {
-            const state = getPaymentState(p)
-            const rowBusy = busyId === p.id
-            const rejecting = rejectingId === p.id
-            return (
-              <div key={p.id} className="bg-card border border-border rounded-xl p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-lg font-bold text-foreground">{money(p.amount)}</p>
-                    <p className="text-xs text-muted-foreground capitalize">
-                      {p.type ?? 'payment'} · {methodLabel(p.payment_method)}
-                    </p>
-                  </div>
-                  <StatusChip state={STATE[state]}>{PAYMENT_STATE_LABEL[state]}</StatusChip>
-                </div>
-
-                <div className="mt-3 text-sm text-foreground space-y-2">
-                  <PropertySummary
-                    compact
-                    listing={p.listing_id ? propertyData[p.listing_id] : undefined}
-                    inspected={!!p.listing_id && inspected.has(p.listing_id)}
-                  />
-                  <div className="space-y-0.5">
-                    <p className="text-xs text-muted-foreground">
-                      Tenant: {(p.user_id && names[p.user_id]) || '—'} · Recorded by: {(p.recorded_by && names[p.recorded_by]) || '—'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Tenancy {p.tenancy_id ? p.tenancy_id.slice(0, 8) : '—'} · Recorded {when(p.created_at)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Reference: {p.reference || '—'}</p>
-                    {p.receipt_code && <p className="text-xs text-muted-foreground">Receipt: {p.receipt_code}</p>}
-                  </div>
-                </div>
-
-                {possibleDuplicates.has(p.id) && (
-                  <p className="mt-2 text-xs rounded-md border border-warning/30 bg-warning-soft text-warning px-2 py-1.5">
-                    Possible duplicate: another payment with the same amount was recorded for this tenancy within{' '}
-                    {DUPLICATE_WINDOW_SECONDS} seconds. Check before verifying.
-                  </p>
-                )}
-                {p.status === 'recorded' && p.confirmed_at && (
-                  <p className="mt-2 text-xs rounded-md bg-secondary text-muted-foreground px-2 py-1.5">
-                    This older record has a confirmed date ({when(p.confirmed_at)}) but its status is still recorded. It is
-                    not verified.
-                  </p>
-                )}
-                {p.status === 'confirmed' && !p.verified_by && (
-                  <p className="mt-2 text-xs rounded-md bg-secondary text-muted-foreground px-2 py-1.5">
-                    Marked confirmed in an older record, but no administrator is recorded as verifying it.
-                  </p>
-                )}
-                {p.verified_by && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Verified by {names[p.verified_by] || 'an administrator'} on {when(p.verified_at)}
-                  </p>
-                )}
-                {p.review_note && (
-                  <p className="mt-2 text-xs text-foreground">
-                    <span className="text-muted-foreground">Review note: </span>{p.review_note}
-                  </p>
-                )}
-
-                {isReviewable(p) && (
-                  <div className="mt-3 border-t border-border pt-3">
-                    {rejecting ? (
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground" htmlFor={`reason-${p.id}`}>
-                          Reason for rejecting (required)
-                        </label>
-                        <textarea
-                          id={`reason-${p.id}`}
-                          value={reason}
-                          onChange={(e) => setReason(e.target.value)}
-                          disabled={!!busyId}
-                          rows={3}
-                          className="w-full border border-border rounded-md px-3 py-2.5 text-sm bg-background"
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => onReject(p)}
-                            disabled={!!busyId || !reason.trim()}
-                            className="flex min-h-11 items-center gap-2 px-4 rounded-md bg-destructive text-white dark:text-background text-sm font-semibold disabled:opacity-50"
-                          >
-                            {rowBusy && <Loader2 size={14} className="animate-spin" aria-hidden />}
-                            Confirm rejection
-                          </button>
-                          <button
-                            onClick={() => { setRejectingId(null); setReason('') }}
-                            disabled={!!busyId}
-                            className="min-h-11 px-4 rounded-md border border-border text-sm font-semibold disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => onVerify(p)}
-                          disabled={!!busyId}
-                          className="flex min-h-11 items-center gap-2 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50"
-                        >
-                          {rowBusy && <Loader2 size={14} className="animate-spin" aria-hidden />}
-                          Verify Payment
-                        </button>
-                        <button
-                          onClick={() => { setRejectingId(p.id); setReason(''); setNotice(null) }}
-                          disabled={!!busyId}
-                          className="min-h-11 px-4 rounded-md border border-border text-sm font-semibold disabled:opacity-50"
-                        >
-                          Reject Payment
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-      {dialog}
+      <SearchBox id="payout-search" label="Search payouts" value={q} onChange={(v) => { setQ(v); paged.setPage(1) }} placeholder="Search by landlord name" />
+      {err && <ErrorState message={err} onRetry={load} />}
+      {items === null ? <LoadingState label="Loading..." />
+        : items.length === 0 ? (err ? null : <EmptyState title="Nothing here" text={candidates ? 'No verified payments are waiting for a payout.' : 'No payouts at this stage.'} />)
+        : shown.length === 0 ? <EmptyState title="No matches" text="No payout matches your search." />
+        : <ul className="space-y-2">{paged.slice.map((x) => {
+          const id: string = candidates ? x.payment_id : x.id
+          return (
+            <li key={id} className="rounded-xl border border-border bg-card">
+              <button className="focus-ring flex w-full min-h-14 flex-wrap items-center justify-between gap-2 p-3 text-left text-sm" onClick={() => setOpenId(openId === id ? null : id)} aria-expanded={openId === id}>
+                <span><b>{x.landlord_name}</b> · {x.tenancy_code ?? 'no tenancy'} · {candidates ? x.type : x.payment_type} · {naira(x.amount)}</span>
+                {candidates
+                  ? (x.hold_reason ? <StatusChip state="info">On hold</StatusChip>
+                    : !x.has_account ? <StatusChip state="danger">No payout account</StatusChip>
+                    : <StatusChip state="success">Ready</StatusChip>)
+                  : <StatusChip state={STATE[x.status as PayoutStatus] ?? 'neutral'}>{ADMIN_STATUS_LABEL[x.status as PayoutStatus] ?? x.status}</StatusChip>}
+              </button>
+              {openId === id && (candidates
+                ? <PrepareForm c={x} onChanged={() => { setOpenId(null); load() }} />
+                : <PayoutDetail p={x} onChanged={() => { setOpenId(null); load() }} />)}
+            </li>)
+        })}</ul>}
+      <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={paged.pageSize} onPage={(n) => { setOpenId(null); paged.setPage(n) }} noun="payouts" />
     </div>
   )
 }
+
+// Step 1: prepare a payout for one verified payment.
+function PrepareForm({ c, onChanged }: { c: any; onChanged: () => void }) {
+  const [key] = useState(() => crypto.randomUUID())
+  const [amount, setAmount] = useState(String(c.amount ?? ''))
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const blocked = c.hold_reason ? `On hold: ${c.hold_reason}` : !c.has_account ? 'The landlord has no approved payout account yet.' : null
+
+  const prepare = async () => {
+    if (busy) return
+    const v = validatePrepare({ amount, note, key }, Number(c.amount))
+    if (!v.ok) { setMsg(v.error); return }
+    setBusy(true); setMsg(null)
+    const r = await api('/api/admin/payouts', { method: 'POST', body: JSON.stringify({ action: 'prepare', payment_id: c.payment_id, amount, note, key }) })
+    setBusy(false)
+    if (!r.ok) { setMsg(r.j?.error ?? 'Failed. Nothing was changed.'); return }
+    onChanged()
+  }
+
+  return (
+    <div className="space-y-3 border-t border-border p-3 text-sm">
+      <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+        <div><dt className="text-xs text-muted-foreground">Landlord</dt><dd>{c.landlord_name}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Tenant</dt><dd>{c.tenant_name}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Verified payment</dt><dd>{naira(c.amount)} · {c.type} · confirmed {when(c.confirmed_at)}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Payout allowed from</dt><dd>{when(c.payout_eligible_at)}</dd></div>
+      </dl>
+      {blocked
+        ? <p role="status" className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-warning"><AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden /> {blocked}</p>
+        : (<>
+          <div><label className="text-xs font-semibold" htmlFor={`amt-${c.payment_id}`}>Payout amount (&#8358;)</label>
+            <input id={`amt-${c.payment_id}`} className={field} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+          <div><label className="text-xs font-semibold" htmlFor={`note-${c.payment_id}`}>Note (required if the amount differs from the payment)</label>
+            <textarea id={`note-${c.payment_id}`} rows={3} maxLength={1000} className={field} value={note} onChange={(e) => setNote(e.target.value)} /></div>
+          <button disabled={busy} onClick={prepare} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary font-bold text-primary-foreground disabled:opacity-50">
+            {busy && <Loader2 size={16} className="animate-spin" aria-hidden />}Prepare payout
+          </button>
+          <p className="text-xs text-muted-foreground">A different administrator must approve it before any money is sent.</p>
+        </>)}
+      {msg && <p role="alert" className="rounded-lg border border-danger/30 bg-danger-soft p-3 text-danger">{msg}</p>}
+    </div>
+  )
+}
+
+// Steps 2 and 3: approve (or cancel), then record the transfer with proof.
+function PayoutDetail({ p, onChanged }: { p: any; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [note, setNote] = useState('')
+  const [mode, setMode] = useState<null | 'approve' | 'cancel'>(null)
+  const [ref, setRef] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [amountSent, setAmountSent] = useState('')
+  const [sent, setSent] = useState(false)
+
+  const send = async (body: Record<string, unknown>) => {
+    setBusy(true); setMsg(null)
+    const r = await api('/api/admin/payouts', { method: 'POST', body: JSON.stringify(body) })
+    setBusy(false)
+    if (!r.ok) { setMsg(r.j?.error ?? 'Failed. Nothing was changed.'); return false }
+    return true
+  }
+
+  const approve = async () => {
+    if (busy) return
+    if (await send({ action: 'approve', id: p.id, note })) onChanged()
+  }
+  const cancel = async () => {
+    if (busy) return
+    if (note.trim().length < 5) { setMsg('Write a reason for cancelling.'); return }
+    if (await send({ action: 'cancel', id: p.id, note })) onChanged()
+  }
+
+  const markPaid = async () => {
+    if (busy) return
+    setMsg(null)
+    const attest = { transferred_to_shown_account: sent, amount_sent: amountSent }
+    // Check the typed fields before anything is uploaded. The real proof path is checked again below.
+    const pre = validatePaid({ reference: ref, proof_path: `payouts/${p.id}/pending`, attest }, p.id, Number(p.amount))
+    if (!pre.ok) { setMsg(pre.error); return }
+    if (!file) { setMsg('Upload the proof of transfer first.'); return }
+    const bad = validateProofMeta(file.type, file.size)
+    if (bad) { setMsg(bad); return }
+
+    setBusy(true)
+    const slot = await api('/api/admin/payouts/proof', { method: 'POST', body: JSON.stringify({ id: p.id, mime: file.type, bytes: file.size }) })
+    if (!slot.ok) { setBusy(false); setMsg(slot.j?.error ?? 'Could not prepare the upload.'); return }
+    const up = await supabase.storage.from(PROOF_BUCKET).uploadToSignedUrl(slot.j.path, slot.j.token, file, { contentType: file.type })
+    if (up.error) { setBusy(false); setMsg('The proof could not be uploaded. Nothing was recorded.'); return }
+    const final = validatePaid({ reference: ref, proof_path: slot.j.path, attest }, p.id, Number(p.amount))
+    if (!final.ok) { setBusy(false); setMsg(final.error); return }
+
+    const r = await api('/api/admin/payouts', { method: 'POST', body: JSON.stringify({ action: 'paid', id: p.id, reference: ref, proof_path: slot.j.path, attest }) })
+    setBusy(false)
+    if (!r.ok) { setMsg(r.j?.error ?? 'Failed. Nothing was changed.'); return }
+    onChanged()
+  }
+
+  const open = p.status === 'pending' || p.status === 'approved'
+
+  return (
+    <div className="space-y-3 border-t border-border p-3 text-sm">
+      <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+        <div><dt className="text-xs text-muted-foreground">Landlord</dt><dd>{p.landlord_name} · {p.landlord_phone ?? 'no phone'}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Tenancy · payout code</dt><dd>{p.tenancy_code ?? 'n/a'} · {p.payout_code}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Payout · payment</dt><dd><b>{naira(p.amount)}</b> of {naira(p.payment_amount)}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Prepared by</dt><dd>{p.prepared_by_name ?? 'n/a'}</dd></div>
+        <div className="sm:col-span-2"><dt className="text-xs text-muted-foreground">Send to this account</dt>
+          <dd><b>{p.account_name}</b> · {p.bank_name} · {p.account_number}</dd></div>
+      </dl>
+      {open && p.account_is_current === false && (
+        <p role="alert" className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-warning"><AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden /> This is not the landlord&apos;s current payout account. Check with the landlord before sending anything.</p>)}
+      {p.prepare_note && <p className="rounded-md bg-secondary p-2 text-xs">Preparer note: {p.prepare_note}</p>}
+      {p.status !== 'pending' && p.status !== 'approved' && p.status !== 'cancelled' && (
+        <p className="rounded-md bg-secondary p-2 text-xs">Paid {when(p.paid_at)} · bank reference {p.bank_reference ?? 'n/a'}{p.has_proof ? ' · proof of transfer on file' : ''}</p>)}
+      {p.landlord_note && <p className="rounded-md bg-secondary p-2 text-xs">Landlord note: {p.landlord_note}</p>}
+
+      <div>
+        <h3 className="mb-1 font-bold">History</h3>
+        <ul className="space-y-1 text-xs">
+          {(p.events ?? []).map((e: any, i: number) => <li key={i} className="rounded-md border border-border p-2"><b>{String(e.event).replace(/_/g, ' ')}</b> · {e.by ?? 'Staff'} · {when(e.at)}{e.note ? ` · "${e.note}"` : ''}</li>)}
+        </ul>
+      </div>
+
+      {open && !mode && (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {p.status === 'pending' && <button onClick={() => { setMode('approve'); setNote(''); setMsg(null) }} className="min-h-12 flex-1 rounded-lg bg-primary font-bold text-primary-foreground">Approve</button>}
+          <button onClick={() => { setMode('cancel'); setNote(''); setMsg(null) }} className="min-h-12 flex-1 rounded-lg border border-danger/40 font-semibold text-danger">Cancel payout</button>
+        </div>)}
+
+      {open && mode && (
+        <div className="space-y-3 rounded-xl border border-border p-3">
+          <label className="text-xs font-semibold" htmlFor={`pn-${p.id}`}>{mode === 'cancel' ? 'Reason for cancelling (required)' : 'Note (optional)'}</label>
+          <textarea id={`pn-${p.id}`} rows={3} maxLength={1000} className={field} value={note} onChange={(e) => setNote(e.target.value)} />
+          <div className="flex gap-2">
+            <button disabled={busy} onClick={mode === 'approve' ? approve : cancel} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-primary font-bold text-primary-foreground disabled:opacity-50">{busy && <Loader2 size={16} className="animate-spin" aria-hidden />}Confirm</button>
+            <button disabled={busy} onClick={() => { setMode(null); setMsg(null) }} className="min-h-12 rounded-lg border border-border px-4 font-semibold">Back</button>
+          </div>
+        </div>)}
+
+      {p.status === 'approved' && !mode && (
+        <div className="space-y-3 rounded-xl border border-border p-3">
+          <p className="font-bold">Record the transfer</p>
+          <p className="text-xs text-muted-foreground">Send the money from the EboHomes bank account first. Then record it here with the bank&apos;s proof.</p>
+          <div><label className="text-xs font-semibold" htmlFor={`ref-${p.id}`}>Transfer reference from the bank</label>
+            <input id={`ref-${p.id}`} className={field} autoCapitalize="none" value={ref} onChange={(e) => setRef(e.target.value)} /></div>
+          <div><label className="text-xs font-semibold" htmlFor={`sent-${p.id}`}>Amount sent (&#8358;)</label>
+            <input id={`sent-${p.id}`} className={field} inputMode="decimal" value={amountSent} onChange={(e) => setAmountSent(e.target.value)} /></div>
+          <div><label className="text-xs font-semibold" htmlFor={`proof-${p.id}`}>Proof of transfer (JPG, PNG, WEBP or PDF, up to 8MB)</label>
+            <input id={`proof-${p.id}`} type="file" accept={PROOF_ACCEPT} className={field} onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></div>
+          <label className="flex items-start gap-2"><input type="checkbox" className="focus-ring mt-1 size-5" checked={sent} onChange={(e) => setSent(e.target.checked)} /> I sent the money to the account shown above.</label>
+          <button disabled={busy} onClick={markPaid} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary font-bold text-primary-foreground disabled:opacity-50">{busy && <Loader2 size={16} className="animate-spin" aria-hidden />}Record as paid</button>
+        </div>)}
+      {msg && <p role="alert" className="rounded-lg border border-danger/30 bg-danger-soft p-3 text-danger">{msg}</p>}
+    </div>
+  )
+          }
