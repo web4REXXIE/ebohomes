@@ -6,16 +6,10 @@ import Link from 'next/link'
 import {
   LayoutDashboard,
   Search,
-  Heart,
   MessageCircle,
-  FileText,
-  CalendarClock,
-  ClipboardCheck,
   KeyRound,
   Key,
   User,
-  Bell,
-  BellRing,
   ShieldCheck,
   LogOut,
 } from 'lucide-react'
@@ -33,33 +27,28 @@ import { tenantVerificationState } from '@/lib/tenant-verification'
 // Stage 17: the sidebar, phone header and phone menu now come from components/account-shell.tsx.
 // Stage 18b: this file moved here from app/home/layout.tsx so /tenancies can use the same tenant shell.
 // It still runs its own access check: landlords are sent to /dashboard, signed-out visitors to /login.
-// New: "ID Verification" and "My Alerts" are now in the menu. ID Verification shows a small marker only when the tenant
-// still has something to do (nothing submitted, or the last submission was not approved).
+// Simplification step 3: the menu is now the five places a tenant needs, plus a short Account group.
+// Nothing was deleted. Pages that used to have their own menu entry stay reachable and keep the right entry highlighted:
+//   Saved homes, My Alerts, My Inspections -> under "Find a home" (Saved is also in the header and the bottom bar)
+//   My Viewings, My Applications -> under "My application" (the rental journey shows viewings and applications)
+//   Handovers -> under "My home"
+//   Notifications -> under "Inbox" (the bell in the header and phone menu still opens it)
+// ID Verification shows a small marker only when the tenant still has something to do (nothing submitted, or the last
+// submission was not approved).
 const NAV_GROUPS: AccountNavGroup[] = [
-  { title: null, items: [{ label: 'Dashboard', href: '/home', icon: LayoutDashboard, exact: true }] },
-  {
-    title: 'Find a home',
-    items: [
-      { label: 'Search Homes', href: '/search', icon: Search },
-      { label: 'Saved Homes', href: '/saved', icon: Heart },
-      { label: 'My Alerts', href: '/alerts', icon: BellRing },
-    ],
-  },
+  { title: null, items: [{ label: 'Home', href: '/home', icon: LayoutDashboard, exact: true }] },
   {
     title: 'My rental',
     items: [
-      { label: 'My Rental Journey', href: '/journey', icon: KeyRound },
-      { label: 'My Applications', href: '/applications', icon: FileText },
-      { label: 'Tenancy & Payments', href: '/tenancies', icon: Key },
-      { label: 'My Viewings', href: '/viewings', icon: CalendarClock },
-      { label: 'My Inspections', href: '/inspections', icon: ClipboardCheck },
+      { label: 'Find a home', href: '/search', icon: Search, alsoActive: ['/saved', '/alerts', '/inspections'] },
+      { label: 'My application', href: '/journey', icon: KeyRound, alsoActive: ['/applications', '/viewings'] },
+      { label: 'My home', href: '/tenancies', icon: Key, alsoActive: ['/handovers'] },
+      { label: 'Inbox', href: '/messages', icon: MessageCircle, badgeKey: 'inbox', alsoActive: ['/notifications'] },
     ],
   },
   {
     title: 'Account',
     items: [
-      { label: 'Messages', href: '/messages', icon: MessageCircle, badgeKey: 'messages' },
-      { label: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
       { label: 'ID Verification', href: '/verify-account', icon: ShieldCheck, badgeKey: 'verification' },
       { label: 'My Profile', href: '/profile', icon: User },
     ],
@@ -156,8 +145,7 @@ export function TenantAccountShell({ children }: { children: React.ReactNode }) 
         href: '/profile',
       }}
       badges={{
-        messages: { count: unreadMessages, label: (n) => `${n} unread` },
-        notifications: { count: unreadNotifs, label: (n) => `${n} unread` },
+        inbox: { count: unreadMessages + unreadNotifs, label: (n) => `${n} unread` },
         verification: { count: verificationNeedsAction ? 1 : 0, label: () => 'Action needed' },
       }}
       unreadNotifs={unreadNotifs}
