@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft, Loader2, Lock, MapPin } from 'lucide-react'
 import { PageShell } from '@/components/page-shell'
+import { ReportDispute } from '@/components/report-dispute'
 import { supabase } from '@/lib/supabase'
 import { fmtDateTime } from '@/lib/case-status'
 import {
@@ -163,6 +164,8 @@ export default function RemoteInspectionReportPage() {
                 ))}
               </div>
             )}
+
+            <ReportDispute requestId={report.request_id} />
 
             <p className="text-xs text-muted-foreground">
               This is what one inspector saw on one visit. It is not a guarantee, and it does not reserve the property or start an application.
