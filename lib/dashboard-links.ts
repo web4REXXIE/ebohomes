@@ -10,12 +10,9 @@ export const TENANT_LINKS: DashboardLink[] = [
 
 export const LANDLORD_LINKS: DashboardLink[] = [
   { label: 'Dashboard overview', href: '/dashboard' },
-  { label: 'My Properties', href: '/dashboard/listings' },
-  { label: 'Viewings', href: '/dashboard/viewings' },
-  { label: 'Applications', href: '/dashboard/applications' },
-  { label: 'Inspection requests', href: '/dashboard/inspection-requests' },
-  { label: 'Tenancies', href: '/dashboard/tenancies' },
-  { label: 'Payments', href: '/dashboard/payments' },
+  { label: 'Properties', href: '/dashboard/listings' },
+  { label: 'Rentals', href: '/dashboard/applications' },
+  { label: 'Money', href: '/dashboard/payments' },
   { label: 'Messages', href: '/dashboard/messages' },
 ]
 
