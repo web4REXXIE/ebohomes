@@ -42,7 +42,7 @@ const NAV_GROUPS: AccountNavGroup[] = [
       {
         href: '/admin/operations', label: 'Trust & Issues', icon: ShieldAlert,
         alsoActive: [
-          '/admin/risk', '/admin/reports', '/admin/remote-inspection-disputes', '/admin/trust',
+          '/admin/risk', '/admin/reports', '/admin/remote-inspection-disputes',
           '/admin/support', '/admin/contact-messages',
         ],
       },
