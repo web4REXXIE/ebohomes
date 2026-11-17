@@ -92,21 +92,45 @@ assert.equal(v.verificationBucket({ verification_status: 'pending' }), 'not_subm
 // The helper module still has no imports, so it stays directly testable.
 assert.ok(!/^import /m.test(verSrc), 'landlord-verification.ts must stay import-free')
 
-// ---------- 2. Navigation: nothing removed ----------
+// ---------- 2. Navigation: six places in the menu, nothing removed ----------
+const sections = await load('lib/landlord-sections.ts')
+const tabHrefs = sections.LANDLORD_SECTIONS.flatMap((s) => s.tabs.map((t) => t.href))
+// These are the destinations the landlord menu had before it was simplified. Each one must still be reachable,
+// either as a menu entry or as a tab inside its section.
 const PRE_STAGE16_DESTINATIONS = [
   '/dashboard', '/dashboard/listings', '/dashboard/applications', '/dashboard/viewings',
   '/dashboard/inspection-requests', '/dashboard/tenancies', '/dashboard/payments', '/dashboard/messages',
   '/dashboard/analytics', '/dashboard/verify', '/dashboard/professional', '/dashboard/company',
-  '/list-property', '/dashboard/profile', '/contact',
+  '/dashboard/estates', '/dashboard/profile', '/contact',
 ]
-// Stage 18c: one destination was added on purpose, the existing /notifications page (the phone bell already linked to it).
-const EXPECTED_SIDEBAR_COUNT = PRE_STAGE16_DESTINATIONS.length + 1
+const SIDEBAR_DESTINATIONS = [
+  '/dashboard', '/dashboard/listings', '/dashboard/applications', '/dashboard/payments',
+  '/dashboard/messages', '/notifications', '/dashboard/profile',
+]
+// Stage 18c: Notifications stays in the menu (the existing /notifications page, which the phone bell also opens).
 assert.ok(layout.includes("href: '/notifications'"), 'landlord sidebar links to Notifications')
-for (const href of PRE_STAGE16_DESTINATIONS) assert.ok(layout.includes(`href: '${href}'`), `sidebar lost ${href}`)
-assert.equal([...layout.matchAll(/href: '/g)].length, EXPECTED_SIDEBAR_COUNT, 'sidebar should have the 15 original destinations plus Notifications')
+for (const href of SIDEBAR_DESTINATIONS) assert.ok(layout.includes(`href: '${href}'`), `sidebar lost ${href}`)
+assert.equal([...layout.matchAll(/href: '/g)].length, SIDEBAR_DESTINATIONS.length, 'sidebar has Home, Properties, Rentals, Money, Messages, Notifications and Account')
+for (const href of PRE_STAGE16_DESTINATIONS) {
+  assert.ok(layout.includes(`href: '${href}'`) || tabHrefs.includes(href), `${href} is neither in the menu nor a tab`)
+}
 // Every shared landlord link is reachable from the sidebar.
 for (const l of links.LANDLORD_LINKS) assert.ok(layout.includes(`href: '${l.href}'`), `shared link ${l.href} is not in the sidebar`)
-assert.ok(links.LANDLORD_LINKS.some((l) => l.href === '/dashboard/inspection-requests'), 'Inspection requests must be in LANDLORD_LINKS')
+// Inspection requests is a tab under Properties.
+assert.ok(tabHrefs.includes('/dashboard/inspection-requests'), 'Inspection requests must be a tab')
+// Tabs appear only on the pages of their section.
+assert.equal(sections.sectionForPath('/dashboard/applications')?.key, 'rentals')
+assert.equal(sections.sectionForPath('/dashboard/tenancies/abc')?.key, 'rentals')
+assert.equal(sections.sectionForPath('/dashboard/payout-account')?.key, 'money')
+assert.equal(sections.sectionForPath('/dashboard/payouts')?.key, 'money')
+assert.equal(sections.sectionForPath('/dashboard/estates')?.key, 'properties')
+assert.equal(sections.sectionForPath('/dashboard/verify')?.key, 'account')
+assert.equal(sections.sectionForPath('/dashboard'), null, 'no tabs on the dashboard home')
+assert.equal(sections.sectionForPath('/dashboard/messages'), null, 'no tabs on Messages (it fills the screen)')
+assert.equal(sections.sectionForPath('/dashboard/edit/abc'), null, 'no tabs on the listing form')
+assert.equal(sections.sectionForPath('/dashboard/authority/abc'), null, 'no tabs on the authority form')
+// The layout draws the tabs once, above the page.
+assert.equal([...layout.matchAll(/<SectionTabs/g)].length, 1)
 // Tenant links: reduced to four by the tenant menu simplification.
 assert.equal(links.TENANT_LINKS.length, 4)
 assert.equal(links.dashboardLinks('landlord'), links.LANDLORD_LINKS)
