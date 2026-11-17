@@ -54,7 +54,6 @@ export const ADMIN_SECTIONS: Section[] = [
       { label: 'Risk alerts', href: '/admin/risk' },
       { label: 'Reports', href: '/admin/reports' },
       { label: 'Remote disputes', href: '/admin/remote-inspection-disputes' },
-      { label: 'Landlord trust', href: '/admin/trust' },
       { label: 'Support', href: '/admin/support' },
       { label: 'Contact messages', href: '/admin/contact-messages' },
     ],
