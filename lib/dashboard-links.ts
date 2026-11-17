@@ -3,13 +3,9 @@ export type DashboardLink = { label: string; href: string }
 
 export const TENANT_LINKS: DashboardLink[] = [
   { label: 'Dashboard overview', href: '/home' },
-  { label: 'My Rental Journey', href: '/journey' },
-  { label: 'My Applications', href: '/applications' },
-  { label: 'Tenancy & Payments', href: '/tenancies' },
-  { label: 'My Viewings', href: '/viewings' },
-  { label: 'My Inspections', href: '/inspections' },
-  { label: 'Messages', href: '/messages' },
-  { label: 'Notifications', href: '/notifications' },
+  { label: 'My application', href: '/journey' },
+  { label: 'My home', href: '/tenancies' },
+  { label: 'Inbox', href: '/messages' },
 ]
 
 export const LANDLORD_LINKS: DashboardLink[] = [
