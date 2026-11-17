@@ -167,7 +167,7 @@ export default function VerificationPendingPage() {
             </div>
             <p className="font-semibold text-foreground text-sm mb-1">Submit Another Property</p>
             <p className="text-xs text-muted-foreground mb-4">Own more than one property? Add another listing anytime.</p>
-            <Link href="/list-property">
+            <Link href="/dashboard/estates">
               <Button variant="outline" className="w-full justify-between font-semibold text-sm">
                 Add Property →
               </Button>
