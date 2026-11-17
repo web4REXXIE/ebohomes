@@ -100,7 +100,7 @@ export function buildNeedsYou(inp: NeedsInput): { items: NeedsItem[]; partial: b
         priority: 45,
         title: 'Add your first property',
         text: 'Tenants can only find a property after you list it and EboHomes approves it.',
-        href: '/list-property',
+        href: '/dashboard/estates',
         cta: 'Add new property',
       })
     }
