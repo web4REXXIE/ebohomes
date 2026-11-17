@@ -24,7 +24,10 @@ const nextConfig = {
     ]
   },
   async redirects() {
-    return [{ source: '/admin/disputes', destination: '/admin/holds#take-offline', permanent: true }]
+    return [
+      { source: '/admin/disputes', destination: '/admin/holds#take-offline', permanent: true },
+      { source: '/admin/trust', destination: '/admin/verify-landlords', permanent: true },
+    ]
   },
 }
 
