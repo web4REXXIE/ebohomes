@@ -12,8 +12,7 @@ export const ADMIN_SECTIONS: Section[] = [
     tabs: [
       { label: 'Listings', href: '/admin/property-review' },
       { label: 'Authority', href: '/admin/listing-authority' },
-      { label: 'Holds', href: '/admin/holds' },
-      { label: 'Ownership disputes', href: '/admin/disputes' },
+      { label: 'Holds & freezes', href: '/admin/holds' },
       { label: 'Landlord ID', href: '/admin/verify-landlords' },
       { label: 'Inspections', href: '/admin/inspections' },
       { label: 'Remote requests', href: '/admin/remote-inspections' },
