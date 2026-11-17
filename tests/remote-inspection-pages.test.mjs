@@ -133,7 +133,9 @@ assert.match(req, /Inspected badge/)
 const links = await load('lib/dashboard-links.ts')
 // My Inspections no longer has its own menu entry. It stays highlighted under "Find a home" in the tenant shell.
 assert.ok(readFileSync('components/tenant-account-shell.tsx', 'utf8').includes("'/inspections'"))
-assert.ok(links.LANDLORD_LINKS.some((l) => l.href === '/dashboard/inspection-requests'))
+// Inspection requests is now a tab under Properties for landlords.
+const landlordSections = await load('lib/landlord-sections.ts')
+assert.ok(landlordSections.LANDLORD_SECTIONS.some((s) => s.tabs.some((t) => t.href === '/dashboard/inspection-requests')))
 assert.equal(links.isDashboardPath('/inspections'), true)
 
 console.log('remote-inspection-pages: all checks passed')
