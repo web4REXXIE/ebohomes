@@ -237,7 +237,7 @@ export default function MyListingsPage() {
           <p className="text-sm text-muted-foreground">See which of your properties are live, waiting or need action.</p>
         </div>
         <Link
-          href="/list-property"
+          href="/dashboard/estates"
           className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
         >
           <Plus size={16} aria-hidden /> Add new property
@@ -316,7 +316,7 @@ export default function MyListingsPage() {
           <p className="mb-1 font-semibold text-foreground">No properties yet</p>
           <p className="mb-5 text-sm text-muted-foreground">You haven&apos;t listed any properties. Add your first one to get started.</p>
           <Link
-            href="/list-property"
+            href="/dashboard/estates"
             className="focus-ring inline-flex min-h-11 items-center rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
           >
             Add new property
