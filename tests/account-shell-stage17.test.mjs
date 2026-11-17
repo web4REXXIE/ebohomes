@@ -43,12 +43,12 @@ assert.ok(/router\.push\('\/login'\)/.test(tenant) && /router\.push\('\/login'\)
 assert.ok(/supabase\.auth\.signOut\(\)/.test(tenant))
 
 // Nothing role-specific leaks across: no landlord link in the tenant menu and the reverse.
-const hrefs = (src) => [...src.matchAll(/href: '([^']+)', icon:/g)].map((m) => m[1])
+const hrefs = (src) => [...src.matchAll(/href: '([^']+)',\s*icon:/g)].map((m) => m[1])
 const tenantHrefs = hrefs(tenant)
 const landlordHrefs = hrefs(landlord)
 assert.ok(tenantHrefs.every((h) => !h.startsWith('/dashboard')), 'tenant menu has no landlord pages')
 assert.ok(!landlordHrefs.includes('/home') && !landlordHrefs.includes('/saved'), 'landlord menu has no tenant pages')
-assert.equal(landlordHrefs.length, 16, 'landlord menu has its 15 destinations plus Notifications')
+assert.equal(landlordHrefs.length, 7, 'landlord menu has Home, Properties, Rentals, Money, Messages, Notifications and Account')
 assert.equal(tenantHrefs.length, 7, 'tenant menu has 5 main destinations (Home, Find a home, My application, My home, Inbox) plus ID Verification and Profile')
 // Pages that left the menu stay highlighted under the entry they belong to.
 for (const p of ['/saved', '/alerts', '/inspections', '/viewings', '/applications', '/handovers', '/notifications']) assert.ok(tenant.includes(`'${p}'`), `tenant menu keeps ${p} under its entry`)
@@ -64,5 +64,14 @@ assert.match(landlord, /href: '\/dashboard', icon: LayoutDashboard, exact: true/
 // Active-route rule: exact match for the dashboard home, nested pages for everything else.
 assert.match(shell, /if \(item\.exact\) return pathname === item\.href/)
 assert.match(shell, /return pathname === item\.href \|\| pathname\.startsWith\(item\.href \+ '\/'\)/)
+
+// Landlord sections: every tab belongs to a menu entry, so that entry stays highlighted on the tab's page.
+const sections = await load('lib/landlord-sections.ts')
+for (const s of sections.LANDLORD_SECTIONS) {
+  for (const t of s.tabs) {
+    if (t.href === '/contact') continue // outside the dashboard
+    assert.ok(landlord.includes(`'${t.href}'`), `landlord menu does not cover the ${t.label} tab (${t.href})`)
+  }
+}
 
 console.log('account-shell-stage17: ok')
