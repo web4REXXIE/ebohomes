@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { sectionForPath, tabIsActive } from '@/lib/landlord-sections'
+import { LANDLORD_SECTIONS, tabIsActive, type Section } from '@/lib/landlord-sections'
 
-// The row of tabs at the top of a landlord page, for example Applications, Viewings and Tenancies under Rentals.
+// The row of tabs at the top of a dashboard page, for example Applications, Viewings and Tenancies under Rentals.
+// The landlord dashboard uses the default list. The admin layout passes its own (lib/admin-sections.ts).
 // It shows nothing on pages that are not part of a section. It only links to pages that already exist.
-export function SectionTabs() {
+export function SectionTabs({ sections = LANDLORD_SECTIONS }: { sections?: Section[] }) {
   const pathname = usePathname()
-  const section = sectionForPath(pathname)
+  const section = sections.find((s) => s.tabs.some((t) => tabIsActive(pathname, t)))
   if (!section) return null
 
   return (
