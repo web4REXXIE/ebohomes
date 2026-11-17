@@ -23,6 +23,9 @@ const nextConfig = {
       ...noindexHeaderRules(),
     ]
   },
+  async redirects() {
+    return [{ source: '/admin/disputes', destination: '/admin/holds#take-offline', permanent: true }]
+  },
 }
 
 export default nextConfig
