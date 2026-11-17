@@ -17,12 +17,15 @@ export type AccountNavItem = {
   badgeKey?: string
   // Exact: active only on this exact path (the dashboard home), not on nested pages.
   exact?: boolean
+  // Other pages that belong to this item, so it stays highlighted there (for example Saved homes under "Find a home").
+  alsoActive?: string[]
 }
 export type AccountNavGroup = { title: string | null; items: AccountNavItem[] }
 export type AccountBadge = { count: number; label: (n: number) => string }
 
-export function isNavActive(pathname: string, item: Pick<AccountNavItem, 'href' | 'exact'>) {
+export function isNavActive(pathname: string, item: Pick<AccountNavItem, 'href' | 'exact' | 'alsoActive'>) {
   if (item.exact) return pathname === item.href
+  if (item.alsoActive?.some((p) => pathname === p || pathname.startsWith(p + '/'))) return true
   return pathname === item.href || pathname.startsWith(item.href + '/')
 }
 
