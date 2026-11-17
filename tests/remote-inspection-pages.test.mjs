@@ -131,7 +131,8 @@ assert.match(req, /Inspected badge/)
 
 // ---- navigation
 const links = await load('lib/dashboard-links.ts')
-assert.ok(links.TENANT_LINKS.some((l) => l.href === '/inspections'))
+// My Inspections no longer has its own menu entry. It stays highlighted under "Find a home" in the tenant shell.
+assert.ok(readFileSync('components/tenant-account-shell.tsx', 'utf8').includes("'/inspections'"))
 assert.ok(links.LANDLORD_LINKS.some((l) => l.href === '/dashboard/inspection-requests'))
 assert.equal(links.isDashboardPath('/inspections'), true)
 
