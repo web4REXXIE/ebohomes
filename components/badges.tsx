@@ -1,14 +1,5 @@
-import { CheckCircle, Clock } from 'lucide-react'
+import { Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-
-export function VerifiedBadge() {
-  return (
-    <Badge variant="verified">
-      <CheckCircle aria-hidden="true" />
-      Verified
-    </Badge>
-  )
-}
 
 export function FeaturedBadge() {
   return <Badge variant="featured">Featured</Badge>
