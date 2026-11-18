@@ -964,6 +964,7 @@ export default function ListingDetailPage() {
             </div>
 
             <PropertyTrust
+              listingId={String(listing.id)}
               trust={trust}
               trustFailed={trustFailed}
               authorityReviewed={authorityReviewed}
