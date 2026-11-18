@@ -25,7 +25,7 @@ class Guard extends Component<{ fallback: ReactNode; children: ReactNode }, { ba
   }
 }
 
-function Loaded({ url, x, z, height, rotY }: { url: string; x: number; z: number; height: number; rotY: number }) {
+function Loaded({ url, x, z, height, rotY, shadows }: { url: string; x: number; z: number; height: number; rotY: number; shadows: boolean }) {
   const { scene } = useGLTF(url)
   const obj = useMemo(() => {
     const c = scene.clone(true)
@@ -40,14 +40,14 @@ function Loaded({ url, x, z, height, rotY }: { url: string; x: number; z: number
     c.traverse((o) => {
       const m = o as THREE.Mesh
       if (m.isMesh) {
-        m.castShadow = true
-        m.receiveShadow = true
+        m.castShadow = shadows
+        m.receiveShadow = shadows
       }
     })
     const g = new THREE.Group()
     g.add(c)
     return g
-  }, [scene, height])
+  }, [scene, height, shadows])
   return <primitive object={obj} position={[x, 0, z]} rotation={[0, rotY, 0]} />
 }
 
@@ -57,6 +57,7 @@ export function Prop({
   z = 0,
   height,
   rotY = 0,
+  shadows = true,
   fallback = null,
 }: {
   kind: ModelKind
@@ -64,12 +65,13 @@ export function Prop({
   z?: number
   height: number
   rotY?: number
+  shadows?: boolean
   fallback?: ReactNode
 }) {
   return (
     <Guard fallback={fallback}>
       <Suspense fallback={fallback}>
-        <Loaded url={MODEL_URL[kind]} x={x} z={z} height={height} rotY={rotY} />
+        <Loaded url={MODEL_URL[kind]} x={x} z={z} height={height} rotY={rotY} shadows={shadows} />
       </Suspense>
     </Guard>
   )
