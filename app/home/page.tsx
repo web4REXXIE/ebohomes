@@ -22,6 +22,7 @@ import { resolveNotificationLink } from '@/components/notification-provider'
 import { supabase } from '@/lib/supabase'
 import { getUnreadMessageCount } from '@/lib/support'
 import { TenantNextStep } from '@/components/tenant-next-step'
+import { TrustedBadge } from '@/components/trusted-badge'
 import { sizedPhoto } from '@/lib/image-url'
 import { SmartImage } from '@/components/ui/smart-image'
 import { tenantVerificationState, type TenantVerificationState } from '@/lib/tenant-verification'
@@ -60,7 +61,7 @@ export default function TenantHomePage() {
   const [unreadMsgCount, setUnreadMsgCount] = useState(0)
 
   const [recommended, setRecommended] = useState<Listing[]>([])
-  const [landlordVerified, setLandlordVerified] = useState<Record<string, boolean>>({})
+  const [landlordTrusted, setLandlordTrusted] = useState<Record<string, boolean>>({})
   const [continueBrowsing, setContinueBrowsing] = useState<Listing[]>([])
   const [recentSearches, setRecentSearches] = useState<{ id: string; text: string }[]>([])
   const [recentMessages, setRecentMessages] = useState<ConvoPreview[]>([])
@@ -120,13 +121,16 @@ export default function TenantHomePage() {
     if (recs && recs.length > 0) {
       const landlordIds = Array.from(new Set(recs.map((r) => r.landlord_id).filter(Boolean)))
       if (landlordIds.length > 0) {
-        const { data: landlords } = await supabase
-          .from('profiles')
-          .select('id, verified')
-          .in('id', landlordIds)
+        // The Trusted label is decided by the database. A failed lookup just means no label.
+        const results = await Promise.all(
+          (landlordIds as string[]).map(async (id) => {
+            const { data, error } = await supabase.rpc('landlord_is_trusted', { p_landlord: id })
+            return [id, !error && data === true] as const
+          })
+        )
         const map: Record<string, boolean> = {}
-        ;(landlords ?? []).forEach((l: any) => { map[l.id] = !!l.verified })
-        setLandlordVerified(map)
+        for (const [id, ok] of results) map[id] = ok
+        setLandlordTrusted(map)
       }
     }
 
@@ -303,7 +307,7 @@ export default function TenantHomePage() {
         ) : (
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {recommended.map((l) => (
-              <ListingMini key={l.id} listing={l} verified={l.landlord_id ? landlordVerified[l.landlord_id] : false} />
+              <ListingMini key={l.id} listing={l} trusted={l.landlord_id ? landlordTrusted[l.landlord_id] : false} />
             ))}
           </div>
         )}
@@ -487,17 +491,13 @@ function ErrorRow({ text }: { text: string }) {
   return <p role="alert" className="py-4 text-center text-sm text-foreground">{text}</p>
 }
 
-function ListingMini({ listing, verified }: { listing: Listing; verified?: boolean }) {
+function ListingMini({ listing, trusted }: { listing: Listing; trusted?: boolean }) {
   return (
     <Link href={`/listing/${listing.id}`} className="focus-ring overflow-hidden rounded-card border border-border bg-card shadow-rest transition-shadow hover:shadow-raised">
       <div className="relative h-28 sm:h-32">
         <SmartImage src={sizedPhoto(listing.photos?.[0], 480) || '/placeholder.jpg'} alt="" fallbackSrc="/placeholder.jpg" />
-        {/* This is the landlord's own check (identity and ownership documents), not an inspection of the property. */}
-        {verified && (
-          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-xs font-semibold text-primary">
-            <ShieldCheck size={12} aria-hidden /> Landlord verified
-          </span>
-        )}
+        {/* Earned Trusted label (idea 16). It replaces the old generic "Landlord verified" badge. */}
+        {trusted && <TrustedBadge className="absolute left-2 top-2" />}
       </div>
       <div className="p-3">
         <p className="text-sm font-bold text-primary">{rent(listing.price_monthly)}</p>
