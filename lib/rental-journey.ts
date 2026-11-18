@@ -181,12 +181,13 @@ function stepLabel(key: StepKey, phase: Phase, state: StepState, v: JourneyViewi
     case 'viewing': {
       if (state === 'done') return { label: app.tenant_interest_at ? 'Confirmed to proceed' : 'Tenancy created', tone: 'green' }
       if (state === 'current') {
-        const tone: Tone = phase === 'v_scheduled' ? 'green' : phase === 'v_proposed' ? 'blue' : phase === 'v_declined' ? 'grey' : phase === 'v_retry' ? 'red' : 'amber'
+        const tone: Tone = phase === 'v_scheduled' ? 'green' : phase === 'v_proposed' ? 'blue' : phase === 'v_declined' ? 'grey' : 'amber'
         const label =
           phase === 'v_none' ? 'Viewing not started'
           : phase === 'v_decide' ? 'Your decision needed'
           : phase === 'v_confirm' ? 'Confirmation needed'
           : phase === 'v_declined' ? 'Not continuing'
+          : phase === 'v_retry' ? 'Request a new viewing'
           : viewingLabel(v?.status)
         return { label, tone }
       }
@@ -321,8 +322,12 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
       return { tone: 'amber', needsYou: true, heading: 'One more step: confirm that you want to proceed', happened: 'You told EboHomes you are interested after your viewing.', means: 'Your application is approved, but your confirmation is not recorded on the application yet.', next: 'Confirm below so EboHomes can prepare your rental offer. Nothing is charged.', action: 'Confirm that you want to proceed.', cta: { label: 'Confirm and proceed', step: 'viewing' } }
     case 'v_declined':
       return { tone: 'grey', needsYou: false, heading: 'You chose not to continue with this property', happened: 'You told EboHomes you are no longer interested after your viewing.', means: 'Nothing more will happen on this application unless you act.', next: 'If you change your mind, request another viewing or contact EboHomes.', action: 'Nothing to do unless you change your mind.', cta: { label: 'Request another viewing', href: '/viewings' } }
-    case 'v_retry':
-      return { tone: 'red', needsYou: true, heading: 'Your last viewing did not go ahead', happened: 'Your last viewing was cancelled, missed or not approved.', means: 'You have not seen the property through EboHomes yet. Nothing is reserved.', next: 'Request a new viewing if you still want to see the property.', action: 'Request a new viewing.', cta: { label: 'Request a viewing', href: '/viewings' } }
+    case 'v_retry': {
+      // Calm wording that says what actually happened. Never red: nothing is wrong with the application itself.
+      const st = c.viewingStatus
+      const happened = st === 'rejected' ? 'EboHomes could not approve your last viewing request.' : st === 'no_show' ? 'Your last viewing was marked as missed.' : st === 'cancelled' ? 'Your last viewing was cancelled.' : 'Your last viewing did not take place.'
+      return { tone: 'amber', needsYou: true, heading: 'Request a new viewing', happened, means: 'Your application is still approved. You have not seen the property through EboHomes yet, and nothing is reserved or charged.', next: 'Pick a new date and request another viewing if you still want to see the property.', action: 'Request a new viewing.', cta: { label: 'Request a viewing', step: 'viewing' } }
+    }
     case 'awaiting_tenancy':
       return { tone: 'amber', needsYou: false, heading: 'Your rental offer is being prepared', happened: `You confirmed${on(c.interestOn)} that you want to proceed.`, means: 'EboHomes prepares your rental offer with the rent, deposit, fees and dates. Nothing is reserved or charged yet.', next: 'You will be notified when the offer is ready. You then accept or decline it here.', action: none, cta: null }
     case 'waitlisted':
