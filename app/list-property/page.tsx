@@ -865,7 +865,7 @@ export default function ListPropertyPage() {
                   {photos.map((photo, index) => (
                     <li key={photo + index} className="relative">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={photo} alt={`Photo ${index + 1}${index === 0 ? ' (cover)' : ''}`} className="h-24 w-full rounded-lg object-cover" />
+                      <img src={photo} alt={`Photo ${index + 1}${index === 0 ? ' (cover)' : ''}`} className="h-24 w-full rounded-lg bg-secondary object-contain" />
                       {index === 0 && (
                         <span className="absolute bottom-1 left-1 rounded bg-forest px-1.5 py-0.5 text-xs font-semibold text-white">Cover</span>
                       )}
@@ -1141,7 +1141,7 @@ export default function ListPropertyPage() {
 
               {photos[0] && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={photos[0]} alt="Cover" className="h-48 w-full rounded-lg object-cover" />
+                <img src={photos[0]} alt="Cover" className="h-48 w-full rounded-lg bg-secondary object-contain" />
               )}
 
               {([
