@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState, useEffect } from 'react'
-import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
+import { useMemo, useRef, useState, useEffect } from 'react'
+import * as THREE from 'three'
+import { Canvas, useThree, useFrame, type ThreeEvent } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import { naturalSort, type ViewUnit } from '@/lib/estate-view'
 import { Prop } from '@/components/scenery'
@@ -43,6 +44,13 @@ const C = {
   leaf: '#2f8f4e',
   leaf2: '#3da35d',
   door: '#5a3b22',
+}
+
+type Mood = 'day' | 'dusk' | 'night'
+const MOODS: Record<Mood, { sky: string; grass: string; plaza: string; hemiSky: string; hemiGround: string; hemi: number; sun: string; sunI: number; disc: string; cloud: string }> = {
+  day: { sky: '#cfe8f7', grass: '#a8d89a', plaza: '#ddd6c6', hemiSky: '#ffffff', hemiGround: '#9ec79a', hemi: 0.85, sun: '#ffffff', sunI: 1.15, disc: '#fff6c9', cloud: '#ffffff' },
+  dusk: { sky: '#f4b58a', grass: '#8fb585', plaza: '#cdbfa8', hemiSky: '#ffd9b0', hemiGround: '#7d9a78', hemi: 0.6, sun: '#ff9d5c', sunI: 0.85, disc: '#ffd27a', cloud: '#ffd9c2' },
+  night: { sky: '#0f1b33', grass: '#3f6a4e', plaza: '#7d8294', hemiSky: '#7f96c8', hemiGround: '#2e4a40', hemi: 0.4, sun: '#9bb0e0', sunI: 0.4, disc: '#f1f4ff', cloud: '#56627f' },
 }
 
 type Placed = { unit: ViewUnit; x: number; y: number; z: number; floorIdx: number }
@@ -101,9 +109,15 @@ function Pill({ text, dark = true }: { text: string; dark?: boolean }) {
   )
 }
 
-function Flat({ p, tone, selected, showLabel, onSelect }: { p: Placed; tone: string; selected: boolean; showLabel: boolean; onSelect?: (id: string) => void }) {
+function Flat({ p, tone, selected, showLabel, mood, onSelect }: { p: Placed; tone: string; selected: boolean; showLabel: boolean; mood: Mood; onSelect?: (id: string) => void }) {
   const base = toneColor(tone, selected)
   const lit = tone === 'to_let' || selected
+  const dark = mood !== 'day'
+  const bodyMat = useRef<THREE.MeshStandardMaterial>(null)
+  // To-let flats breathe softly so they catch the eye
+  useFrame(({ clock }) => {
+    if (bodyMat.current && tone === 'to_let' && !selected) bodyMat.current.emissiveIntensity = 0.3 + 0.22 * Math.sin(clock.elapsedTime * 2.6)
+  })
   const click = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     onSelect?.(p.unit.id)
@@ -112,7 +126,7 @@ function Flat({ p, tone, selected, showLabel, onSelect }: { p: Placed; tone: str
     <group position={[p.x, p.y, p.z]} scale={selected ? 1.07 : 1} onClick={click}>
       <mesh castShadow>
         <boxGeometry args={[1, 0.8, 0.14]} />
-        <meshStandardMaterial color={base} emissive={lit ? base : '#000000'} emissiveIntensity={lit ? 0.25 : 0} />
+        <meshStandardMaterial ref={bodyMat} color={base} emissive={lit ? base : '#000000'} emissiveIntensity={lit ? 0.25 : 0} />
       </mesh>
       {/* White window frame, then the glass in front of it */}
       <mesh position={[0, 0.13, 0.075]}>
@@ -121,7 +135,7 @@ function Flat({ p, tone, selected, showLabel, onSelect }: { p: Placed; tone: str
       </mesh>
       <mesh position={[0, 0.13, 0.09]}>
         <boxGeometry args={[0.7, 0.3, 0.02]} />
-        <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
+        <meshStandardMaterial color={lit ? C.glassLit : dark ? '#d9c27a' : C.glass} emissive={lit ? C.glassLit : dark ? '#d9c27a' : '#000000'} emissiveIntensity={lit ? (dark ? 1 : 0.5) : dark ? 0.55 : 0} />
       </mesh>
       {showLabel && (
         <Html center position={[0, -0.22, 0.12]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
@@ -163,6 +177,10 @@ function PlainHouse({ roof, lit }: { roof: string; lit: boolean }) {
 function House({ p, tone, selected, useModel, onSelect }: { p: Placed; tone: string; selected: boolean; useModel: boolean; onSelect?: (id: string) => void }) {
   const color = toneColor(tone, selected)
   const lit = tone === 'to_let' || selected
+  const ringMat = useRef<THREE.MeshStandardMaterial>(null)
+  useFrame(({ clock }) => {
+    if (ringMat.current && tone === 'to_let' && !selected) ringMat.current.emissiveIntensity = 0.5 + 0.4 * Math.sin(clock.elapsedTime * 2.6)
+  })
   const click = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     onSelect?.(p.unit.id)
@@ -173,7 +191,7 @@ function House({ p, tone, selected, useModel, onSelect }: { p: Placed; tone: str
       {/* Status ring on the ground: green to let, grey taken, gold selected */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
         <ringGeometry args={[1.0, 1.2, 32]} />
-        <meshStandardMaterial color={color} emissive={lit ? color : '#000000'} emissiveIntensity={lit ? 0.4 : 0} />
+        <meshStandardMaterial ref={ringMat} color={color} emissive={lit ? color : '#000000'} emissiveIntensity={lit ? 0.4 : 0} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[1.0, 32]} />
@@ -256,22 +274,105 @@ function Extras({ l }: { l: Layout }) {
   )
 }
 
-function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn }: Props & { layout: Layout; shadowsOn: boolean }) {
+// Soft clouds that drift across the sky
+function Cloud({ x, y, z, s, speed, limit, color, opacity }: { x: number; y: number; z: number; s: number; speed: number; limit: number; color: string; opacity: number }) {
+  const g = useRef<THREE.Group>(null)
+  useFrame((_, dt) => {
+    if (!g.current) return
+    g.current.position.x += dt * speed
+    if (g.current.position.x > limit) g.current.position.x = -limit
+  })
+  return (
+    <group ref={g} position={[x, y, z]} scale={s}>
+      {[[0, 0, 0, 1], [1.1, -0.15, 0.2, 0.75], [-1.1, -0.2, -0.1, 0.8], [0.4, 0.35, 0, 0.7]].map(([cx, cy, cz, r], i) => (
+        <mesh key={i} position={[cx, cy, cz]}>
+          <icosahedronGeometry args={[r, 1]} />
+          <meshStandardMaterial color={color} flatShading transparent opacity={opacity} fog={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function Sky({ mood, size }: { mood: Mood; size: number }) {
+  const m = MOODS[mood]
+  const stars = useMemo(() => {
+    const out: [number, number, number][] = []
+    for (let i = 0; i < 70; i++) {
+      const a = (i * 2.399) % (Math.PI * 2)
+      const e = 0.25 + ((i * 0.618) % 1) * 1.1
+      const r = size * 6
+      out.push([Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r])
+    }
+    return out
+  }, [size])
+  const lim = size * 4
+  return (
+    <>
+      <mesh position={[-size * 3, size * (mood === 'dusk' ? 1.1 : 2.4), -size * 4]}>
+        <sphereGeometry args={[size * (mood === 'night' ? 0.28 : 0.4), 20, 20]} />
+        <meshBasicMaterial color={m.disc} fog={false} />
+      </mesh>
+      {mood === 'night' &&
+        stars.map((p, i) => (
+          <mesh key={i} position={p}>
+            <sphereGeometry args={[size * 0.05, 4, 4]} />
+            <meshBasicMaterial color="#ffffff" fog={false} />
+          </mesh>
+        ))}
+      <Cloud x={-lim * 0.6} y={size * 1.5 + 4} z={-size * 2.5} s={size * 0.28} speed={0.35} limit={lim} color={m.cloud} opacity={0.92} />
+      <Cloud x={lim * 0.3} y={size * 1.9 + 5} z={-size * 3.2} s={size * 0.22} speed={0.25} limit={lim} color={m.cloud} opacity={0.9} />
+      <Cloud x={lim * 0.8} y={size * 1.3 + 3} z={size * 0.5 - size * 3} s={size * 0.18} speed={0.45} limit={lim} color={m.cloud} opacity={0.85} />
+    </>
+  )
+}
+
+// Fly the camera in from far away when the view opens
+function Intro({ target, skip }: { target: [number, number, number]; skip: boolean }) {
+  const { camera, invalidate } = useThree()
+  const t = useRef(skip ? 1 : 0)
+  useFrame((_, dt) => {
+    if (t.current >= 1) return
+    t.current = Math.min(1, t.current + dt / 1.4)
+    const e = 1 - Math.pow(1 - t.current, 3)
+    const k = 1 + (1 - e) * 0.9
+    camera.position.set(target[0] * k, target[1] * k, target[2] * k)
+    invalidate()
+  })
+  return null
+}
+
+function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn, mood, camPos }: Props & { layout: Layout; shadowsOn: boolean; mood: Mood; camPos: [number, number, number] }) {
   const { camera } = useThree()
   const [front, setFront] = useState(true)
   const size = Math.max(layout.w, layout.h + ROOF_H, layout.d, 4)
   const trees = useMemo(() => treeSpots(layout), [layout])
   const useHouseModel = layout.placed.length <= MODEL_HOUSE_MAX
   const s = size * 1.3
+  const M = MOODS[mood]
+  const night = mood !== 'day'
+  const roadZ = layout.hasFloors ? layout.d / 2 + 2.4 : (layout.rows * HOUSE_SP) / 2 + 1.8
+  const roadLen = Math.max(layout.w, layout.d) + 18
+  const lampZ = layout.hasFloors ? layout.d / 2 + 1.5 : (layout.rows * HOUSE_SP) / 2 + 1.5
+  const lampX = layout.hasFloors ? layout.w / 2 + 0.2 : layout.w / 2 - 0.4
 
   return (
     <>
-      <color attach="background" args={[C.sky]} />
-      <fog attach="fog" args={[C.sky, size * 3, size * 6]} />
-      <hemisphereLight args={['#ffffff', '#9ec79a', 0.85]} />
+      <color attach="background" args={[M.sky]} />
+      <fog attach="fog" args={[M.sky, size * 3, size * 6]} />
+      <hemisphereLight args={[M.hemiSky, M.hemiGround, M.hemi]} />
+      <Sky mood={mood} size={size} />
+      <Intro target={camPos} skip={!!preview} />
+      {night && (
+        <>
+          <pointLight position={[-lampX, 1.3, lampZ]} color="#ffd27a" intensity={8} distance={7} />
+          <pointLight position={[lampX, 1.3, lampZ]} color="#ffd27a" intensity={8} distance={7} />
+        </>
+      )}
       <directionalLight
+        color={M.sun}
         position={[8, 14, 10]}
-        intensity={1.15}
+        intensity={M.sunI}
         castShadow={shadowsOn}
         shadow-mapSize={[1024, 1024]}
         shadow-camera-left={-s}
@@ -283,12 +384,23 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn 
       />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
         <circleGeometry args={[size * 4, 48]} />
-        <meshStandardMaterial color={C.grass} />
+        <meshStandardMaterial color={M.grass} />
       </mesh>
       <mesh position={[0, 0.0, 0]} receiveShadow>
         <boxGeometry args={[layout.w + 2, 0.04, layout.d + 2.4]} />
-        <meshStandardMaterial color={C.plaza} />
+        <meshStandardMaterial color={M.plaza} />
       </mesh>
+      {/* Road in front, with a dashed centre line */}
+      <mesh position={[0, 0.01, roadZ]} receiveShadow>
+        <boxGeometry args={[roadLen, 0.03, 1.8]} />
+        <meshStandardMaterial color={night ? '#2b2f3a' : '#6b6f76'} />
+      </mesh>
+      {Array.from({ length: Math.floor(roadLen / 1.6) }).map((_, i) => (
+        <mesh key={`d${i}`} position={[-roadLen / 2 + 0.8 + i * 1.6, 0.03, roadZ]}>
+          <boxGeometry args={[0.7, 0.01, 0.07]} />
+          <meshStandardMaterial color="#f5f0d8" />
+        </mesh>
+      ))}
 
       {layout.hasFloors && (
         <>
@@ -329,7 +441,7 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn 
 
       {layout.placed.map((p) =>
         layout.hasFloors ? (
-          <Flat key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} showLabel={front && !preview} onSelect={onSelect} />
+          <Flat key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} showLabel={front && !preview} mood={mood} onSelect={onSelect} />
         ) : (
           <House key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} useModel={useHouseModel} onSelect={onSelect} />
         ),
@@ -371,6 +483,7 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn 
 export default function Building3D(props: Props) {
   const [ok, setOk] = useState<boolean | null>(null)
   const [resetKey, setResetKey] = useState(0)
+  const [mood, setMood] = useState<Mood>('day')
   useEffect(() => {
     try {
       const c = document.createElement('canvas')
@@ -396,9 +509,23 @@ export default function Building3D(props: Props) {
     <div>
       <div className="relative overflow-hidden rounded-xl border border-border" style={{ height, touchAction: props.preview ? 'pan-y' : 'none' }}>
         {ok && (
-          <Canvas key={resetKey} shadows={shadowsOn} frameloop={props.preview ? 'always' : 'demand'} dpr={[1, 1.5]} camera={{ position: camPos, fov: 40 }}>
-            <Scene {...props} layout={layout} shadowsOn={shadowsOn} />
+          <Canvas key={resetKey} shadows={shadowsOn} frameloop={props.preview || props.units.length <= 40 ? 'always' : 'demand'} dpr={[1, 1.5]} camera={{ position: camPos, fov: 40 }}>
+            <Scene {...props} layout={layout} shadowsOn={shadowsOn} mood={props.preview ? 'day' : mood} camPos={camPos} />
           </Canvas>
+        )}
+        {!props.preview && (
+          <div className="absolute left-2 top-2 flex gap-1">
+            {(['day', 'dusk', 'night'] as Mood[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMood(m)}
+                className={`min-h-9 rounded-lg border px-3 text-xs font-semibold ${mood === m ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card/95 text-foreground'}`}
+              >
+                {m === 'day' ? 'Day' : m === 'dusk' ? 'Dusk' : 'Night'}
+              </button>
+            ))}
+          </div>
         )}
         {!props.preview && (
           <button
