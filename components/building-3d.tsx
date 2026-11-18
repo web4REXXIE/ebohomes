@@ -1,117 +1,307 @@
 'use client'
 
 import { useMemo, useState, useEffect } from 'react'
-import { Canvas, type ThreeEvent } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
+import { OrbitControls, Html } from '@react-three/drei'
 import { naturalSort, type ViewUnit } from '@/lib/estate-view'
 
 type Props = {
   units: ViewUnit[]
   toneOf: (u: ViewUnit) => string
   selectedId: string | null
-  onSelect: (id: string) => void
+  onSelect?: (id: string) => void
+  name?: string
+  preview?: boolean
+  height?: number
 }
 
 const GAP = 1.15
 const FLOOR_H = 1.1
-const GREEN = '#16a34a'
-const GREY = '#9aa3a0'
-const GOLD = '#d4a017'
-const BLUE = '#3b82f6'
-const FOREST = '#0A2E1A'
+const BODY_D = 1.2
+const HOUSE_SP = 2.3
+const LABEL_DF = 10 // label size: raise to make numbers bigger, lower to make them smaller
 
-type Placed = { unit: ViewUnit; x: number; y: number; z: number }
-
-function colorFor(tone: string) {
-  if (tone === 'to_let') return GREEN
-  if (tone === 'neighbour') return BLUE
-  return GREY
+const C = {
+  sky: '#cfe8f7',
+  grass: '#a8d89a',
+  plaza: '#ddd6c6',
+  body: '#f4efe3',
+  forest: '#0A2E1A',
+  green: '#22c55e',
+  taken: '#b9b4aa',
+  blue: '#3b82f6',
+  gold: '#f5b301',
+  glass: '#5b7fa6',
+  glassLit: '#fff1b8',
+  trunk: '#7a5230',
+  leaf: '#2f8f4e',
+  leaf2: '#3da35d',
+  door: '#5a3b22',
 }
 
-function Home({ p, tone, selected, house, onSelect }: { p: Placed; tone: string; selected: boolean; house: boolean; onSelect: (id: string) => void }) {
-  const color = selected ? GOLD : colorFor(tone)
-  const glow = tone === 'to_let' || selected
+type Placed = { unit: ViewUnit; x: number; y: number; z: number; floorIdx: number }
+type Layout = { hasFloors: boolean; placed: Placed[]; floors: number[]; cols: number; rows: number; w: number; h: number; d: number }
+
+function makeLayout(units: ViewUnit[]): Layout {
+  const sorted = [...units].sort((a, b) => naturalSort(a.unit_label, b.unit_label))
+  const hasFloors = sorted.some((u) => u.floor_no !== null)
+  const placed: Placed[] = []
+  if (hasFloors) {
+    const floors = Array.from(new Set(sorted.map((u) => u.floor_no ?? 0))).sort((a, b) => a - b)
+    let widest = 1
+    floors.forEach((f, fi) => {
+      const row = sorted.filter((u) => (u.floor_no ?? 0) === f)
+      widest = Math.max(widest, row.length)
+      row.forEach((u, i) => {
+        placed.push({ unit: u, x: (i - (row.length - 1) / 2) * GAP, y: fi * FLOOR_H + 0.55, z: BODY_D / 2 + 0.05, floorIdx: fi })
+      })
+    })
+    return { hasFloors, placed, floors, cols: widest, rows: floors.length, w: widest * GAP + 0.4, h: floors.length * FLOOR_H + 0.1, d: BODY_D }
+  }
+  const cols = Math.max(1, Math.ceil(Math.sqrt(sorted.length)))
+  const rows = Math.max(1, Math.ceil(sorted.length / cols))
+  sorted.forEach((u, i) => {
+    const c = i % cols
+    const r = Math.floor(i / cols)
+    placed.push({ unit: u, x: (c - (cols - 1) / 2) * HOUSE_SP, y: 0, z: (r - (rows - 1) / 2) * HOUSE_SP, floorIdx: 0 })
+  })
+  return { hasFloors, placed, floors: [], cols, rows, w: cols * HOUSE_SP, h: 1.8, d: rows * HOUSE_SP }
+}
+
+function toneColor(tone: string, selected: boolean) {
+  if (selected) return C.gold
+  if (tone === 'to_let') return C.green
+  if (tone === 'neighbour') return C.blue
+  return C.taken
+}
+
+function Pill({ text, dark = true }: { text: string; dark?: boolean }) {
+  return (
+    <div
+      style={{
+        background: dark ? 'rgba(10,46,26,0.9)' : 'rgba(250,247,242,0.95)',
+        color: dark ? '#fff' : '#0A2E1A',
+        fontSize: 14,
+        fontWeight: 700,
+        padding: '1px 7px',
+        borderRadius: 7,
+        whiteSpace: 'nowrap',
+        fontFamily: 'Poppins, system-ui, sans-serif',
+        border: dark ? 'none' : '1px solid rgba(10,46,26,0.25)',
+      }}
+    >
+      {text}
+    </div>
+  )
+}
+
+function Flat({ p, tone, selected, showLabel, onSelect }: { p: Placed; tone: string; selected: boolean; showLabel: boolean; onSelect?: (id: string) => void }) {
+  const base = toneColor(tone, selected)
+  const lit = tone === 'to_let' || selected
   const click = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    onSelect(p.unit.id)
+    onSelect?.(p.unit.id)
   }
   return (
-    <group position={[p.x, p.y, p.z]} onClick={click}>
-      <mesh>
-        <boxGeometry args={[1, 0.85, 1]} />
-        <meshStandardMaterial color={color} emissive={glow ? color : '#000000'} emissiveIntensity={glow ? 0.35 : 0} />
+    <group position={[p.x, p.y, p.z]} scale={selected ? 1.07 : 1} onClick={click}>
+      <mesh castShadow>
+        <boxGeometry args={[1, 0.8, 0.14]} />
+        <meshStandardMaterial color={base} emissive={lit ? base : '#000000'} emissiveIntensity={lit ? 0.25 : 0} />
       </mesh>
-      {house && (
-        <mesh position={[0, 0.85, 0]} rotation={[0, Math.PI / 4, 0]}>
-          <coneGeometry args={[0.85, 0.7, 4]} />
-          <meshStandardMaterial color={FOREST} />
-        </mesh>
+      <mesh position={[0, 0.13, 0.08]}>
+        <boxGeometry args={[0.7, 0.3, 0.03]} />
+        <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
+      </mesh>
+      {showLabel && (
+        <Html center position={[0, -0.22, 0.12]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+          <Pill text={p.unit.unit_label} />
+        </Html>
       )}
     </group>
   )
 }
 
-function Scene({ units, toneOf, selectedId, onSelect }: Props) {
-  const layout = useMemo(() => {
-    const sorted = [...units].sort((a, b) => naturalSort(a.unit_label, b.unit_label))
-    const hasFloors = sorted.some((u) => u.floor_no !== null)
-    const placed: Placed[] = []
-    if (hasFloors) {
-      const floors = Array.from(new Set(sorted.map((u) => u.floor_no ?? 0))).sort((a, b) => a - b)
-      let widest = 1
-      floors.forEach((f, fi) => {
-        const row = sorted.filter((u) => (u.floor_no ?? 0) === f)
-        widest = Math.max(widest, row.length)
-        row.forEach((u, i) => {
-          placed.push({ unit: u, x: (i - (row.length - 1) / 2) * GAP, y: fi * FLOOR_H + 0.5, z: 0.35 })
-        })
-      })
-      return { hasFloors, placed, w: widest * GAP, h: floors.length * FLOOR_H, d: 1 }
-    }
-    const cols = Math.ceil(Math.sqrt(sorted.length))
-    const rows = Math.ceil(sorted.length / cols)
-    sorted.forEach((u, i) => {
-      const c = i % cols
-      const r = Math.floor(i / cols)
-      placed.push({ unit: u, x: (c - (cols - 1) / 2) * 1.8, y: 0.45, z: (r - (rows - 1) / 2) * 1.8 })
-    })
-    return { hasFloors, placed, w: cols * 1.8, h: 1.5, d: rows * 1.8 }
-  }, [units])
+function House({ p, tone, selected, onSelect }: { p: Placed; tone: string; selected: boolean; onSelect?: (id: string) => void }) {
+  const roof = toneColor(tone, selected)
+  const lit = tone === 'to_let' || selected
+  const click = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    onSelect?.(p.unit.id)
+  }
+  return (
+    <group position={[p.x, 0, p.z]} scale={selected ? 1.07 : 1} onClick={click}>
+      <mesh position={[0, 0.45, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.3, 0.9, 1.2]} />
+        <meshStandardMaterial color={C.body} />
+      </mesh>
+      <mesh position={[0, 1.25, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+        <coneGeometry args={[1.15, 0.75, 4]} />
+        <meshStandardMaterial color={roof} emissive={lit ? roof : '#000000'} emissiveIntensity={lit ? 0.25 : 0} />
+      </mesh>
+      <mesh position={[0, 0.25, 0.61]}>
+        <boxGeometry args={[0.26, 0.5, 0.03]} />
+        <meshStandardMaterial color={C.door} />
+      </mesh>
+      <mesh position={[-0.42, 0.55, 0.61]}>
+        <boxGeometry args={[0.25, 0.25, 0.03]} />
+        <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
+      </mesh>
+      <mesh position={[0.42, 0.55, 0.61]}>
+        <boxGeometry args={[0.25, 0.25, 0.03]} />
+        <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
+      </mesh>
+      <Html center position={[0, 1.95, 0]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+        <Pill text={`No. ${p.unit.unit_label}`} />
+      </Html>
+    </group>
+  )
+}
 
-  const size = Math.max(layout.w, layout.h, layout.d)
+function Tree({ x, z, s = 1 }: { x: number; z: number; s?: number }) {
+  return (
+    <group position={[x, 0, z]} scale={s}>
+      <mesh position={[0, 0.25, 0]} castShadow>
+        <cylinderGeometry args={[0.06, 0.09, 0.5, 6]} />
+        <meshStandardMaterial color={C.trunk} />
+      </mesh>
+      <mesh position={[0, 0.8, 0]} castShadow>
+        <icosahedronGeometry args={[0.38, 0]} />
+        <meshStandardMaterial color={C.leaf} flatShading />
+      </mesh>
+      <mesh position={[0.12, 1.1, 0.05]} castShadow>
+        <icosahedronGeometry args={[0.26, 0]} />
+        <meshStandardMaterial color={C.leaf2} flatShading />
+      </mesh>
+    </group>
+  )
+}
+
+function treeSpots(l: Layout): { x: number; z: number; s: number }[] {
+  const t: { x: number; z: number; s: number }[] = []
+  if (l.hasFloors) {
+    const a = l.w / 2 + 1.2
+    t.push({ x: -a, z: 1.6, s: 1.1 }, { x: a, z: 1.8, s: 1 }, { x: -a - 1, z: 0.2, s: 0.9 }, { x: a + 1, z: -0.4, s: 1.2 })
+    t.push({ x: -l.w / 3, z: -2.4, s: 1.1 }, { x: l.w / 4, z: -2.6, s: 1 })
+    return t
+  }
+  const zEdge = (l.rows * HOUSE_SP) / 2 + 0.7
+  const xEdge = (l.cols * HOUSE_SP) / 2 + 0.7
+  for (let c = 0; c < l.cols; c += 2) {
+    const x = (c - (l.cols - 1) / 2) * HOUSE_SP
+    t.push({ x, z: -zEdge, s: 1.1 }, { x: x + 0.8, z: zEdge, s: 0.9 })
+  }
+  for (let r = 0; r < l.rows; r += 2) {
+    const z = (r - (l.rows - 1) / 2) * HOUSE_SP
+    t.push({ x: -xEdge, z, s: 1 }, { x: xEdge, z: z + 0.6, s: 1.1 })
+  }
+  for (let r = 0; r < l.rows; r++) {
+    for (let c = 0; c < l.cols - 1; c++) {
+      if ((r * l.cols + c) % 3 === 0) {
+        t.push({ x: (c - (l.cols - 1) / 2) * HOUSE_SP + HOUSE_SP / 2, z: (r - (l.rows - 1) / 2) * HOUSE_SP + 0.5, s: 0.7 })
+      }
+    }
+  }
+  return t
+}
+
+function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn }: Props & { layout: Layout; shadowsOn: boolean }) {
+  const { camera } = useThree()
+  const [front, setFront] = useState(true)
+  const size = Math.max(layout.w, layout.h, layout.d, 4)
+  const trees = useMemo(() => treeSpots(layout), [layout])
+  const s = size * 1.3
 
   return (
     <>
-      <color attach="background" args={['#e6f0ea']} />
-      <fog attach="fog" args={['#e6f0ea', size * 2.5, size * 6]} />
-      <hemisphereLight args={['#ffffff', '#b7c9bd', 0.9]} />
-      <directionalLight position={[6, 12, 8]} intensity={1.1} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
-        <circleGeometry args={[size * 1.6, 48]} />
-        <meshStandardMaterial color="#cfe0d4" />
+      <color attach="background" args={[C.sky]} />
+      <fog attach="fog" args={[C.sky, size * 3, size * 6]} />
+      <hemisphereLight args={['#ffffff', '#9ec79a', 0.85]} />
+      <directionalLight
+        position={[8, 14, 10]}
+        intensity={1.15}
+        castShadow={shadowsOn}
+        shadow-mapSize={[1024, 1024]}
+        shadow-camera-left={-s}
+        shadow-camera-right={s}
+        shadow-camera-top={s}
+        shadow-camera-bottom={-s}
+        shadow-camera-near={1}
+        shadow-camera-far={80}
+      />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
+        <circleGeometry args={[size * 4, 48]} />
+        <meshStandardMaterial color={C.grass} />
       </mesh>
+      <mesh position={[0, 0.0, 0]} receiveShadow>
+        <boxGeometry args={[layout.w + 2, 0.04, layout.d + 2.4]} />
+        <meshStandardMaterial color={C.plaza} />
+      </mesh>
+
       {layout.hasFloors && (
         <>
-          <mesh position={[0, layout.h / 2, -0.25]}>
-            <boxGeometry args={[layout.w + 0.4, layout.h, 1.1]} />
-            <meshStandardMaterial color="#f3efe6" />
+          <mesh position={[0, layout.h / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[layout.w, layout.h, layout.d]} />
+            <meshStandardMaterial color={C.body} />
           </mesh>
-          <mesh position={[0, layout.h + 0.1, -0.1]}>
-            <boxGeometry args={[layout.w + 0.7, 0.25, 1.6]} />
-            <meshStandardMaterial color={FOREST} />
+          {layout.floors.map((f, fi) => (
+            <mesh key={`b${f}`} position={[0, fi * FLOOR_H + 0.12, layout.d / 2 + 0.22]} castShadow receiveShadow>
+              <boxGeometry args={[layout.w + 0.2, 0.06, 0.5]} />
+              <meshStandardMaterial color="#d8d1c0" />
+            </mesh>
+          ))}
+          <mesh position={[0, layout.h + 0.12, 0]} castShadow>
+            <boxGeometry args={[layout.w + 0.5, 0.25, layout.d + 0.5]} />
+            <meshStandardMaterial color={C.forest} />
           </mesh>
+          {name && !preview && (
+            <Html center position={[0, layout.h + 0.9, 0]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+              <Pill text={name} dark={false} />
+            </Html>
+          )}
+          {front && !preview &&
+            layout.floors.map((f, fi) => (
+              <Html key={`f${f}`} center position={[-layout.w / 2 - 0.55, fi * FLOOR_H + 0.55, layout.d / 2]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+                <Pill text={f === 0 ? 'G' : `F${f}`} dark={false} />
+              </Html>
+            ))}
         </>
       )}
-      {layout.placed.map((p) => (
-        <Home key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} house={!layout.hasFloors} onSelect={onSelect} />
+
+      {layout.placed.map((p) =>
+        layout.hasFloors ? (
+          <Flat key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} showLabel={front && !preview} onSelect={onSelect} />
+        ) : (
+          <House key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} onSelect={onSelect} />
+        ),
+      )}
+
+      {!layout.hasFloors && name && !preview && (
+        <Html center position={[0, 0.2, (layout.rows * HOUSE_SP) / 2 + 1.4]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+          <Pill text={name} dark={false} />
+        </Html>
+      )}
+
+      {trees.map((t, i) => (
+        <Tree key={i} x={t.x} z={t.z} s={t.s} />
       ))}
+
       <OrbitControls
-        target={[0, layout.h / 2, 0]}
-        enablePan
-        enableDamping={false}
-        minDistance={3}
-        maxDistance={size * 3 + 6}
-        maxPolarAngle={Math.PI / 2.05}
+        target={[0, layout.hasFloors ? layout.h / 2 : 0.6, 0]}
+        enablePan={!preview}
+        enableZoom={!preview}
+        enableRotate={!preview}
+        autoRotate={!!preview}
+        autoRotateSpeed={1.4}
+        enableDamping
+        dampingFactor={0.12}
+        minDistance={4}
+        maxDistance={size * 2.5 + 10}
+        minPolarAngle={0.25}
+        maxPolarAngle={Math.PI / 2.1}
+        onChange={() => {
+          const f = camera.position.z > 0.5
+          setFront((prev) => (prev === f ? prev : f))
+        }}
       />
     </>
   )
@@ -119,6 +309,7 @@ function Scene({ units, toneOf, selectedId, onSelect }: Props) {
 
 export default function Building3D(props: Props) {
   const [ok, setOk] = useState<boolean | null>(null)
+  const [resetKey, setResetKey] = useState(0)
   useEffect(() => {
     try {
       const c = document.createElement('canvas')
@@ -128,20 +319,37 @@ export default function Building3D(props: Props) {
     }
   }, [])
 
+  const layout = useMemo(() => makeLayout(props.units), [props.units])
+  const size = Math.max(layout.w, layout.h, layout.d, 4)
+  const dist = size * 1.05 + 5
+  const camPos: [number, number, number] = layout.hasFloors
+    ? [dist * 0.45, layout.h * 0.55 + 3, dist]
+    : [dist * 0.6, dist * 0.75, dist * 0.9]
+  const height = props.height ?? 460
+  const shadowsOn = props.units.length <= 60
+
   if (ok === false) {
     return <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">3D does not work on this phone. Please use Flat view.</p>
   }
-  const dist = Math.max(props.units.length > 12 ? 14 : 8, 8)
   return (
     <div>
-      <div className="overflow-hidden rounded-xl border border-border" style={{ height: 420, touchAction: 'none' }}>
+      <div className="relative overflow-hidden rounded-xl border border-border" style={{ height, touchAction: props.preview ? 'pan-y' : 'none' }}>
         {ok && (
-          <Canvas frameloop="demand" dpr={[1, 1.5]} camera={{ position: [dist * 0.6, dist * 0.7, dist], fov: 45 }}>
-            <Scene {...props} />
+          <Canvas key={resetKey} shadows={shadowsOn} frameloop={props.preview ? 'always' : 'demand'} dpr={[1, 1.5]} camera={{ position: camPos, fov: 40 }}>
+            <Scene {...props} layout={layout} shadowsOn={shadowsOn} />
           </Canvas>
         )}
+        {!props.preview && (
+          <button
+            type="button"
+            onClick={() => setResetKey((k) => k + 1)}
+            className="absolute right-2 top-2 min-h-9 rounded-lg border border-border bg-card/95 px-3 text-xs font-semibold text-foreground"
+          >
+            Reset view
+          </button>
+        )}
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">Drag to turn. Pinch to zoom. Tap a home. Touch outside the box to scroll the page.</p>
+      {!props.preview && <p className="mt-1 text-xs text-muted-foreground">Drag to turn. Pinch to zoom. Tap a home. Touch outside the box to scroll the page.</p>}
     </div>
   )
 }
