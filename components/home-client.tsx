@@ -821,14 +821,19 @@ export default function HomeClient() {
           <Section width="wide" spacing="sm">
             <SectionHead title="Explore by area" sub={areas.length > 0 ? 'Real listing counts. Tap an area to see its properties.' : 'Search the areas around Ebonyi State.'} href="/search" cta="All areas" />
             {areas.length > 0 && (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-                {areas.slice(0, 8).map((a) => {
+              <div
+                className="-mx-4 flex snap-x snap-proximity gap-3 overflow-x-auto scroll-px-4 px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0"
+                role="list"
+                aria-label="Areas"
+              >
+                {areas.slice(0, 12).map((a) => {
                   const photo = areaPhotos[a.name.toLowerCase()]
                   return (
                     <Link
                       key={a.name}
                       href={`/search?location=${encodeURIComponent(a.name)}`}
-                      className="group relative aspect-[4/5] overflow-hidden rounded-card border border-border bg-forest text-left shadow-rest transition-all hover:-translate-y-0.5 hover:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      role="listitem"
+                      className="group relative aspect-[4/5] w-44 shrink-0 snap-start overflow-hidden rounded-card border border-border bg-forest text-left shadow-rest transition-all hover:-translate-y-0.5 hover:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:w-56"
                     >
                       {photo ? (
                         <SmartImage src={img(photo, 500)} alt="" dark className="transition-transform duration-500 group-hover:scale-105" />
