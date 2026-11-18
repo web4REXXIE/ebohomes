@@ -74,7 +74,7 @@ export const STEP_BLURB: Record<StepKey, string> = {
   application: 'The property you applied for and the details of your application.',
   decision: 'EboHomes reviews your application and makes the decision. The landlord may give a recommendation, but EboHomes decides.',
   viewing: 'See the property in person, then tell EboHomes that you want to proceed.',
-  setup: 'The landlord sets up your tenancy. You review and accept the rental terms, then the signed agreement is recorded.',
+  setup: 'EboHomes sends you the rental offer. You accept the terms, EboHomes sets up your tenancy, then the signed agreement is recorded.',
   active: 'Your tenancy is running. Rent, payments, receipts and records are here.',
 }
 
@@ -197,7 +197,7 @@ function stepLabel(key: StepKey, phase: Phase, state: StepState, v: JourneyViewi
       if (state === 'done') return { label: 'Complete', tone: 'green' }
       if (state === 'upcoming') return { label: isClosed(phase) ? 'Unavailable' : 'Not started', tone: 'grey' }
       switch (phase) {
-        case 'awaiting_tenancy': return { label: 'Landlord setting up', tone: 'amber' }
+        case 'awaiting_tenancy': return { label: 'Offer being prepared', tone: 'amber' }
         case 'waitlisted': return { label: 'On the waiting list', tone: 'blue' }
         case 'terms_none': return { label: 'Terms being prepared', tone: 'amber' }
         case 'terms_review': return { label: 'Review your terms', tone: 'amber' }
@@ -239,7 +239,7 @@ export function lockedReason(journey: Journey, key: StepKey): string | null {
     case 'viewing':
       return 'You can request a viewing while your application is open. Confirming that you want to proceed opens only after EboHomes approves your application.'
     case 'setup':
-      return 'Tenancy setup starts after EboHomes approves your application and you confirm that you want to proceed. The landlord then creates your tenancy.'
+      return 'Tenancy setup starts after EboHomes approves your application and you confirm that you want to proceed. EboHomes then sends your rental offer and sets up your tenancy once you accept.'
     case 'active':
       return 'Your tenancy is shown as active only when its status is active. Until then, this stage stays locked.'
     default:
@@ -318,13 +318,13 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
     case 'v_decide':
       return { tone: 'blue', needsYou: true, heading: 'Viewing completed. Do you want to continue?', happened: 'EboHomes recorded your viewing as completed.', means: 'Your choice is recorded. It does not reserve the property or charge you.', next: 'Say whether you want to rent this property.', action: 'Choose “I’m interested” or “I’m no longer interested”.', cta: { label: 'Make your choice', step: 'viewing' } }
     case 'v_confirm':
-      return { tone: 'amber', needsYou: true, heading: 'One more step: confirm that you want to proceed', happened: 'You told EboHomes you are interested after your viewing.', means: 'Your application is approved, but your confirmation is not recorded on the application yet.', next: 'Confirm below so the landlord can set up your tenancy. Nothing is charged.', action: 'Confirm that you want to proceed.', cta: { label: 'Confirm and proceed', step: 'viewing' } }
+      return { tone: 'amber', needsYou: true, heading: 'One more step: confirm that you want to proceed', happened: 'You told EboHomes you are interested after your viewing.', means: 'Your application is approved, but your confirmation is not recorded on the application yet.', next: 'Confirm below so EboHomes can prepare your rental offer. Nothing is charged.', action: 'Confirm that you want to proceed.', cta: { label: 'Confirm and proceed', step: 'viewing' } }
     case 'v_declined':
       return { tone: 'grey', needsYou: false, heading: 'You chose not to continue with this property', happened: 'You told EboHomes you are no longer interested after your viewing.', means: 'Nothing more will happen on this application unless you act.', next: 'If you change your mind, request another viewing or contact EboHomes.', action: 'Nothing to do unless you change your mind.', cta: { label: 'Request another viewing', href: '/viewings' } }
     case 'v_retry':
       return { tone: 'red', needsYou: true, heading: 'Your last viewing did not go ahead', happened: 'Your last viewing was cancelled, missed or not approved.', means: 'You have not seen the property through EboHomes yet. Nothing is reserved.', next: 'Request a new viewing if you still want to see the property.', action: 'Request a new viewing.', cta: { label: 'Request a viewing', href: '/viewings' } }
     case 'awaiting_tenancy':
-      return { tone: 'amber', needsYou: false, heading: 'Your tenancy is being set up', happened: `You confirmed${on(c.interestOn)} that you want to proceed.`, means: 'The landlord now creates your tenancy and proposes the rental terms. Nothing is reserved or charged yet.', next: 'You will be notified, and your tenancy will appear here.', action: none, cta: null }
+      return { tone: 'amber', needsYou: false, heading: 'Your rental offer is being prepared', happened: `You confirmed${on(c.interestOn)} that you want to proceed.`, means: 'EboHomes prepares your rental offer with the rent, deposit, fees and dates. Nothing is reserved or charged yet.', next: 'You will be notified when the offer is ready. You then accept or decline it here.', action: none, cta: null }
     case 'waitlisted':
       return { tone: 'blue', needsYou: false, heading: 'You are on the waiting list for this property', happened: 'EboHomes approved your application, but another applicant’s tenancy for this property is already in progress.', means: 'You have not been rejected and you have not rented this property. The property is only confirmed as rented after the first rent payment is verified.', next: 'If that rental does not go through, EboHomes can move you forward. You will be notified. You can also look at other properties.', action: 'Nothing to do right now.', cta: { label: 'Browse other properties', href: '/search' } }
     case 'terms_none':
@@ -359,4 +359,4 @@ export function statusPanel(phase: Phase, c: PanelCtx): StatusPanelData {
     case 'ended':
       return { tone: 'grey', needsYou: false, heading: 'This tenancy has ended', happened: 'Your tenancy is no longer running.', means: 'Your records and receipts stay available here for your reference.', next: 'You can look at other properties if you want to rent again.', action: 'Nothing to do.', cta: { label: 'Browse other properties', href: '/search' } }
   }
-}
+              }
