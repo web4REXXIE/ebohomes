@@ -88,3 +88,46 @@ export function inspectionDetails(inspection: unknown): { facts: InspectionItem[
 export function nearbyText(inspection: unknown): string {
   return isObject(inspection) ? text(inspection.nearby_landmarks) : ''
 }
+
+// ---- Idea 16: the four checks, with dates ----
+// Dates come from the listing_check_dates function (20261219_05). Nothing here invents a check or a date.
+
+export type CheckDates = {
+  identityAt: string | null
+  documentsReviewed: boolean
+  documentsAt: string | null
+  authorityAt: string | null
+}
+
+function dateOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  return Number.isNaN(new Date(value).getTime()) ? null : value
+}
+
+// Reads the function's answer. Anything that is not the expected shape gives null, which the screen shows as "could not load".
+export function parseCheckDates(value: unknown): CheckDates | null {
+  if (!isObject(value)) return null
+  return {
+    identityAt: dateOrNull(value.identity_at),
+    documentsReviewed: value.documents_reviewed === true,
+    documentsAt: dateOrNull(value.documents_at),
+    authorityAt: dateOrNull(value.authority_at),
+  }
+}
+
+// Property documents reviewed: yes only when EboHomes reviewed at least one current document as acceptable.
+export function documentsState(dates: CheckDates | null, failed = false): RowState {
+  if (failed || dates === null) return 'unavailable'
+  return dates.documentsReviewed ? 'yes' : 'no'
+}
+
+// "Identity checked on 3 March 2026", or just "Identity checked" when there is no date on record.
+export function withDate(title: string, isoDate: string | null | undefined): string {
+  const d = formatInspectionDate(isoDate)
+  return d ? `${title} on ${d}` : title
+}
+
+// The Trusted label is decided by the database only. Anything other than a real true is "not shown".
+export function isTrusted(value: unknown): boolean {
+  return value === true
+}
