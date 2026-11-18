@@ -39,6 +39,7 @@ const ReportListingModal = dynamic(
 // The public property details page. Anyone can read it. Only approved listings are shown.
 // Everything here is read only except Save and Report. Apply and Viewing open the tenant's own application.
 // Exact map pins are never read here: ListingLocationPublic decides what each viewer may see.
+// The core details load first. The rental terms load in a separate query, so a missing terms column can never stop the page.
 
 const OPEN_APPLICATION = ['pending', 'info_requested', 'approved']
 
@@ -61,15 +62,20 @@ type Listing = {
   status: string | null
   listed_by_role: string | null
   created_at: string | null
+  properties?: { public_id?: string | null } | { public_id?: string | null }[] | null
+}
+
+type Terms = {
   duration_months: number | null
   notice_days: number | null
   payment_schedule: string | null
   house_rules: string | null
-  properties?: { public_id?: string | null } | { public_id?: string | null }[] | null
 }
 
 const COLUMNS =
-  'id, landlord_id, title, description, location_text, price_monthly, service_charge, caution_deposit, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, status, listed_by_role, created_at, duration_months, notice_days, payment_schedule, house_rules, properties(public_id)'
+  'id, landlord_id, title, description, location_text, price_monthly, service_charge, caution_deposit, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, status, listed_by_role, created_at, properties(public_id)'
+
+const TERMS_COLUMNS = 'duration_months, notice_days, payment_schedule, house_rules'
 
 function addedOn(iso: string | null): string | undefined {
   if (!iso) return undefined
@@ -84,6 +90,7 @@ export default function ListingDetailPage() {
 
   const [state, setState] = useState<'loading' | 'ok' | 'error' | 'notfound'>('loading')
   const [listing, setListing] = useState<Listing | null>(null)
+  const [terms, setTerms] = useState<Terms | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [onHold, setOnHold] = useState(false)
   const [reserved, setReserved] = useState(false)
@@ -120,6 +127,10 @@ export default function ListingDetailPage() {
     const l = data as unknown as Listing
     setListing(l)
     setState('ok')
+
+    // Rental terms are optional. If these columns are missing or the read is refused, the page simply shows no terms block.
+    const tq = await supabase.from('listings').select(TERMS_COLUMNS).eq('id', id).maybeSingle()
+    setTerms(tq.error || !tq.data ? null : (tq.data as unknown as Terms))
 
     const { data: auth } = await supabase.auth.getUser()
     const uid = auth?.user?.id ?? null
@@ -270,7 +281,8 @@ export default function ListingDetailPage() {
   const props = Array.isArray(listing.properties) ? listing.properties[0] : listing.properties
   const rent = toMoney(listing.price_monthly)
   const hasTerms =
-    listing.duration_months != null || listing.notice_days != null || !!listing.payment_schedule?.trim() || !!listing.house_rules?.trim()
+    !!terms &&
+    (terms.duration_months != null || terms.notice_days != null || !!terms.payment_schedule?.trim() || !!terms.house_rules?.trim())
 
   const sections = [
     { id: 'about', label: 'About' },
@@ -304,12 +316,12 @@ export default function ListingDetailPage() {
                 availabilityDate={listing.availability_date}
               />
               <PropertyRentCard priceMonthly={listing.price_monthly} serviceCharge={listing.service_charge} cautionDeposit={listing.caution_deposit} />
-              {hasTerms && (
+              {hasTerms && terms && (
                 <ListingTerms
-                  durationMonths={listing.duration_months}
-                  noticeDays={listing.notice_days}
-                  paymentSchedule={listing.payment_schedule}
-                  houseRules={listing.house_rules}
+                  durationMonths={terms.duration_months}
+                  noticeDays={terms.notice_days}
+                  paymentSchedule={terms.payment_schedule}
+                  houseRules={terms.house_rules}
                 />
               )}
               <PropertyDescription text={listing.description ?? ''} />
@@ -377,7 +389,6 @@ export default function ListingDetailPage() {
             </div>
           </aside>
         </div>
-
       </main>
 
       <PropertyActionsBar actions={actions} onChat={onChat} priceText={rent !== null ? `₦${rent.toLocaleString('en-NG')}` : null} onGate={onGate} />
