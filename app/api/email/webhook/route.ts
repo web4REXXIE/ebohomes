@@ -2,12 +2,16 @@ import { timingSafeEqual } from 'crypto'
 import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendNotificationEmail } from '@/lib/notification-email'
+import { ALWAYS_EMAIL_TYPES, isUrgentEmail } from '@/lib/urgent-email'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // Same rule as in-app: security and verification notifications are always delivered.
-const ALWAYS_EMAIL = new Set(['security', 'verification'])
+const ALWAYS_EMAIL = ALWAYS_EMAIL_TYPES
+
+// The free email plan allows about 100 emails a day. Past this many in 24 hours, only security and verification emails go out.
+const DAILY_LIMIT = Math.max(1, Number(process.env.EMAIL_DAILY_LIMIT) || 90)
 
 function secretMatches(received: string | null): boolean {
   const expected = process.env.EMAIL_WEBHOOK_SECRET
@@ -48,8 +52,27 @@ export async function POST(request: Request) {
     if (nErr) throw new Error(nErr.message)
     if (!n) return NextResponse.json({ ok: true, skipped: 'notification not found' })
 
-    // Does this person want email? No saved preference means yes.
+    // Only urgent events are emailed. Everything else stays in the app and push.
     const type = n.type ?? 'general'
+    if (!isUrgentEmail({ type: n.type, title: n.title, message: n.message })) {
+      return NextResponse.json({ ok: true, skipped: 'not urgent' })
+    }
+
+    // Stay under the free daily limit. Security and verification emails are never held back.
+    if (!ALWAYS_EMAIL.has(type)) {
+      const since = new Date(Date.now() - 24 * 3_600_000).toISOString()
+      const { count, error: cErr } = await admin
+        .from('email_deliveries')
+        .select('notification_id', { count: 'exact', head: true })
+        .eq('status', 'sent')
+        .gte('created_at', since)
+      if (!cErr && (count ?? 0) >= DAILY_LIMIT) {
+        console.warn('Email webhook: daily email limit reached, skipping a non-security email.')
+        return NextResponse.json({ ok: true, skipped: 'daily email limit reached' })
+      }
+    }
+
+    // Does this person want email? No saved preference means yes.
     if (!ALWAYS_EMAIL.has(type)) {
       const { data: prefs } = await admin
         .from('notification_preferences')
