@@ -630,7 +630,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
               <button
                 disabled={busy || !ready}
                 className={btnP}
-                onClick={() => updateApp({ tenant_interest_at: new Date().toISOString() }, 'Confirmed. You told EboHomes you want to proceed. The landlord sets up your tenancy next. Nothing is reserved or charged yet.', ['approved'])}
+                onClick={() => updateApp({ tenant_interest_at: new Date().toISOString() }, 'Confirmed. You told EboHomes you want to proceed. EboHomes prepares your rental offer next. Nothing is reserved or charged yet.', ['approved'])}
               >
                 Proceed with EboHomes
               </button>
@@ -645,11 +645,11 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
 
   const detailSetup = !tenancyRow ? (
     <div className="space-y-2 rounded-lg border border-border p-3 text-sm">
-      <p className="font-semibold text-foreground">{journey.phase === 'awaiting_tenancy' ? 'The landlord is setting up your tenancy' : 'No tenancy exists yet'}</p>
+      <p className="font-semibold text-foreground">{journey.phase === 'awaiting_tenancy' ? 'EboHomes is preparing your rental offer' : 'No tenancy exists yet'}</p>
       <p className="text-muted-foreground">
         {journey.phase === 'awaiting_tenancy'
-          ? 'You confirmed that you want to proceed. When the landlord creates your tenancy it appears here, with the rent, dates and rental terms. Nothing is reserved or due yet.'
-          : 'A tenancy appears here only after the landlord creates it.'}
+          ? 'You confirmed that you want to proceed. When your rental offer is ready you can accept or decline it here, and your tenancy appears after you accept. Nothing is reserved or due yet.'
+          : 'A tenancy appears here only after you accept your rental offer.'}
       </p>
     </div>
   ) : (
@@ -729,7 +729,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
 
   const curIndex = STEP_ORDER.indexOf(journey.currentKey)
   // While EboHomes reviews, the viewing is the next thing the tenant can do. The form is the existing one.
-  const canRequestViewing = journey.phase === 'under_review' && !panel.cta
+  const showViewingShortcut = journey.phase === 'under_review' && !panel.cta
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
@@ -817,7 +817,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
               <button type="button" onClick={() => selectStep(panel.cta!.step ?? 'viewing')} className={btnP}>{panel.cta.label} <ArrowDown size={15} aria-hidden /></button>
             )}
           </div>
-        ) : canRequestViewing ? (
+        ) : showViewingShortcut ? (
           <div className="mt-4">
             <button type="button" onClick={() => selectStep('viewing')} className={btnP}>{v ? 'See my viewing' : 'Request a viewing'} <ArrowDown size={15} aria-hidden /></button>
           </div>
