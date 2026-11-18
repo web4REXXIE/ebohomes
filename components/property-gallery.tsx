@@ -242,6 +242,7 @@ export function PropertyGallery({
                 srcSet={mainSrcSet(src)}
                 sizes="(min-width: 1024px) 760px, 100vw"
                 alt={`${title} - photo ${i + 1}`}
+                fit="contain"
                 eager={i === 0}
                 priority={i === 0}
               />
