@@ -264,7 +264,7 @@ export default function LandlordApplicationsPage() {
         ) : (
           <p className="text-xs text-muted-foreground">
             {a.status === 'approved'
-              ? 'EboHomes approved this application. Approval does not reserve the property or create a tenancy. EboHomes sends the tenant a rental offer next. Set up the tenancy from Tenancies once they accept.'
+              ? 'EboHomes approved this application. Approval does not reserve the property or create a tenancy. Next, EboHomes sends the tenant a rental offer. If its terms differ from your listing, you will be asked to confirm them here. After the tenant accepts, EboHomes creates the tenancy and it appears under Tenancies.'
               : a.status === 'accepted'
                 ? 'The rental was completed with this applicant.'
                 : a.status === 'not_selected'
@@ -367,4 +367,4 @@ export default function LandlordApplicationsPage() {
       )}
     </main>
   )
-}
+              }
