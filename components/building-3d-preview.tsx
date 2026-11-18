@@ -15,16 +15,18 @@ const Building3D = dynamic(() => import('@/components/building-3d'), {
 export default function Building3DPreview({ estateId, listingId }: { estateId: string; listingId: string }) {
   const [units, setUnits] = useState<ViewUnit[] | null>(null)
   const [liveIds, setLiveIds] = useState<Set<string>>(new Set())
+  const [theme, setTheme] = useState<string | null>(null)
 
   useEffect(() => {
     let off = false
     ;(async () => {
       const { data, error } = await supabase
         .from('estates')
-        .select('units(id, unit_label, floor_no, group_label, status, listing_id)')
+        .select('theme, units(id, unit_label, floor_no, group_label, status, listing_id)')
         .eq('id', estateId)
         .maybeSingle()
       if (off || error || !data) return
+      setTheme((data as unknown as { theme?: string | null }).theme ?? null)
       const us = ((data as unknown as { units: ViewUnit[] | null }).units ?? [])
       const ids = us.map((u) => u.listing_id).filter((x): x is string => !!x)
       let live = new Set<string>()
@@ -53,6 +55,7 @@ export default function Building3DPreview({ estateId, listingId }: { estateId: s
         preview
         height={260}
         units={shown}
+        theme={theme}
         toneOf={(u) => (unitState(u, liveIds) === 'to_let' ? 'to_let' : 'taken')}
         selectedId={current?.id ?? null}
       />
