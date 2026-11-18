@@ -1,11 +1,12 @@
 'use client'
 
-import { useId, useState, type ComponentType } from 'react'
+import { useEffect, useId, useState, type ComponentType } from 'react'
 import {
   ShieldCheck,
   ShieldQuestion,
   FileCheck2,
   FileQuestion,
+  FileSearch,
   ClipboardCheck,
   ClipboardList,
   Info,
@@ -29,9 +30,16 @@ import {
   inspectionDetails,
   formatInspectionDate,
   nearbyText,
+  parseCheckDates,
+  documentsState,
+  withDate,
+  isTrusted,
+  type CheckDates,
   type RowState,
   type IconKey,
 } from '@/lib/property-trust'
+import { supabase } from '@/lib/supabase'
+import { TrustedBadge } from '@/components/trusted-badge'
 import { authorityState, PUBLIC_INDICATOR_TEXT } from '@/lib/listing-authority'
 
 const DETAIL_ICONS: Record<IconKey, ComponentType<{ size?: number; className?: string }>> = {
@@ -118,6 +126,7 @@ function DetailList({ items, bold }: { items: ReturnType<typeof inspectionDetail
 // trust = the existing listing_trust record. inspection = the existing public inspection record.
 // Failed flags mean the data could not be loaded, which is different from "not checked".
 export function PropertyTrust({
+  listingId,
   trust,
   trustFailed = false,
   authorityReviewed,
@@ -126,6 +135,7 @@ export function PropertyTrust({
   inspectionFailed = false,
   className = '',
 }: {
+  listingId: string
   trust: unknown
   trustFailed?: boolean
   authorityReviewed: boolean | null
@@ -137,14 +147,54 @@ export function PropertyTrust({
   const [open, setOpen] = useState(false)
   const panelId = useId()
 
+  // Dates for the checks, and the earned Trusted label. Both come from the database and are read-only here.
+  const [dates, setDates] = useState<CheckDates | null>(null)
+  const [datesFailed, setDatesFailed] = useState(false)
+  const [datesLoaded, setDatesLoaded] = useState(false)
+  const [trusted, setTrusted] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const [datesResult, trustedResult] = await Promise.all([
+          supabase.rpc('listing_check_dates', { p_listing: listingId }),
+          supabase.rpc('listing_landlord_trusted', { p_listing: listingId }),
+        ])
+        if (cancelled) return
+        const parsed = datesResult.error ? null : parseCheckDates(datesResult.data)
+        setDates(parsed)
+        setDatesFailed(parsed === null)
+        // If the Trusted lookup fails we simply do not show the label. We never guess it.
+        setTrusted(!trustedResult.error && isTrusted(trustedResult.data))
+      } catch {
+        if (!cancelled) {
+          setDates(null)
+          setDatesFailed(true)
+          setTrusted(false)
+        }
+      } finally {
+        if (!cancelled) setDatesLoaded(true)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [listingId])
+
   const identity = identityState(trust, trustFailed)
   const authority = authorityState(authorityReviewed ? 'accepted' : null, authorityFailed || authorityReviewed === null)
   const inspected = inspectionState(inspection, inspectionFailed)
 
-  const states = [identity, authority, inspected]
+  const documents = documentsState(dates, datesFailed)
+
+  // The documents row waits until its data has loaded, so it never flashes "could not load".
+  const showDocuments = datesLoaded
+  const states = showDocuments ? [identity, documents, authority, inspected] : [identity, authority, inspected]
   const checksDone = states.filter((s) => s === 'yes').length
-  // Only count when every check could be read. Otherwise "1 of 3" could be wrong.
-  const canCount = states.every((s) => s !== 'unavailable')
+  // Only count when every check could be read. Otherwise "1 of 4" could be wrong.
+  const canCount = showDocuments && states.every((s) => s !== 'unavailable')
 
   const date = inspected === 'yes' ? formatInspectionDate((inspection as { inspected_at?: unknown }).inspected_at) : ''
   const { facts, notes } = inspectionDetails(inspection)
@@ -163,6 +213,31 @@ export function PropertyTrust({
     extra?: React.ReactNode
   }[] = [
     {
+      key: 'identity', state: identity, YesIcon: ShieldCheck, NoIcon: ShieldQuestion,
+      yesTitle: withDate('Landlord identity checked', dates?.identityAt),
+      noTitle: 'Landlord identity not yet checked',
+      yesText: 'EboHomes reviewed the identity document this landlord submitted.',
+      noText: 'EboHomes has not confirmed who this landlord is.',
+    },
+    ...(showDocuments
+      ? [
+          {
+            key: 'documents', state: documents, YesIcon: FileSearch, NoIcon: FileSearch,
+            yesTitle: withDate('Property documents reviewed', dates?.documentsAt),
+            noTitle: 'Property documents not yet reviewed',
+            yesText: 'EboHomes looked at the documents submitted for this property and found at least one acceptable.',
+            noText: 'EboHomes has not reviewed any document for this property yet.',
+          },
+        ]
+      : []),
+    {
+      key: 'authority', state: authority, YesIcon: FileCheck2, NoIcon: FileQuestion,
+      yesTitle: withDate('Listing authority checked', dates?.authorityAt),
+      noTitle: 'Listing authority not yet checked',
+      yesText: PUBLIC_INDICATOR_TEXT.authority.meaning,
+      noText: 'EboHomes has not reviewed evidence that the lister may rent out this property.',
+    },
+    {
       key: 'inspection', state: inspected, YesIcon: ClipboardCheck, NoIcon: ClipboardList,
       yesTitle: date ? `Inspected by EboHomes on ${date}` : 'Inspected by EboHomes',
       noTitle: 'Property not inspected yet',
@@ -180,20 +255,6 @@ export function PropertyTrust({
           {open ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
         </button>
       ) : null,
-    },
-    {
-      key: 'authority', state: authority, YesIcon: FileCheck2, NoIcon: FileQuestion,
-      yesTitle: 'Listing authority checked',
-      noTitle: 'Listing authority not yet checked',
-      yesText: PUBLIC_INDICATOR_TEXT.authority.meaning,
-      noText: 'EboHomes has not reviewed evidence that the lister may rent out this property.',
-    },
-    {
-      key: 'identity', state: identity, YesIcon: ShieldCheck, NoIcon: ShieldQuestion,
-      yesTitle: 'Landlord identity checked',
-      noTitle: 'Landlord identity not yet checked',
-      yesText: 'EboHomes reviewed the identity document this landlord submitted.',
-      noText: 'EboHomes has not confirmed who this landlord is.',
     },
   ]
 
@@ -226,9 +287,24 @@ export function PropertyTrust({
         This shows what EboHomes has actually checked. Anything not marked as checked has not been confirmed.
       </p>
 
+      {trusted && (
+        <div className="mb-4 flex items-start gap-3 rounded-control border border-primary/30 bg-primary/5 p-3">
+          <ShieldCheck size={20} className="mt-0.5 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-body font-semibold text-foreground">
+              Trusted landlord <TrustedBadge />
+            </p>
+            <p className="mt-0.5 text-caption text-muted-foreground">
+              Earned, not bought. This landlord has completed several rentals through EboHomes where both sides confirmed the key
+              handover, and has no upheld problems on record. It does not replace the checks below.
+            </p>
+          </div>
+        </div>
+      )}
+
       {canCount && (
         <p className="mb-4 text-caption font-medium text-muted-foreground">
-          {checksDone === 0 ? 'EboHomes has not checked anything on this listing yet.' : `${checksDone} of 3 checks on record`}
+          {checksDone === 0 ? 'EboHomes has not checked anything on this listing yet.' : `${checksDone} of 4 checks on record`}
         </p>
       )}
       {!canCount && <div className="mb-4" />}
