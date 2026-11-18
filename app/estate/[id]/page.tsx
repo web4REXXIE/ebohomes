@@ -23,7 +23,7 @@ const Building3D = dynamic(() => import('@/components/building-3d'), {
 // The tenant's view of a building, compound, estate or hostel: what is in it and which homes are to let.
 // Read only. A home is "to let" only when its unit is available AND its listing is approved (see lib/estate-view.ts).
 // No tenant names, reasons or landlord details are shown here. Row-level security decides which places can be read.
-type Estate = { id: string; owner_id: string | null; name: string; kind: string; address_text: string | null; cover_photo_url: string | null; units: ViewUnit[] | null }
+type Estate = { id: string; owner_id: string | null; name: string; kind: string; address_text: string | null; cover_photo_url: string | null; theme?: string | null; tagline?: string | null; units: ViewUnit[] | null }
 type LandlordInfo = { id: string; name: string; trusted: boolean }
 type LiveListing = { id: string; title: string | null; price_monthly: number | string | null; bedrooms: number | string | null; property_type: string | null; location_text: string | null }
 
@@ -58,7 +58,7 @@ export default function EstatePage() {
     setState('loading')
     const { data, error } = await supabase
       .from('estates')
-      .select('id, owner_id, name, kind, address_text, cover_photo_url, units(id, unit_label, floor_no, group_label, status, listing_id)')
+      .select('id, owner_id, name, kind, address_text, cover_photo_url, theme, tagline, units(id, unit_label, floor_no, group_label, status, listing_id)')
       .eq('id', estateId)
       .maybeSingle()
     if (error) {
@@ -205,6 +205,7 @@ export default function EstatePage() {
           <div className="space-y-1 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-primary">{kindWord}</p>
             <h1 className="text-2xl font-bold text-foreground">{estate.name}</h1>
+            {estate.tagline && <p className="text-sm italic text-muted-foreground">{estate.tagline}</p>}
             {estate.address_text && (
               <p className="flex items-center gap-1 text-sm text-muted-foreground"><MapPin size={14} aria-hidden /> {estate.address_text}</p>
             )}
@@ -300,7 +301,7 @@ export default function EstatePage() {
                 if (list.length === 0) return null
                 return (
                   <div key={b ?? 'all'} id={`building-${i}`} className="scroll-mt-24">
-                    <Building3D units={list} name={b ?? estate.name} toneOf={toneOf} selectedId={selectedId} onSelect={setSelectedId} />
+                    <Building3D units={list} theme={estate.theme} name={b ?? estate.name} toneOf={toneOf} selectedId={selectedId} onSelect={setSelectedId} />
                   </div>
                 )
               })}
