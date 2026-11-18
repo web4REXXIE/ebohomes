@@ -295,21 +295,19 @@ export default function ListingAuthorityPage() {
     <div className="mx-auto max-w-xl space-y-5 p-4 pb-24">
       <Link href="/dashboard/listings" className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold"><ArrowLeft size={16} aria-hidden /> My listings</Link>
       <div>
-        <h1 className="flex items-center gap-2 text-xl font-bold text-foreground"><ShieldCheck size={20} aria-hidden /> Property authority</h1>
+        <h1 className="flex items-center gap-2 text-xl font-bold text-foreground"><ShieldCheck size={20} aria-hidden /> Proof you can list this property</h1>
         <p className="text-sm text-muted-foreground">{title}</p>
       </div>
 
       <div className={`rounded-lg border p-3 text-sm ${TONE[statusInfo.tone]}`}>
         <p className="font-semibold">{statusInfo.label}</p>
         <p>{statusInfo.detail}</p>
-        {info.last_message?.message && <p className="mt-2 border-t border-current/20 pt-2">{info.last_message.message}</p>}
-        {status === 'submitted' && <p className="mt-2 border-t border-current/20 pt-2">You cannot send again while EboHomes is reviewing. We will notify you when there is a decision.</p>}
-        {(status === 'needs_evidence' || status === 'rejected') && <p className="mt-2 border-t border-current/20 pt-2">You can fix this and send it again as many times as you need.</p>}
+        {info.last_message?.message && <p className="mt-2 font-medium">{info.last_message.message}</p>}
+        {status === 'submitted' && <p className="mt-2 font-semibold">Next: nothing to do. You cannot send again while EboHomes reviews. We will notify you.</p>}
+        {(status === 'needs_evidence' || status === 'rejected') && <p className="mt-2 font-semibold">Next: fix what is missing and send again. You can do this as often as you need.</p>}
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        EboHomes checks your documents to see that you may list this property. It is not a legal guarantee of ownership. Your documents are private and only EboHomes staff can open them.
-      </p>
+      <p className="text-xs text-muted-foreground">Your documents are private. Only EboHomes staff can open them. This check is not a legal guarantee of ownership.</p>
 
       {err && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">{err}</p>}
       {msg && <p role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</p>}
@@ -324,7 +322,7 @@ export default function ListingAuthorityPage() {
           </select>
         </div>
         <div>
-          <label className={label} htmlFor="sit">Property situation</label>
+          <label className={label} htmlFor="sit">What is the situation of the property?</label>
           <select id="sit" className={field} value={situation} disabled={locked || busy} onChange={(e) => ed(setSituation)(e.target.value)}>
             <option value="">Choose...</option>
             {AUTHORITY_SITUATIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -406,8 +404,10 @@ export default function ListingAuthorityPage() {
           </details>)}
         <input ref={replaceRef} type="file" accept={AUTHORITY_ACCEPT} className="hidden" onChange={replaceFile} />
         {!locked && (
-          <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
-            <label className={label} htmlFor="dt">Add a document</label>
+          <details open={activeDocs.length === 0 || missing.length > 0} className="rounded-lg border border-dashed border-border p-3">
+            <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-foreground">Add a document</summary>
+          <div className="space-y-2 pt-1">
+            <label className={label} htmlFor="dt">Document type</label>
             <select id="dt" className={field} value={docType} disabled={busy} onChange={(e) => setDocType(e.target.value)}>
               <option value="">What kind of document is it?</option>
               {AUTHORITY_DOC_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
@@ -420,12 +420,9 @@ export default function ListingAuthorityPage() {
               {busy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />} {busy ? 'Uploading...' : 'Choose file (JPG, PNG, WEBP or PDF, up to 10MB)'}
             </button>
             {!docType && <p className="text-xs text-muted-foreground">Choose the kind of document first.</p>}
-          </div>)}
+          </div>
+          </details>)}
       </section>
-
-      {status === 'accepted' && PRO_ROLES.includes(info?.claim?.claimed_role) && (
-        <PayeeRequestSection listingId={id} claimedRole={info.claim.claimed_role} />
-      )}
 
       {canEdit ? (
         <>
@@ -443,7 +440,7 @@ export default function ListingAuthorityPage() {
               <p className="font-semibold">Still needed before you can send:</p>
               <ul className="list-disc pl-5">{missing.map((m) => <li key={m}>{m}</li>)}</ul>
             </div>)}
-          {!situation && role && <p className="text-xs text-muted-foreground">Choose the property situation too.</p>}
+          {!situation && role && <p className="text-xs text-muted-foreground">Also choose the situation of the property.</p>}
           <button type="button" onClick={submit} disabled={busy || missing.length > 0 || !situation}
             className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
             {busy && <Loader2 size={16} className="animate-spin" aria-hidden />}
@@ -461,6 +458,10 @@ export default function ListingAuthorityPage() {
           className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
           Back to my listings
         </Link>
+      )}
+
+      {status === 'accepted' && PRO_ROLES.includes(info?.claim?.claimed_role) && (
+        <PayeeRequestSection listingId={id} claimedRole={info.claim.claimed_role} />
       )}
     </div>
   )
