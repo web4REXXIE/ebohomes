@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { MiniBuilding } from '@/components/mini-building'
+import { TrustedBadge } from '@/components/trusted-badge'
 import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
 import { countToLet, type ViewUnit } from '@/lib/estate-view'
@@ -32,6 +33,7 @@ export default function LandlordProfilePage() {
   const params = useParams<{ id: string }>()
   const ownerId = params?.id
   const [name, setName] = useState<string | null>(null)
+  const [trusted, setTrusted] = useState(false)
   const [estates, setEstates] = useState<EstateCard[]>([])
   const [live, setLive] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -105,6 +107,11 @@ export default function LandlordProfilePage() {
           // Places with something to let come first. Equal places keep the newest first.
           .sort((a, b) => Number(b.toLet > 0) - Number(a.toLet > 0))
 
+        // The Trusted label is decided by the database. If this lookup fails we simply do not show it.
+        const { data: trustedData, error: trustedErr } = await supabase.rpc('landlord_is_trusted', { p_landlord: ownerId })
+        if (cancelled) return
+        setTrusted(!trustedErr && trustedData === true)
+
         setName((p as { full_name: string | null }).full_name ?? 'Landlord')
         setLive(liveIds)
         setEstates(cards)
@@ -163,7 +170,9 @@ export default function LandlordProfilePage() {
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="truncate text-2xl font-bold text-foreground">{name}</h1>
-                <p className="text-sm text-muted-foreground">Landlord on EboHomes</p>
+                <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  Landlord on EboHomes {trusted && <TrustedBadge />}
+                </p>
               </div>
               <button
                 type="button"
@@ -189,6 +198,12 @@ export default function LandlordProfilePage() {
                 <dt className="text-xs text-muted-foreground">To let</dt>
               </div>
             </dl>
+
+            {trusted && (
+              <p className="mt-4 rounded-card border border-primary/30 bg-primary/5 p-3 text-xs text-foreground">
+                Trusted is earned, not bought. This landlord has completed several rentals through EboHomes where both sides confirmed the key handover, and has no upheld problems on record.
+              </p>
+            )}
 
             <p className="mt-4 rounded-card border border-border bg-card p-3 text-xs text-muted-foreground">
               Identity and document checks are shown on each listing, with their dates. No phone numbers are shown here. EboHomes is the only channel.
