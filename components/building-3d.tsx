@@ -37,6 +37,7 @@ const C = {
   taken: '#b9b4aa',
   blue: '#3b82f6',
   gold: '#f5b301',
+  mine: '#8b5cf6',
   glass: '#5b7fa6',
   glassLit: '#fff1b8',
   frame: '#fbfaf6',
@@ -86,6 +87,7 @@ function toneColor(tone: string, selected: boolean) {
   if (selected) return C.gold
   if (tone === 'to_let') return C.green
   if (tone === 'neighbour') return C.blue
+  if (tone === 'mine') return C.mine
   return C.taken
 }
 
