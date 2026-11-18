@@ -970,6 +970,14 @@ export default function ListAPropertyPage() {
                 </div>
               </div>
               <p className="mt-2 text-sm font-semibold text-foreground">{summaryOf(us, oneE, manyE)}</p>
+              <div className="flex flex-wrap gap-x-4">
+                <Link href={`/estate/${e.id}`} className="focus-ring inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
+                  View {isCompound ? 'compound' : e.kind === 'estate' ? 'estate' : e.kind === 'hostel' ? 'hostel' : 'building'} in 3D <ArrowRight size={14} aria-hidden />
+                </Link>
+                <Link href={`/dashboard/estates/${e.id}/style`} className="focus-ring inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
+                  Name and style <ArrowRight size={14} aria-hidden />
+                </Link>
+              </div>
 
               {/* Stage B3a: the overview photo, or the way to add it. */}
               {e.cover_photo_url ? (
