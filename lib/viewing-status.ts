@@ -82,8 +82,8 @@ function interestedPanel(app: ApplicationLike | undefined): Panel {
     return {
       tone: 'blue',
       heading: 'YOU WANT TO PROCEED — YOUR APPLICATION IS APPROVED',
-      body: 'Your decision is recorded and your application is approved. The landlord now sets up your tenancy and rental terms. Nothing is reserved or charged yet.',
-      next: 'Wait for your tenancy to be created. You will be notified, and it will appear under My Tenancy.',
+      body: 'Your decision is recorded and your application is approved. EboHomes now prepares your rental offer. Nothing is reserved or charged yet.',
+      next: 'Wait for your rental offer. You will be notified, then accept or decline it in your application.',
       owner: 'none',
       href: '/tenancies',
       cta: 'Open My Tenancy',
@@ -93,7 +93,7 @@ function interestedPanel(app: ApplicationLike | undefined): Panel {
     return {
       tone: 'amber',
       heading: 'ONE MORE STEP — CONFIRM YOU WANT TO PROCEED',
-      body: 'Your application is approved and you told us you are interested. Please confirm on My Applications so the landlord can set up your tenancy.',
+      body: 'Your application is approved and you told us you are interested. Please confirm on My Applications so EboHomes can prepare your rental offer.',
       next: 'Open My Applications and tap "Proceed with EboHomes".',
       owner: 'tenant',
       href: '/applications',
@@ -231,7 +231,7 @@ export function staffNext(v: ViewingLike): string {
     case 'reschedule_proposed': return 'Waiting for the tenant to accept or decline the proposed time.'
     case 'scheduled': return 'Contact the tenant, then record the outcome after the visit.'
     case 'completed':
-      if (v.tenant_decision === 'interested') return 'Tenant wants to proceed. Open Applications to approve, ask a question or decline. Once approved, the landlord sets up the tenancy.'
+      if (v.tenant_decision === 'interested') return 'Tenant wants to proceed. Open Applications to approve, ask a question or decline. Once approved, EboHomes sends the rental offer.'
       if (v.tenant_decision === 'not_interested') return 'Tenant is no longer interested. No action needed.'
       return 'Waiting for the tenant to say whether they want to continue.'
     default: return 'Closed.'
