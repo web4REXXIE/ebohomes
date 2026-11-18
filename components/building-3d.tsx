@@ -20,7 +20,7 @@ const GAP = 1.15
 const FLOOR_H = 1.1
 const BODY_D = 1.2
 const HOUSE_SP = 2.4
-const LABEL_DF = 10 // label size: raise to make numbers bigger, lower to make them smaller
+const LABEL_DF = 6 // label size: raise to make numbers bigger, lower to make them smaller
 const HOUSE_H = 1.6 // house model height: change if your house model looks too big or small
 
 const C = {
