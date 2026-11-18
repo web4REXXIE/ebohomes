@@ -5,10 +5,9 @@ import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { naturalSort, type ViewUnit } from '@/lib/estate-view'
 
-type Tone = 'to_let' | 'taken'
 type Props = {
   units: ViewUnit[]
-  toneOf: (u: ViewUnit) => Tone
+  toneOf: (u: ViewUnit) => string
   selectedId: string | null
   onSelect: (id: string) => void
 }
@@ -18,12 +17,19 @@ const FLOOR_H = 1.1
 const GREEN = '#16a34a'
 const GREY = '#9aa3a0'
 const GOLD = '#d4a017'
+const BLUE = '#3b82f6'
 const FOREST = '#0A2E1A'
 
 type Placed = { unit: ViewUnit; x: number; y: number; z: number }
 
-function Home({ p, tone, selected, house, onSelect }: { p: Placed; tone: Tone; selected: boolean; house: boolean; onSelect: (id: string) => void }) {
-  const color = selected ? GOLD : tone === 'to_let' ? GREEN : GREY
+function colorFor(tone: string) {
+  if (tone === 'to_let') return GREEN
+  if (tone === 'neighbour') return BLUE
+  return GREY
+}
+
+function Home({ p, tone, selected, house, onSelect }: { p: Placed; tone: string; selected: boolean; house: boolean; onSelect: (id: string) => void }) {
+  const color = selected ? GOLD : colorFor(tone)
   const glow = tone === 'to_let' || selected
   const click = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
@@ -60,7 +66,7 @@ function Scene({ units, toneOf, selectedId, onSelect }: Props) {
           placed.push({ unit: u, x: (i - (row.length - 1) / 2) * GAP, y: fi * FLOOR_H + 0.5, z: 0.35 })
         })
       })
-      return { hasFloors, placed, w: widest * GAP, h: floors.length * FLOOR_H }
+      return { hasFloors, placed, w: widest * GAP, h: floors.length * FLOOR_H, d: 1 }
     }
     const cols = Math.ceil(Math.sqrt(sorted.length))
     const rows = Math.ceil(sorted.length / cols)
@@ -72,7 +78,7 @@ function Scene({ units, toneOf, selectedId, onSelect }: Props) {
     return { hasFloors, placed, w: cols * 1.8, h: 1.5, d: rows * 1.8 }
   }, [units])
 
-  const size = Math.max(layout.w, layout.h, layout.d ?? 0)
+  const size = Math.max(layout.w, layout.h, layout.d)
 
   return (
     <>
