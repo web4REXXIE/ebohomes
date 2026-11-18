@@ -85,6 +85,13 @@ export function PayOnlinePanel({ tenancyId, terms, title, reference, period, onC
     [payments, proofs, terms?.rent_amount, terms?.deposit_amount, terms?.fees_amount],
   )
 
+  // Total of the lines shown (all from the signed agreement). Verified so far = payments EboHomes has verified.
+  const linesTotal = lines.reduce((sum, l) => sum + l.amount, 0)
+  const verifiedTotal = summary.verified.reduce((sum, r) => {
+    const n = typeof r.amount === 'string' ? Number(r.amount.replace(/,/g, '')) : Number(r.amount)
+    return sum + (Number.isFinite(n) && n > 0 ? n : 0)
+  }, 0)
+
   const token = async () => (await supabase.auth.getSession()).data.session?.access_token ?? ''
 
   const loadPayments = useCallback(async () => {
@@ -366,7 +373,7 @@ export function PayOnlinePanel({ tenancyId, terms, title, reference, period, onC
               const st = summary.charges[l.key].state
               return (
                 <li key={l.key} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
-                  <span className="text-foreground">{l.label}</span>
+                  <span className="text-foreground">{l.key === 'fees' ? 'Other charges' : l.label}</span>
                   <span className="flex items-center gap-2">
                     {st !== 'none' && (
                       <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${CHARGE_TONE[st]}`}>{CHARGE_LABEL[st]}</span>
@@ -377,8 +384,18 @@ export function PayOnlinePanel({ tenancyId, terms, title, reference, period, onC
               )
             })}
           </ul>
+          <div className="mt-1 flex items-center justify-between gap-2 border-t-2 border-border pt-2">
+            <span className="text-sm font-bold text-foreground">Total of the amounts above</span>
+            <span className="text-lg font-bold text-foreground">{nairaN(linesTotal)}</span>
+          </div>
+          {verifiedTotal > 0 && (
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-emerald-900">Verified by EboHomes so far</span>
+              <span className="text-sm font-bold text-emerald-900">{nairaN(verifiedTotal)}</span>
+            </div>
+          )}
           <p className="mt-2 text-xs text-muted-foreground">
-            These figures come from your signed agreement, not the advertised listing price. EboHomes does not show a balance here because it cannot calculate one reliably yet.
+            These figures come from your signed agreement, not the advertised listing price. The rent line is one payment period, and rent repeats each period. EboHomes only counts a payment after it has verified it.
           </p>
         </div>
       ) : (
@@ -446,4 +463,4 @@ export function PayOnlinePanel({ tenancyId, terms, title, reference, period, onC
       </div>
     </div>
   )
-}
+        }
