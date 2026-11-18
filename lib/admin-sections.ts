@@ -51,6 +51,7 @@ export const ADMIN_SECTIONS: Section[] = [
     label: 'Trust & Issues',
     tabs: [
       { label: 'Trust operations', href: '/admin/operations' },
+      { label: 'Trusted landlords', href: '/admin/trusted-landlords' },
       { label: 'Risk alerts', href: '/admin/risk' },
       { label: 'Reports', href: '/admin/reports' },
       { label: 'Remote disputes', href: '/admin/remote-inspection-disputes' },
