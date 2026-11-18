@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { ArrowLeft, ArrowRight, Building2, Loader2, MapPin } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Building2, Loader2, MapPin, X } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { BlockScene, CompoundScene, type SceneGroup, type TileTone } from '@/components/building-scene'
@@ -16,7 +16,7 @@ import { buildingNames, groupUnits, naturalSort, unitState, type ViewUnit } from
 
 const Building3D = dynamic(() => import('@/components/building-3d'), {
   ssr: false,
-  loading: () => <div className="h-[420px] animate-pulse rounded-xl bg-secondary" />,
+  loading: () => <div className="h-[460px] animate-pulse rounded-xl bg-secondary" />,
 })
 
 // The tenant's view of a building, compound, estate or hostel: what is in it and which homes are to let.
@@ -260,9 +260,8 @@ export default function EstatePage() {
                   .filter((u) => !onlyLet || unitState(u, liveIds) === 'to_let')
                 if (list.length === 0) return null
                 return (
-                  <div key={b ?? 'all'} id={`building-${i}`} className="scroll-mt-24 space-y-2">
-                    {b && <p className="text-sm font-bold text-foreground">{b}</p>}
-                    <Building3D units={list} toneOf={toneOf} selectedId={selectedId} onSelect={setSelectedId} />
+                  <div key={b ?? 'all'} id={`building-${i}`} className="scroll-mt-24">
+                    <Building3D units={list} name={b ?? estate.name} toneOf={toneOf} selectedId={selectedId} onSelect={setSelectedId} />
                   </div>
                 )
               })}
@@ -284,23 +283,40 @@ export default function EstatePage() {
           ) : (
             <CompoundScene name={estate.name} groups={sceneGroups(groups)} toneOf={toneOf} selectedId={selectedId} onSelect={setSelectedId} light="unknown" />
           )}
+        </section>
 
-          {selected && (
-            <div role="status" className="space-y-2 rounded-xl border-2 border-primary/40 bg-card p-4 text-sm">
-              <p className="text-base font-bold text-foreground">Unit {selected.unit_label}</p>
-              {where(selected) && <p className="text-muted-foreground">{where(selected)}</p>}
+        {/* Pop-out card: opens over the page when a home is tapped */}
+        {selected && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={`Unit ${selected.unit_label}`}>
+            <button type="button" aria-label="Close" className="absolute inset-0 bg-black/50" onClick={() => setSelectedId(null)} />
+            <div className="relative w-full max-w-md space-y-3 rounded-t-2xl border border-border bg-card p-5 pb-8 shadow-2xl sm:rounded-2xl sm:pb-5">
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setSelectedId(null)}
+                className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary"
+              >
+                <X size={20} aria-hidden />
+              </button>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">{hasFloors ? 'Flat' : 'House'}</p>
+              <h3 className="pr-10 text-2xl font-bold text-foreground">{hasFloors ? 'Flat' : 'House'} {selected.unit_label}</h3>
+              {where(selected) && <p className="text-sm text-muted-foreground">{where(selected)}</p>}
               {selectedOpen && selectedListing ? (
                 <>
+                  <span className="inline-block rounded-full bg-success/10 px-3 py-1 text-xs font-semibold text-success">To let</span>
                   <p className="font-semibold text-foreground">{displayTitle(selectedListing as any)}</p>
-                  {homeLine(selected) && <p className="text-muted-foreground">{homeLine(selected)}</p>}
-                  <Link href={`/listing/${selectedListing.id}`} className={btnP}>View this home <ArrowRight size={15} aria-hidden /></Link>
+                  {homeLine(selected) && <p className="text-sm text-muted-foreground">{homeLine(selected)}</p>}
+                  <Link href={`/listing/${selectedListing.id}`} className={`${btnP} w-full`}>View this home <ArrowRight size={15} aria-hidden /></Link>
                 </>
               ) : (
-                <p className="text-muted-foreground">This home is not available right now.</p>
+                <>
+                  <span className="inline-block rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-muted-foreground">Not available</span>
+                  <p className="text-sm text-muted-foreground">This home is not available right now.</p>
+                </>
               )}
             </div>
-          )}
-        </section>
+          </div>
+        )}
       </div>
     )
   }
