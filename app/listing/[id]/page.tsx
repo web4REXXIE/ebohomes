@@ -1,401 +1,1244 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import dynamic from 'next/dynamic'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Flag, Heart, Loader2 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import {
+  Heart,
+  Share2,
+  MessageCircle,
+  ShieldCheck,
+  Flag,
+  Copy,
+  Check,
+  Send,
+  X,
+} from 'lucide-react'
+import { useModal } from '@/lib/use-modal'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
+import { Button } from '@/components/ui/button'
+import { supabase } from '@/lib/supabase'
+import dynamic from 'next/dynamic'
+import Link from 'next/link'
+import { ReportListingModal } from '@/components/report-listing-modal'
 import { PropertyGallery } from '@/components/property-gallery'
-import { PropertyVideo } from '@/components/property-video'
+import { AvailabilityNote } from '@/components/availability-note'
 import {
-  PropertyAmenities,
-  PropertyDescription,
   PropertyHeader,
   PropertyKeyFacts,
-  PropertyLocationFallback,
   PropertyRentCard,
+  PropertyDescription,
+  PropertyAmenities,
 } from '@/components/property-details'
+import { displayTitle, amenityLabels, toMoney } from '@/lib/property-display'
+import { cleanMediaUrls } from '@/lib/property-media'
+import { isValidListingId } from '@/lib/listing-id'
+import { PropertyVideo } from '@/components/property-video'
+import { PropertySectionNav, type SectionNavItem } from '@/components/property-section-nav'
 import { PropertyTrust } from '@/components/property-trust'
 import { ListingTerms } from '@/components/listing-terms'
-import { PropertySectionNav } from '@/components/property-section-nav'
-import { PropertyActionsBar, PropertyActionsSidebar } from '@/components/property-actions'
+import { UnitBadge } from '@/components/unit-badge'
 import { RemoteInspectionEntry } from '@/components/remote-inspection-entry'
-import { ListingLocationPublic } from '@/components/listing-location-public'
-import { VerifyPromptModal, type ViewerGate } from '@/components/verify-prompt-modal'
+import { identityState } from '@/lib/property-trust'
+import { listedByLabel as toListedByLabel } from '@/lib/listing-authority'
+import {
+  PropertyActionsBar,
+  PropertyActionsSidebar,
+} from '@/components/property-actions'
 import { decidePropertyActions } from '@/lib/property-actions'
-import { displayTitle, toMoney } from '@/lib/property-display'
-import { listedByLabel } from '@/lib/listing-authority'
-import { isValidListingId } from '@/lib/listing-id'
+import { VerifyPromptModal, type ViewerGate } from '@/components/verify-prompt-modal'
 import { tenantVerificationState } from '@/lib/tenant-verification'
+import { OPEN_STATUSES as APPLICATION_OPEN_STATUSES } from '@/lib/application-form'
+import { OPEN_STATUSES as VIEWING_OPEN_STATUSES } from '@/lib/viewing-status'
+import { useListingReserved } from '@/lib/use-listing-reserved'
 
-const ReportListingModal = dynamic(
-  () => import('@/components/report-listing-modal').then((m) => ({ default: m.ReportListingModal })),
-  { ssr: false },
+const ListingLocation = dynamic(
+  () =>
+    import('@/components/listing-location-public').then((mod) => ({
+      default: mod.ListingLocationPublic,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        role="status"
+        aria-label="Loading location"
+        className="mb-6 animate-pulse rounded-card border border-border bg-card p-card shadow-rest"
+      >
+        <div className="mb-3 h-5 w-24 rounded bg-secondary" />
+        <div className="h-64 w-full rounded-control bg-secondary sm:h-80" />
+      </div>
+    ),
+  }
 )
 
-// The public property details page. Anyone can read it. Only approved listings are shown.
-// Everything here is read only except Save and Report. Apply and Viewing open the tenant's own application.
-// Exact map pins are never read here: ListingLocationPublic decides what each viewer may see.
-// The core details load first. The rental terms load in a separate query, so a missing terms column can never stop the page.
-
-const OPEN_APPLICATION = ['pending', 'info_requested', 'approved']
-
-type Listing = {
-  id: string
-  landlord_id: string | null
-  title: string | null
-  description: string | null
-  location_text: string | null
-  price_monthly: number | null
-  service_charge: number | null
-  caution_deposit: number | null
-  property_type: string | null
-  bedrooms: number | null
-  bathrooms: number | null
-  amenities: unknown
-  photos: unknown
-  video_url: string | null
-  availability_date: string | null
-  status: string | null
-  listed_by_role: string | null
-  created_at: string | null
-  properties?: { public_id?: string | null } | { public_id?: string | null }[] | null
+// Fixes garbled characters (encoding bugs) and tidies spacing in descriptions
+function cleanDescription(text: string) {
+  if (!text) return ''
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/â‚¦/g, '₦')
+    .replace(/â€™/g, '’')
+    .replace(/â€˜/g, '‘')
+    .replace(/â€œ|â€\u009d|â€/g, '"')
+    .replace(/â€“/g, '–')
+    .replace(/â€”/g, '—')
+    .replace(/â€¢/g, '•')
+    .replace(/Â/g, '')
+    .replace(/�/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
-type Terms = {
-  duration_months: number | null
-  notice_days: number | null
-  payment_schedule: string | null
-  house_rules: string | null
+function formatDate(value?: string | null) {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-NG', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
-const COLUMNS =
-  'id, landlord_id, title, description, location_text, price_monthly, service_charge, caution_deposit, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, status, listed_by_role, created_at, properties(public_id)'
+// Reads whether this tenant already saved this listing. Returns null if it could not be checked,
+// which is different from "not saved".
+async function checkSaved(
+  tenantId: string,
+  listingId: string
+): Promise<boolean | null> {
+  const { data, error } = await supabase
+    .from('saved_properties')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('listing_id', listingId)
+    .maybeSingle()
 
-const TERMS_COLUMNS = 'duration_months, notice_days, payment_schedule, house_rules'
+  if (error) {
+    console.error('Failed to check saved property:', error.message)
+    return null
+  }
+  return !!data
+}
 
-function addedOn(iso: string | null): string | undefined {
-  if (!iso) return undefined
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? undefined : d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })
+// Reads when the listing was added and last updated. Kept as its own request so the page never
+// breaks if a column is missing. Returns null if neither date could be read.
+async function loadListingDates(
+  listingId: string
+): Promise<{ created_at: string | null; updated_at: string | null } | null> {
+  const both = await supabase
+    .from('listings')
+    .select('created_at, updated_at')
+    .eq('id', listingId)
+    .maybeSingle()
+
+  if (!both.error && both.data) {
+    return {
+      created_at: (both.data as any).created_at ?? null,
+      updated_at: (both.data as any).updated_at ?? null,
+    }
+  }
+
+  const createdOnly = await supabase
+    .from('listings')
+    .select('created_at')
+    .eq('id', listingId)
+    .maybeSingle()
+
+  if (!createdOnly.error && createdOnly.data) {
+    return {
+      created_at: (createdOnly.data as any).created_at ?? null,
+      updated_at: null,
+    }
+  }
+
+  return null
 }
 
 export default function ListingDetailPage() {
-  const router = useRouter()
   const params = useParams()
-  const id = String(params?.id ?? '')
+  const router = useRouter()
 
-  const [state, setState] = useState<'loading' | 'ok' | 'error' | 'notfound'>('loading')
-  const [listing, setListing] = useState<Listing | null>(null)
-  const [terms, setTerms] = useState<Terms | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [onHold, setOnHold] = useState(false)
-  const [reserved, setReserved] = useState(false)
-  const [application, setApplication] = useState<{ id: string; status: string } | null>(null)
-  const [viewing, setViewing] = useState<{ status: string } | null>(null)
-  const [trust, setTrust] = useState<unknown>(null)
+  const id = typeof params.id === 'string' ? params.id : undefined
+
+  const [listing, setListing] = useState<any>(null)
+  // Rental terms the landlord set. Optional: loaded in their own request so a missing column can never stop the page.
+  const [terms, setTerms] = useState<any>(null)
+  const [landlord, setLandlord] = useState<any>(null)
+  const [inspection, setInspection] = useState<any>(null)
+  const [trust, setTrust] = useState<any>(null)
   const [trustFailed, setTrustFailed] = useState(false)
-  const [authority, setAuthority] = useState<boolean | null>(null)
-  const [inspection, setInspection] = useState<unknown>(null)
+  const [authorityReviewed, setAuthorityReviewed] = useState<boolean | null>(null)
   const [inspectionFailed, setInspectionFailed] = useState(false)
-  const [gate, setGate] = useState<ViewerGate | null>(null)
-  const [showGate, setShowGate] = useState(false)
+  const [dates, setDates] = useState<{
+    created_at: string | null
+    updated_at: string | null
+  }>({ created_at: null, updated_at: null })
+  const [loading, setLoading] = useState(true)
+
   const [saved, setSaved] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [reporting, setReporting] = useState(false)
+  const [savedBusy, setSavedBusy] = useState(false)
+  const [savedKnown, setSavedKnown] = useState(true)
+  const [saveMessage, setSaveMessage] = useState('')
+  const [onHold, setOnHold] = useState(false)
+  const reserved = useListingReserved(listing ? String(listing.id) : null)
+  const [myApplication, setMyApplication] = useState<{
+    id: string
+    status: string
+  } | null>(null)
+  const [myViewing, setMyViewing] = useState<{ status: string } | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    if (!isValidListingId(id)) {
-      setState('notfound')
+  // Is this viewer a tenant who still needs to verify? null = no gate
+  // (verified, not a tenant, signed out, or the check could not be made).
+  const [viewerGate, setViewerGate] = useState<ViewerGate | null>(null)
+  const [showVerifyPrompt, setShowVerifyPrompt] = useState(false)
+
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [notAvailable, setNotAvailable] = useState(false)
+  const [pageError, setPageError] = useState('')
+  const [shareMessage, setShareMessage] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [showShareMenu, setShowShareMenu] = useState(false)
+  const [canNativeShare, setCanNativeShare] = useState(false)
+
+  // Derived early so gallery handlers and hooks below can use it
+  const photos: string[] = cleanMediaUrls(listing?.photos)
+
+  /* ---------------- Verification gate (popup only) ---------------- */
+
+  // This only decides whether Apply opens the popup. The apply page still checks on its own,
+  // so if this lookup fails nothing is blocked or opened by mistake.
+  useEffect(() => {
+    if (!userId) {
+      setViewerGate(null)
       return
     }
-    const { data, error } = await supabase.from('listings').select(COLUMNS).eq('id', id).maybeSingle()
-    if (error) {
-      console.error('Listing load failed:', error.code, error.message)
-      setState('error')
+    let alive = true
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role, id_document_type, id_document_url, selfie_url, verification_status, verified')
+        .eq('id', userId)
+        .maybeSingle()
+      if (!alive || error || !data) return
+      if (data.role && data.role !== 'tenant') {
+        setViewerGate(null)
+        return
+      }
+      const s = tenantVerificationState(data)
+      setViewerGate(s === 'verified' ? null : s)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [userId])
+
+  /* ---------------- Share ---------------- */
+
+  // Detect native share support (phones) once on the client
+  useEffect(() => {
+    setCanNativeShare(
+      typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+    )
+  }, [])
+
+  // Share sheet: Escape closes, Tab stays inside, focus returns to the Share button on close
+  const shareDialogRef = useRef<HTMLDivElement>(null)
+  const shareCloseRef = useRef<HTMLButtonElement>(null)
+  const closeShareMenu = useCallback(() => setShowShareMenu(false), [])
+  useModal(showShareMenu, closeShareMenu, shareDialogRef, shareCloseRef)
+
+  // Called by the Share button: opens the share sheet
+  function handleShare() {
+    if (!listing) return
+    setShareMessage('')
+    setCopied(false)
+    setShowShareMenu(true)
+  }
+
+  function getShareDetails() {
+    const url = window.location.href
+    const text = `Check out this property on EboHomes: ${listing.title}`
+    return {
+      url,
+      text,
+      encodedUrl: encodeURIComponent(url),
+      encodedText: encodeURIComponent(text),
+    }
+  }
+
+  function openShareLink(
+    platform: 'whatsapp' | 'facebook' | 'x' | 'telegram'
+  ) {
+    if (!listing || typeof window === 'undefined') return
+
+    const { encodedUrl, encodedText } = getShareDetails()
+
+    const links = {
+      whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+      x: `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
+      telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
+    }
+
+    window.open(links[platform], '_blank', 'noopener,noreferrer')
+    setShowShareMenu(false)
+  }
+
+  async function handleCopyLink() {
+    if (!listing || typeof window === 'undefined') return
+
+    setShowShareMenu(false)
+
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopied(true)
+      setShareMessage('Property link copied. Paste it anywhere to share.')
+    } catch {
+      setCopied(false)
+      setShareMessage(
+        'Unable to copy automatically. Copy the link from your browser address bar.'
+      )
+    }
+  }
+
+  // Opens the phone's native share sheet (TikTok, Instagram, SMS, etc.)
+  async function handleNativeShare() {
+    if (!listing || typeof navigator === 'undefined' || !navigator.share) {
       return
     }
-    // The page itself refuses to show anything that is not approved.
-    if (!data || data.status !== 'approved') {
-      setListing((data as Listing | null) ?? null)
-      setState('notfound')
-      return
+
+    const { url, text } = getShareDetails()
+    setShowShareMenu(false)
+
+    try {
+      await navigator.share({
+        title: listing.title || 'Property on EboHomes',
+        text,
+        url,
+      })
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return
+      console.error('Native share failed:', error)
     }
-    const l = data as unknown as Listing
-    setListing(l)
-    setState('ok')
+  }
 
-    // Rental terms are optional. If these columns are missing or the read is refused, the page simply shows no terms block.
-    const tq = await supabase.from('listings').select(TERMS_COLUMNS).eq('id', id).maybeSingle()
-    setTerms(tq.error || !tq.data ? null : (tq.data as unknown as Terms))
-
-    const { data: auth } = await supabase.auth.getUser()
-    const uid = auth?.user?.id ?? null
-    setUserId(uid)
-
-    const [hold, res, auth2, insp, tr] = await Promise.all([
-      supabase.rpc('listing_on_hold', { p_listing: id }),
-      supabase.rpc('listing_reserved', { p_listing: id }),
-      supabase.rpc('listing_authority_reviewed', { p_listing: id }),
-      supabase.from('public_listing_inspections').select('*').eq('listing_id', id).maybeSingle(),
-      l.landlord_id ? supabase.from('landlord_trust').select('*').eq('landlord_id', l.landlord_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
-    ])
-    setOnHold(hold.data === true)
-    setReserved(res.data === true)
-    setAuthority(auth2.error ? null : auth2.data === true)
-    setInspection(insp.error ? null : insp.data ?? null)
-    setInspectionFailed(!!insp.error)
-    setTrust(tr.error ? null : tr.data ?? null)
-    setTrustFailed(!!tr.error)
-
-    if (!uid) return
-
-    // The tenant's own open application and viewing for this property, if any.
-    const { data: apps } = await supabase
-      .from('applications')
-      .select('id, status')
-      .eq('listing_id', id)
-      .eq('tenant_id', uid)
-      .in('status', OPEN_APPLICATION)
-      .order('created_at', { ascending: false })
-      .limit(1)
-    const app = (apps ?? [])[0] ?? null
-    setApplication(app)
-    if (app) {
-      const { data: vws } = await supabase
-        .from('viewings')
-        .select('status')
-        .eq('application_id', app.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-      setViewing((vws ?? [])[0] ?? null)
-    } else setViewing(null)
-
-    const [{ data: profile }, { data: sv }] = await Promise.all([
-      supabase.from('profiles').select('role, id_document_type, id_document_url, selfie_url, verification_status, verified').eq('id', uid).maybeSingle(),
-      supabase.from('saved_properties').select('listing_id').eq('tenant_id', uid).eq('listing_id', id).maybeSingle(),
-    ])
-    setSaved(!!sv)
-    if (profile?.role === 'tenant') {
-      const s = tenantVerificationState(profile)
-      setGate(s === 'verified' ? null : (s as ViewerGate))
-    } else setGate(null)
-  }, [id])
+  /* ---------------- Data loading ---------------- */
 
   useEffect(() => {
-    void load()
-  }, [load])
+    let cancelled = false
 
-  const isOwner = !!userId && !!listing && listing.landlord_id === userId
-  const actions = useMemo(
-    () =>
-      decidePropertyActions({
-        listingId: id,
-        listingStatus: listing?.status,
-        signedIn: !!userId,
-        isOwner,
-        onHold,
-        reserved,
-        application,
-        viewing,
-      }),
-    [id, listing?.status, userId, isOwner, onHold, reserved, application, viewing],
-  )
+    async function fetchListing() {
+      setLoading(true)
+      setPageError('')
+      setNotAvailable(false)
 
-  const toggleSave = async () => {
+      // A mistyped or malformed link is "Listing not found", not a database error.
+      if (!id || !isValidListingId(id)) {
+        setListing(null)
+        setLoading(false)
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('listings')
+          .select(
+            'id, landlord_id, title, description, location_text, price_monthly, service_charge, caution_deposit, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, listed_by_role, status, properties(public_id)'
+          )
+          .eq('id', id)
+          .maybeSingle()
+
+        if (cancelled) return
+
+        if (error) {
+          console.error('Failed to load listing:', error.message)
+          setPageError(
+            'We could not load this property right now. Please try again.'
+          )
+          setLoading(false)
+          return
+        }
+
+        if (!data) {
+          setLoading(false)
+          return
+        }
+
+        if (data.status !== 'approved') {
+          setNotAvailable(true)
+          setLoading(false)
+          return
+        }
+
+        setListing(data)
+
+        // Rental terms are read separately. If the columns are missing or the read is refused, no terms block is shown.
+        void supabase
+          .from('listings')
+          .select('duration_months, notice_days, payment_schedule, house_rules')
+          .eq('id', id)
+          .maybeSingle()
+          .then(({ data: t, error: te }) => {
+            if (!cancelled && !te && t) setTerms(t)
+          })
+
+        const listingId: string = data.id
+        const landlordId: string | null = data.landlord_id ?? null
+
+        // Everything below only needs the listing id, the landlord id or the signed-in user,
+        // so these requests run at the same time instead of one after another.
+        const [datesResult, landlordResult, inspectionResult, trustResult, authorityResult, holdResult, authResult] =
+          await Promise.all([
+            loadListingDates(listingId),
+            landlordId
+              ? supabase
+                  .from('profiles_public')
+                  .select('full_name, verified')
+                  .eq('id', landlordId)
+                  .maybeSingle()
+              : Promise.resolve(null),
+            supabase
+              .from('public_listing_inspections')
+              .select(
+                'inspected_at, road_condition, road_matches, water_source, water_matches, electricity_notes, electricity_matches, network_notes, network_matches, security_notes, security_matches, neighborhood_type, nearby_landmarks, environment_notes, environment_matches, condition_notes, condition_matches, overall_notes'
+              )
+              .eq('listing_id', listingId)
+              .order('inspected_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            supabase.rpc('listing_trust', { p_listing: listingId }),
+            // Has EboHomes accepted the authority evidence for this property? A yes/no only.
+            supabase.rpc('listing_authority_reviewed', { p_listing: listingId }),
+            // Is the property on hold? New applications and viewings are blocked in the
+            // database while it is. This only lets the page explain it before the tenant types.
+            supabase.rpc('listing_on_hold', { p_listing: listingId }),
+            supabase.auth.getUser(),
+          ])
+
+        if (cancelled) return
+
+        // Date added / updated (null if it could not be read; the page still works)
+        if (datesResult) setDates(datesResult)
+
+        // Public landlord profile
+        if (landlordResult) {
+          if (landlordResult.error) {
+            console.error(
+              'Failed to load public landlord profile:',
+              landlordResult.error.message
+            )
+          } else {
+            setLandlord(landlordResult.data)
+          }
+        }
+
+        // Physical inspection
+        setInspectionFailed(Boolean(inspectionResult.error))
+        if (inspectionResult.error) {
+          console.error(
+            'Failed to load listing inspection:',
+            inspectionResult.error.message
+          )
+        } else {
+          setInspection(inspectionResult.data)
+        }
+
+        // Trust information
+        setTrustFailed(Boolean(trustResult.error))
+        if (trustResult.error) {
+          console.error(
+            'Failed to load listing trust information:',
+            trustResult.error.message
+          )
+        } else {
+          setTrust(
+            Array.isArray(trustResult.data) ? trustResult.data[0] ?? null : null
+          )
+        }
+
+        // Authority review (null = could not be loaded)
+        if (authorityResult.error) {
+          console.error('Failed to load authority review:', authorityResult.error.message)
+        } else {
+          setAuthorityReviewed(authorityResult.data === true)
+        }
+
+        // Hold
+        if (holdResult.error) {
+          console.error('Failed to check property hold:', holdResult.error.message)
+        } else {
+          setOnHold(holdResult.data === true)
+        }
+
+        // Signed-in user
+        if (authResult.error) {
+          console.error('Failed to check current user:', authResult.error.message)
+        }
+
+        const uid = authResult.data?.user?.id ?? null
+        setUserId(uid)
+
+        if (uid && landlordId !== uid) {
+          // The tenant's own saved state and open application. Only their own rows are read,
+          // so no other tenant's data is involved. The two checks do not depend on each other.
+          const [savedState, appResult] = await Promise.all([
+            checkSaved(uid, listingId),
+            supabase
+              .from('applications')
+              .select('id, status')
+              .eq('listing_id', listingId)
+              .eq('tenant_id', uid)
+              .in('status', [...APPLICATION_OPEN_STATUSES])
+              .order('created_at', { ascending: false })
+              .limit(1),
+          ])
+
+          if (cancelled) return
+
+          if (savedState === null) {
+            setSavedKnown(false)
+          } else {
+            setSavedKnown(true)
+            setSaved(savedState)
+          }
+
+          if (appResult.error) {
+            console.error('Failed to check your application:', appResult.error.message)
+          } else if (appResult.data && appResult.data.length > 0) {
+            const app = appResult.data[0] as { id: string; status: string }
+            setMyApplication({ id: app.id, status: app.status })
+
+            // The viewing belongs to the application, so it has to wait for it.
+            const { data: viewingRows, error: viewingError } = await supabase
+              .from('viewings')
+              .select('id, status')
+              .eq('application_id', app.id)
+              .in('status', VIEWING_OPEN_STATUSES)
+              .order('created_at', { ascending: false })
+              .limit(1)
+
+            if (!cancelled) {
+              if (viewingError) {
+                console.error(
+                  'Failed to check your viewing:',
+                  viewingError.message
+                )
+              } else if (viewingRows && viewingRows.length > 0) {
+                setMyViewing({
+                  status: (viewingRows[0] as { status: string }).status,
+                })
+              }
+            }
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Unexpected listing error:', error)
+          setPageError(
+            'Something went wrong while loading this property. Please try again.'
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchListing()
+
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  async function handleToggleSave() {
+    if (savedBusy || !listing) return
+
     if (!userId) {
       router.push(`/login?redirect=${encodeURIComponent(`/listing/${id}`)}`)
       return
     }
-    if (saving) return
-    setSaving(true)
-    const { error } = saved
-      ? await supabase.from('saved_properties').delete().eq('tenant_id', userId).eq('listing_id', id)
-      : await supabase.from('saved_properties').insert({ tenant_id: userId, listing_id: id })
-    if (!error) setSaved(!saved)
-    setSaving(false)
-  }
 
-  const onChat = () => {
-    if (!userId) {
-      router.push(`/login?redirect=${encodeURIComponent(`/listing/${id}`)}`)
-      return
+    // The owner never saves their own listing.
+    if (listing.landlord_id === userId) return
+
+    setSavedBusy(true)
+    setPageError('')
+    setSaveMessage('')
+
+    try {
+      let isSaved = saved
+
+      // The first check failed earlier, so the heart may be wrong. Check again before acting.
+      if (!savedKnown) {
+        const state = await checkSaved(userId, listing.id)
+
+        if (state === null) {
+          setPageError(
+            'We could not check your saved list. Please try again.'
+          )
+          return
+        }
+
+        setSavedKnown(true)
+        setSaved(state)
+
+        if (state) {
+          setSaveMessage('This property is already in your saved list.')
+          return
+        }
+
+        isSaved = false
+      }
+
+      if (isSaved) {
+        const { error } = await supabase
+          .from('saved_properties')
+          .delete()
+          .eq('tenant_id', userId)
+          .eq('listing_id', listing.id)
+
+        if (error) {
+          console.error('Failed to remove saved property:', error.message)
+          setPageError(
+            'Could not remove this property from your saved list. Please try again.'
+          )
+          return
+        }
+
+        setSaved(false)
+        setSaveMessage('Removed from your saved properties.')
+      } else {
+        const { error } = await supabase.from('saved_properties').insert({
+          tenant_id: userId,
+          listing_id: listing.id,
+        })
+
+        // 23505 = already saved (unique rule on tenant and listing). Not a failure.
+        if (error && error.code !== '23505') {
+          console.error('Failed to save property:', error.message)
+          setPageError('Could not save this property. Please try again.')
+          return
+        }
+
+        setSaved(true)
+        setSaveMessage(
+          error
+            ? 'This property is already in your saved list.'
+            : 'Saved. You can find it under Saved properties.'
+        )
+      }
+    } catch (error) {
+      console.error('Unexpected save error:', error)
+      setPageError('Something went wrong. Please try again.')
+    } finally {
+      setSavedBusy(false)
     }
-    const subject = encodeURIComponent(`Question about ${listing ? displayTitle(listing) : 'a property'}`)
-    router.push(`/messages?new=1&category=property&listing=${id}&subject=${subject}`)
   }
 
-  const onGate = gate ? () => setShowGate(true) : undefined
+  /* ---------------- Early returns ---------------- */
 
-  if (state === 'loading') {
+  if (loading) {
     return (
-      <>
+      <div className="min-h-screen flex flex-col bg-background">
         <Header />
-        <div className="flex min-h-[60vh] items-center justify-center" role="status" aria-label="Loading property">
-          <Loader2 className="animate-spin text-primary" size={28} aria-hidden />
-        </div>
-        <Footer />
-      </>
-    )
-  }
 
-  if (state !== 'ok' || !listing) {
-    const failed = state === 'error'
-    return (
-      <>
-        <Header />
-        <main className="mx-auto w-full max-w-xl space-y-3 px-4 py-16 text-center">
-          <h1 className="text-xl font-bold text-foreground">{failed ? 'We could not load this property' : 'This property is not available'}</h1>
-          <p className="text-sm text-muted-foreground">
-            {failed
-              ? 'This is usually temporary. Please try again.'
-              : 'It may have been removed, rented, or is not open to the public right now.'}
-          </p>
-          <div className="flex justify-center gap-2">
-            {failed && (
-              <button
-                type="button"
-                onClick={() => {
-                  setState('loading')
-                  void load()
-                }}
-                className="inline-flex min-h-11 items-center rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground"
-              >
-                Try again
-              </button>
-            )}
-            <Link href="/search" className="inline-flex min-h-11 items-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground">
-              Browse properties
-            </Link>
+        <main
+          role="status"
+          aria-label="Loading property"
+          className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8"
+        >
+          <div className="grid animate-pulse grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <div className="aspect-[4/3] w-full rounded-card bg-secondary sm:aspect-[16/10]" />
+              <div className="mt-2 flex gap-2">
+                <div className="h-14 w-20 rounded-md bg-secondary" />
+                <div className="h-14 w-20 rounded-md bg-secondary" />
+                <div className="h-14 w-20 rounded-md bg-secondary" />
+              </div>
+              <div className="mt-4 h-28 rounded-card bg-secondary" />
+              <div className="mt-4 h-40 rounded-card bg-secondary lg:hidden" />
+            </div>
+            <div className="hidden space-y-4 lg:block">
+              <div className="h-56 rounded-card bg-secondary" />
+              <div className="h-40 rounded-card bg-secondary" />
+            </div>
           </div>
         </main>
+
         <Footer />
-      </>
+      </div>
     )
   }
 
-  const title = displayTitle(listing)
-  const props = Array.isArray(listing.properties) ? listing.properties[0] : listing.properties
-  const rent = toMoney(listing.price_monthly)
-  const hasTerms =
-    !!terms &&
-    (terms.duration_months != null || terms.notice_days != null || !!terms.payment_schedule?.trim() || !!terms.house_rules?.trim())
+  if (pageError && !listing) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Header />
 
-  const sections = [
-    { id: 'about', label: 'About' },
+        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-20 text-center">
+          <h1 className="mb-2 text-h2 font-bold text-foreground">
+            Unable to load property
+          </h1>
+
+          <p role="alert" className="mb-6 text-body text-muted-foreground">
+            {pageError}
+          </p>
+
+          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Button onClick={() => window.location.reload()}>Try again</Button>
+
+            <button
+              type="button"
+              onClick={() => router.push('/search')}
+              className="inline-flex min-h-11 items-center px-3 text-body font-semibold text-primary hover:underline"
+            >
+              Back to search
+            </button>
+          </div>
+        </main>
+
+        <Footer />
+      </div>
+    )
+  }
+
+  if (!listing || notAvailable) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Header />
+
+        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-20 text-center">
+          <h1 className="mb-2 text-h2 font-bold text-foreground">
+            {notAvailable
+              ? 'This listing is no longer available'
+              : 'Listing not found'}
+          </h1>
+
+          <p className="mb-6 text-body text-muted-foreground">
+            {notAvailable
+              ? 'This property is not currently available for applications.'
+              : 'We could not find the property you requested. The link may be mistyped or the listing may have been removed.'}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => router.push('/search')}
+            className="inline-flex min-h-11 items-center rounded-lg bg-primary px-5 text-body font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            Browse available homes
+          </button>
+        </main>
+
+        <Footer />
+      </div>
+    )
+  }
+
+  /* ---------------- Derived values ---------------- */
+
+  // Contact goes through the EboHomes in-app inbox (one conversation per property).
+  const openEboHomesChat = (category: 'viewing' | 'property') => {
+    if (!listing) return
+    const params = new URLSearchParams({
+      new: '1',
+      category,
+      listing: String(listing.id),
+      subject: `${category === 'viewing' ? 'Viewing' : 'Question'}: ${String(listing.title ?? 'Property').slice(0, 90)}`,
+    })
+    const target = `/messages?${params.toString()}`
+    if (!userId) {
+      router.push(`/login?redirect=${encodeURIComponent(target)}`)
+      return
+    }
+    router.push(target)
+  }
+
+  const listedByLabel: string | null = toListedByLabel(listing.listed_by_role)
+
+  const addedText = formatDate(dates.created_at)
+  const updatedText = formatDate(dates.updated_at)
+  const showUpdated =
+    !!dates.created_at &&
+    !!dates.updated_at &&
+    Math.abs(
+      new Date(dates.updated_at).getTime() -
+        new Date(dates.created_at).getTime()
+    ) > 86400000 &&
+    !!updatedText
+
+  const cleanedDescription = cleanDescription(listing.description ?? '')
+
+  const isOwner =
+    !!userId && !!listing.landlord_id && listing.landlord_id === userId
+
+  const actions = decidePropertyActions({
+    listingId: String(listing.id),
+    listingStatus: listing.status,
+    signedIn: !!userId,
+    isOwner,
+    onHold,
+    reserved,
+    application: myApplication,
+    viewing: myViewing,
+  })
+
+  // Jump-to pills: only sections that really have content on this listing.
+  const navItems: SectionNavItem[] = [
+    ...(cleanedDescription ? [{ id: 'about', label: 'About' }] : []),
+    ...(amenityLabels(listing.amenities).length > 0 ? [{ id: 'amenities', label: 'Amenities' }] : []),
     { id: 'trust', label: 'Verification' },
     { id: 'location', label: 'Location' },
   ]
 
-  return (
-    <>
-      <Header />
-      <main className="mx-auto w-full max-w-6xl px-4 pb-40 pt-4 lg:pb-12">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0 space-y-5">
-            <PropertyGallery images={Array.isArray(listing.photos) ? (listing.photos as string[]) : []} title={title} />
+  const rentNumber = toMoney(listing.price_monthly)
+  const barPriceText =
+    rentNumber !== null && rentNumber > 0 ? `₦${rentNumber.toLocaleString('en-NG')}` : null
 
-            <PropertyHeader
-              title={title}
-              location={listing.location_text}
-              publicId={props?.public_id ?? null}
-              listedByLabel={listedByLabel(listing.listed_by_role)}
-              addedText={addedOn(listing.created_at)}
+  // Opens the verify popup instead of the apply page, only for tenants who still need to verify.
+  const onGate = viewerGate ? () => setShowVerifyPrompt(true) : undefined
+
+  /* ---------------- Main render ---------------- */
+
+  return (
+    <div className="min-h-screen flex flex-col bg-background">
+      <Header />
+
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-[calc(10rem+env(safe-area-inset-bottom))] md:pb-32 lg:py-6">
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.history.length > 1) {
+              router.back()
+            } else {
+              router.push('/search')
+            }
+          }}
+          className="mb-2 inline-flex min-h-11 items-center rounded-md pr-3 text-body font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          ← Back
+        </button>
+
+        {pageError && (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            {pageError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2">
+            <div className="relative mb-4">
+              <PropertyGallery
+                key={listing.id}
+                images={photos}
+                title={displayTitle(listing)}
+              />
+
+              {/* Save property (hidden for the listing owner) */}
+              {actions.canSave && (
+              <button
+                type="button"
+                onClick={handleToggleSave}
+                disabled={savedBusy}
+                aria-label={
+                  saved ? 'Remove from saved properties' : 'Save property'
+                }
+                aria-pressed={saved}
+                className="absolute right-16 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-forest shadow-md transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50"
+              >
+                <Heart
+                  size={19}
+                  className={
+                    saved
+                      ? 'fill-destructive text-destructive'
+                      : 'text-forest'
+                  }
+                />
+              </button>
+              )}
+
+              {/* Share property */}
+              <button
+                type="button"
+                onClick={handleShare}
+                aria-label="Share property"
+                className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-forest shadow-md transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <Share2 size={18} className="text-forest" />
+              </button>
+            </div>
+
+            {/* Save feedback: also read out by screen readers */}
+            <div
+              role="status"
+              aria-live="polite"
+              className={
+                saveMessage
+                  ? 'mb-4 flex items-center gap-2 text-caption font-medium text-primary'
+                  : 'sr-only'
+              }
+            >
+              {saveMessage && <Check size={14} aria-hidden />}
+              {saveMessage}
+            </div>
+
+            {/* Share feedback */}
+            {shareMessage && (
+              <div
+                role="status"
+                className="mb-4 flex items-center gap-2 text-caption font-medium text-primary"
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+                {shareMessage}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <PropertyHeader
+                title={displayTitle(listing)}
+                location={listing.location_text}
+                publicId={listing.properties?.public_id}
+                listedByLabel={listedByLabel}
+                addedText={addedText}
+                updatedText={showUpdated ? updatedText : undefined}
+              />
+            </div>
+
+            <UnitBadge listingId={String(listing.id)} className="mb-4" />
+
+            <AvailabilityNote
+              listingId={listing.id}
+              listingStatus={listing.status}
+              className="mb-4"
             />
 
-            <PropertySectionNav items={sections} />
+            {/* Rent card: shown here on phones and tablets, in the side column on desktop */}
+            <PropertyRentCard
+              priceMonthly={listing.price_monthly}
+              serviceCharge={listing.service_charge}
+              cautionDeposit={listing.caution_deposit}
+              className="mb-4 lg:hidden"
+            />
 
-            <section id="about" className="scroll-mt-28 space-y-5">
+            <div className="mb-6">
               <PropertyKeyFacts
                 propertyType={listing.property_type}
                 bedrooms={listing.bedrooms}
                 bathrooms={listing.bathrooms}
                 availabilityDate={listing.availability_date}
               />
-              <PropertyRentCard priceMonthly={listing.price_monthly} serviceCharge={listing.service_charge} cautionDeposit={listing.caution_deposit} />
-              {hasTerms && terms && (
-                <ListingTerms
-                  durationMonths={terms.duration_months}
-                  noticeDays={terms.notice_days}
-                  paymentSchedule={terms.payment_schedule}
-                  houseRules={terms.house_rules}
-                />
-              )}
-              <PropertyDescription text={listing.description ?? ''} />
-              <PropertyAmenities amenities={listing.amenities} />
-              <PropertyVideo key={listing.video_url ?? 'none'} url={listing.video_url} title={title} posterPhoto={Array.isArray(listing.photos) ? ((listing.photos as string[])[0] ?? null) : null} />
-            </section>
+            </div>
+
+            <ListingTerms
+              durationMonths={terms?.duration_months}
+              noticeDays={terms?.notice_days}
+              paymentSchedule={terms?.payment_schedule}
+              houseRules={terms?.house_rules}
+              className="mb-6"
+            />
+
+            <PropertySectionNav items={navItems} className="mb-6" />
+
+            <PropertyVideo
+              key={String(listing.video_url ?? '')}
+              url={listing.video_url}
+              title={displayTitle(listing)}
+              posterPhoto={photos[0]}
+              className="mb-6"
+            />
+
+            <div id="about" className="scroll-mt-32">
+              <PropertyDescription text={cleanedDescription} className="mb-6" />
+            </div>
+
+            <div id="amenities" className="scroll-mt-32">
+              <PropertyAmenities amenities={listing.amenities} className="mb-6" />
+            </div>
 
             <PropertyTrust
               trust={trust}
               trustFailed={trustFailed}
-              authorityReviewed={authority}
-              authorityFailed={authority === null}
+              authorityReviewed={authorityReviewed}
               inspection={inspection}
               inspectionFailed={inspectionFailed}
+              className="mb-6"
             />
 
-            <RemoteInspectionEntry listingId={listing.id} listingStatus={listing.status} userId={userId} isOwner={isOwner} onHold={onHold} />
+            <RemoteInspectionEntry
+              listingId={String(listing.id)}
+              listingStatus={listing.status}
+              userId={userId}
+              isOwner={isOwner}
+              onHold={onHold}
+              className="mb-6"
+            />
 
-            <section id="location" className="scroll-mt-28">
-              <ListingLocationPublic listingId={listing.id} title={title} address={listing.location_text} />
-              {!listing.location_text && <PropertyLocationFallback address={listing.location_text} />}
-            </section>
-
-            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4 text-sm">
-              {actions.canSave && (
-                <button
-                  type="button"
-                  onClick={toggleSave}
-                  disabled={saving}
-                  aria-pressed={saved}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-card px-4 font-semibold text-foreground hover:bg-secondary disabled:opacity-50"
-                >
-                  <Heart size={16} className={saved ? 'fill-current text-destructive' : ''} aria-hidden />
-                  {saved ? 'Saved' : 'Save property'}
-                </button>
-              )}
-              {!isOwner && (
-                <button
-                  type="button"
-                  onClick={() => (userId ? setReporting(true) : router.push(`/login?redirect=${encodeURIComponent(`/listing/${id}`)}`))}
-                  className="inline-flex min-h-11 items-center gap-2 px-2 text-muted-foreground underline hover:text-destructive"
-                >
-                  <Flag size={14} aria-hidden /> Report this listing
-                </button>
-              )}
-              {isOwner && (
-                <Link href={`/dashboard/edit/${listing.id}`} className="inline-flex min-h-11 items-center rounded-lg border border-border bg-card px-4 font-semibold text-foreground hover:bg-secondary">
-                  Edit this listing
-                </Link>
-              )}
+            <div id="location" className="scroll-mt-32">
+              <ListingLocation
+                listingId={listing.id}
+                title={displayTitle(listing)}
+                address={listing.location_text}
+              />
             </div>
-          </div>
 
-          <aside className="hidden lg:block">
-            <div className="sticky top-24 space-y-4">
-              <div className="rounded-card border border-border bg-card p-card shadow-rest">
-                {rent !== null && (
-                  <p className="mb-3 text-h3 font-bold text-foreground">
-                    ₦{rent.toLocaleString('en-NG')}
-                    <span className="text-caption font-normal text-muted-foreground"> per month</span>
-                  </p>
-                )}
-                <PropertyActionsSidebar actions={actions} onChat={onChat} onGate={onGate} />
+            {/* Safety tip */}
+            <div className="mt-6 rounded-card border border-warning/25 bg-warning-soft p-card">
+              <div className="flex items-start gap-3">
+                <ShieldCheck
+                  size={20}
+                  className="mt-0.5 shrink-0 text-warning"
+                />
+
+                <div className="min-w-0">
+                  <h2 className="text-body font-extrabold text-warning">
+                    Stay safe: never pay outside EboHomes
+                  </h2>
+
+                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-caption leading-relaxed text-warning">
+                    <li>
+                      Do not send money to any person or account that is not
+                      arranged through EboHomes.
+                    </li>
+                    <li>
+                      Inspect the property before you pay, and confirm the
+                      rent, agreement and documents.
+                    </li>
+                    <li>
+                      Unsure about anything? Tap the chat button and ask
+                      EboHomes first.
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </aside>
+
+            {/* Report property */}
+            <div className="mt-4 flex flex-col gap-3 rounded-card border border-border bg-card p-card shadow-rest sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-body font-semibold text-foreground">
+                  Something doesn&apos;t look right?
+                </h2>
+
+                <p className="text-caption text-muted-foreground">
+                  Report fake, wrong or already-rented listings so EboHomes can
+                  check them.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowReportModal(true)}
+                className="flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-destructive px-4 text-body font-semibold text-destructive transition-colors hover:bg-destructive hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-destructive"
+              >
+                <Flag size={14} />
+                Report property
+              </button>
+            </div>
+
+            {showReportModal && (
+              <ReportListingModal
+                listingId={listing.id}
+                onClose={() => setShowReportModal(false)}
+              />
+            )}
+          </div>
+
+          <div className="lg:col-span-1">
+            <div className="sticky top-24 space-y-4">
+              <PropertyRentCard
+                priceMonthly={listing.price_monthly}
+                serviceCharge={listing.service_charge}
+                cautionDeposit={listing.caution_deposit}
+                className="hidden lg:block"
+              />
+
+              <div className="rounded-card border border-border bg-card p-card shadow-rest">
+                {landlord && (
+                  <div className="mb-4 border-b border-border pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-foreground">
+                        {landlord.full_name?.[0] ?? 'L'}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {listing.landlord_id ? (
+                            <Link href={`/landlord/${listing.landlord_id}`} className="hover:underline">
+                              {landlord.full_name}
+                            </Link>
+                          ) : (
+                            landlord.full_name
+                          )}
+                        </p>
+
+                        <a
+                          href="#trust"
+                          className="text-caption font-semibold text-primary hover:underline"
+                        >
+                          {identityState(trust, trustFailed) === 'yes'
+                            ? 'Identity checked'
+                            : identityState(trust, trustFailed) === 'no'
+                              ? 'Identity not yet checked'
+                              : 'Verification details'}
+                          {' · see details'}
+                        </a>
+
+                        {listing.landlord_id && (
+                          <div>
+                            <Link
+                              href={`/landlord/${listing.landlord_id}`}
+                              className="focus-ring inline-flex min-h-11 items-center text-caption font-semibold text-primary hover:underline"
+                            >
+                              See all properties by this landlord
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <PropertyActionsSidebar
+                  actions={actions}
+                  onChat={() => openEboHomesChat('property')}
+                  onGate={onGate}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </main>
 
-      <PropertyActionsBar actions={actions} onChat={onChat} priceText={rent !== null ? `₦${rent.toLocaleString('en-NG')}` : null} onGate={onGate} />
+      {/* Sticky action bar (mobile and tablet). Same decision as the sidebar. */}
+      <PropertyActionsBar
+        actions={actions}
+        onChat={() => openEboHomesChat('property')}
+        priceText={barPriceText}
+        onGate={onGate}
+      />
 
-      {showGate && gate && <VerifyPromptModal gate={gate} listingId={listing.id} onClose={() => setShowGate(false)} />}
-      {reporting && <ReportListingModal listingId={listing.id} onClose={() => setReporting(false)} />}
+      {/* Verify popup: only opens when an unverified tenant taps Apply */}
+      {showVerifyPrompt && viewerGate && (
+        <VerifyPromptModal
+          gate={viewerGate}
+          listingId={String(listing.id)}
+          onClose={() => setShowVerifyPrompt(false)}
+        />
+      )}
+
+      {/* Share sheet */}
+      {showShareMenu && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
+          onClick={() => setShowShareMenu(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Share this property"
+        >
+          <div
+            ref={shareDialogRef}
+            className="max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-t-modal bg-background p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-modal sm:rounded-modal sm:pb-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground">
+                Share this property
+              </h2>
+
+              <button
+                ref={shareCloseRef}
+                type="button"
+                onClick={() => setShowShareMenu(false)}
+                aria-label="Close share menu"
+                className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="mb-4 truncate text-caption text-muted-foreground">
+              {listing.title}
+            </p>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => openShareLink('whatsapp')}
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <MessageCircle size={18} className="text-emerald-600" />
+                WhatsApp
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openShareLink('facebook')}
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold leading-none text-white">
+                  f
+                </span>
+                Facebook
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openShareLink('x')}
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black text-[10px] font-bold leading-none text-white">
+                  X
+                </span>
+                X (Twitter)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openShareLink('telegram')}
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <Send size={18} className="text-sky-500" />
+                Telegram
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <Copy size={18} />
+                Copy link
+              </button>
+
+              {canNativeShare && (
+                <button
+                  type="button"
+                  onClick={handleNativeShare}
+                  className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  <Share2 size={18} />
+                  More apps
+                </button>
+              )}
+            </div>
+
+            <p className="mt-4 text-caption leading-snug text-muted-foreground">
+              For TikTok or Instagram, tap &quot;More apps&quot; on your phone,
+              or copy the link and paste it into your post or story.
+            </p>
+          </div>
+        </div>
+      )}
+
       <Footer />
-    </>
+    </div>
   )
 }
