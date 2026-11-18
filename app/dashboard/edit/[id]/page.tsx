@@ -1,1232 +1,1034 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import {
-  Heart,
-  Share2,
-  MessageCircle,
-  ShieldCheck,
-  Flag,
-  Copy,
-  Check,
-  Send,
-  X,
-} from 'lucide-react'
-import { useModal } from '@/lib/use-modal'
-import { Header } from '@/components/header'
-import { Footer } from '@/components/footer'
-import { Button } from '@/components/ui/button'
-import { supabase } from '@/lib/supabase'
-import dynamic from 'next/dynamic'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ReportListingModal } from '@/components/report-listing-modal'
-import { PropertyGallery } from '@/components/property-gallery'
-import { AvailabilityNote } from '@/components/availability-note'
+import { ArrowRight, Building2, Home, ImagePlus, Loader2, Minus, Plus, Trees } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 import {
-  PropertyHeader,
-  PropertyKeyFacts,
-  PropertyRentCard,
-  PropertyDescription,
-  PropertyAmenities,
-} from '@/components/property-details'
-import { displayTitle, amenityLabels, toMoney } from '@/lib/property-display'
-import { cleanMediaUrls } from '@/lib/property-media'
-import { isValidListingId } from '@/lib/listing-id'
-import { PropertyVideo } from '@/components/property-video'
-import { PropertySectionNav, type SectionNavItem } from '@/components/property-section-nav'
-import { PropertyTrust } from '@/components/property-trust'
-import { ListingTerms } from '@/components/listing-terms'
-import { UnitBadge } from '@/components/unit-badge'
-import { RemoteInspectionEntry } from '@/components/remote-inspection-entry'
-import { identityState } from '@/lib/property-trust'
-import { listedByLabel as toListedByLabel } from '@/lib/listing-authority'
-import {
-  PropertyActionsBar,
-  PropertyActionsSidebar,
-} from '@/components/property-actions'
-import { decidePropertyActions } from '@/lib/property-actions'
-import { VerifyPromptModal, type ViewerGate } from '@/components/verify-prompt-modal'
-import { tenantVerificationState } from '@/lib/tenant-verification'
-import { OPEN_STATUSES as APPLICATION_OPEN_STATUSES } from '@/lib/application-form'
-import { OPEN_STATUSES as VIEWING_OPEN_STATUSES } from '@/lib/viewing-status'
-import { useListingReserved } from '@/lib/use-listing-reserved'
+  buildUnits, floorWord, MAX_FLOORS, MAX_PER_FLOOR, MAX_UNITS,
+  type EstateKind, type UnitDraft,
+} from '@/lib/unit-numbering'
 
-const ListingLocation = dynamic(
-  () =>
-    import('@/components/listing-location-public').then((mod) => ({
-      default: mod.ListingLocationPublic,
-    })),
-  {
-    ssr: false,
-    loading: () => (
-      <div
-        role="status"
-        aria-label="Loading location"
-        className="mb-6 animate-pulse rounded-card border border-border bg-card p-card shadow-rest"
-      >
-        <div className="mb-3 h-5 w-24 rounded bg-secondary" />
-        <div className="h-64 w-full rounded-control bg-secondary sm:h-80" />
-      </div>
-    ),
-  }
-)
+type UnitRow = { id: string; unit_label: string; floor_no: number | null; group_label: string | null; status: string; listing_id: string | null }
+type EstateRow = { id: string; name: string; kind: string; address_text: string | null; cover_photo_url: string | null; legacy_listing_id: string | null; units: UnitRow[] | null }
+type MyListing = { id: string; title: string | null; location_text: string | null; status: string | null }
 
-// Fixes garbled characters (encoding bugs) and tidies spacing in descriptions
-function cleanDescription(text: string) {
-  if (!text) return ''
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/â‚¦/g, '₦')
-    .replace(/â€™/g, '’')
-    .replace(/â€˜/g, '‘')
-    .replace(/â€œ|â€\u009d|â€/g, '"')
-    .replace(/â€“/g, '–')
-    .replace(/â€”/g, '—')
-    .replace(/â€¢/g, '•')
-    .replace(/Â/g, '')
-    .replace(/�/g, '')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/ *\n */g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+// Stage A (Idea 1): one place to list a property, in plain words.
+// Stage B1: tap a flat or house that is not listed yet, then "List this flat" opens the listing form for it.
+// Stage B3a: every building or estate needs an overview photo of the whole place. Listing a flat waits for it.
+// Stage D: a compound with several buildings. It is still one place. Each flat keeps its building name in group_label
+// and is named A-1A, B-2C and so on, so two buildings never share a flat number.
+// Landlords see "flat", "house" and "room". The database keeps its own names (estate, unit).
+// Choice 1 (one house or flat) goes straight to the listing form.
+type Choice = 'single' | 'building' | 'compound' | 'houses'
+
+type Bldg = { name: string; floors: string; perFloor: string; ground: string }
+
+const MAX_BUILDINGS = 26
+const letterOf = (i: number) => String.fromCharCode(65 + i)
+const newBuilding = (i: number, from?: Bldg): Bldg => ({
+  name: `Building ${letterOf(i)}`,
+  floors: from?.floors ?? '4',
+  perFloor: from?.perFloor ?? '4',
+  ground: from?.ground ?? '',
+})
+
+const KIND_LABEL: Record<string, string> = {
+  single_house: 'One house or flat',
+  block: 'Building with flats or rooms',
+  estate: 'Estate of houses or duplexes',
+  hostel: 'Building with rooms',
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-NG', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
+const input = 'focus-ring min-h-11 w-full rounded-button border border-border bg-card px-3 text-sm'
+
+function toNum(s: string): number | undefined {
+  return s.trim() === '' ? undefined : Number(s)
 }
 
-// Reads whether this tenant already saved this listing. Returns null if it could not be checked,
-// which is different from "not saved".
-async function checkSaved(
-  tenantId: string,
-  listingId: string
-): Promise<boolean | null> {
-  const { data, error } = await supabase
-    .from('saved_properties')
-    .select('id')
-    .eq('tenant_id', tenantId)
-    .eq('listing_id', listingId)
-    .maybeSingle()
-
-  if (error) {
-    console.error('Failed to check saved property:', error.message)
-    return null
-  }
-  return !!data
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
 }
 
-// Reads when the listing was added and last updated. Kept as its own request so the page never
-// breaks if a column is missing. Returns null if neither date could be read.
-async function loadListingDates(
-  listingId: string
-): Promise<{ created_at: string | null; updated_at: string | null } | null> {
-  const both = await supabase
-    .from('listings')
-    .select('created_at, updated_at')
-    .eq('id', listingId)
-    .maybeSingle()
-
-  if (!both.error && both.data) {
-    return {
-      created_at: (both.data as any).created_at ?? null,
-      updated_at: (both.data as any).updated_at ?? null,
-    }
-  }
-
-  const createdOnly = await supabase
-    .from('listings')
-    .select('created_at')
-    .eq('id', listingId)
-    .maybeSingle()
-
-  if (!createdOnly.error && createdOnly.data) {
-    return {
-      created_at: (createdOnly.data as any).created_at ?? null,
-      updated_at: null,
-    }
-  }
-
-  return null
+function noun(kind: string): [string, string] {
+  if (kind === 'estate') return ['house', 'houses']
+  if (kind === 'hostel') return ['room', 'rooms']
+  return ['flat', 'flats']
 }
 
-export default function ListingDetailPage() {
-  const params = useParams()
-  const router = useRouter()
-
-  const id = typeof params.id === 'string' ? params.id : undefined
-
-  const [listing, setListing] = useState<any>(null)
-  const [landlord, setLandlord] = useState<any>(null)
-  const [inspection, setInspection] = useState<any>(null)
-  const [trust, setTrust] = useState<any>(null)
-  const [trustFailed, setTrustFailed] = useState(false)
-  const [authorityReviewed, setAuthorityReviewed] = useState<boolean | null>(null)
-  const [inspectionFailed, setInspectionFailed] = useState(false)
-  const [dates, setDates] = useState<{
-    created_at: string | null
-    updated_at: string | null
-  }>({ created_at: null, updated_at: null })
-  const [loading, setLoading] = useState(true)
-
-  const [saved, setSaved] = useState(false)
-  const [savedBusy, setSavedBusy] = useState(false)
-  const [savedKnown, setSavedKnown] = useState(true)
-  const [saveMessage, setSaveMessage] = useState('')
-  const [onHold, setOnHold] = useState(false)
-  const reserved = useListingReserved(listing ? String(listing.id) : null)
-  const [myApplication, setMyApplication] = useState<{
-    id: string
-    status: string
-  } | null>(null)
-  const [myViewing, setMyViewing] = useState<{ status: string } | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-
-  // Is this viewer a tenant who still needs to verify? null = no gate
-  // (verified, not a tenant, signed out, or the check could not be made).
-  const [viewerGate, setViewerGate] = useState<ViewerGate | null>(null)
-  const [showVerifyPrompt, setShowVerifyPrompt] = useState(false)
-
-  const [showReportModal, setShowReportModal] = useState(false)
-  const [notAvailable, setNotAvailable] = useState(false)
-  const [pageError, setPageError] = useState('')
-  const [shareMessage, setShareMessage] = useState('')
-  const [copied, setCopied] = useState(false)
-  const [showShareMenu, setShowShareMenu] = useState(false)
-  const [canNativeShare, setCanNativeShare] = useState(false)
-
-  // Derived early so gallery handlers and hooks below can use it
-  const photos: string[] = cleanMediaUrls(listing?.photos)
-
-  /* ---------------- Verification gate (popup only) ---------------- */
-
-  // This only decides whether Apply opens the popup. The apply page still checks on its own,
-  // so if this lookup fails nothing is blocked or opened by mistake.
-  useEffect(() => {
-    if (!userId) {
-      setViewerGate(null)
-      return
-    }
-    let alive = true
-    ;(async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role, id_document_type, id_document_url, selfie_url, verification_status, verified')
-        .eq('id', userId)
-        .maybeSingle()
-      if (!alive || error || !data) return
-      if (data.role && data.role !== 'tenant') {
-        setViewerGate(null)
-        return
-      }
-      const s = tenantVerificationState(data)
-      setViewerGate(s === 'verified' ? null : s)
-    })()
-    return () => {
-      alive = false
-    }
-  }, [userId])
-
-  /* ---------------- Share ---------------- */
-
-  // Detect native share support (phones) once on the client
-  useEffect(() => {
-    setCanNativeShare(
-      typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-    )
-  }, [])
-
-  // Share sheet: Escape closes, Tab stays inside, focus returns to the Share button on close
-  const shareDialogRef = useRef<HTMLDivElement>(null)
-  const shareCloseRef = useRef<HTMLButtonElement>(null)
-  const closeShareMenu = useCallback(() => setShowShareMenu(false), [])
-  useModal(showShareMenu, closeShareMenu, shareDialogRef, shareCloseRef)
-
-  // Called by the Share button: opens the share sheet
-  function handleShare() {
-    if (!listing) return
-    setShareMessage('')
-    setCopied(false)
-    setShowShareMenu(true)
-  }
-
-  function getShareDetails() {
-    const url = window.location.href
-    const text = `Check out this property on EboHomes: ${listing.title}`
-    return {
-      url,
-      text,
-      encodedUrl: encodeURIComponent(url),
-      encodedText: encodeURIComponent(text),
-    }
-  }
-
-  function openShareLink(
-    platform: 'whatsapp' | 'facebook' | 'x' | 'telegram'
-  ) {
-    if (!listing || typeof window === 'undefined') return
-
-    const { encodedUrl, encodedText } = getShareDetails()
-
-    const links = {
-      whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
-      x: `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
-      telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
-    }
-
-    window.open(links[platform], '_blank', 'noopener,noreferrer')
-    setShowShareMenu(false)
-  }
-
-  async function handleCopyLink() {
-    if (!listing || typeof window === 'undefined') return
-
-    setShowShareMenu(false)
-
-    try {
-      await navigator.clipboard.writeText(window.location.href)
-      setCopied(true)
-      setShareMessage('Property link copied. Paste it anywhere to share.')
-    } catch {
-      setCopied(false)
-      setShareMessage(
-        'Unable to copy automatically. Copy the link from your browser address bar.'
-      )
-    }
-  }
-
-  // Opens the phone's native share sheet (TikTok, Instagram, SMS, etc.)
-  async function handleNativeShare() {
-    if (!listing || typeof navigator === 'undefined' || !navigator.share) {
-      return
-    }
-
-    const { url, text } = getShareDetails()
-    setShowShareMenu(false)
-
-    try {
-      await navigator.share({
-        title: listing.title || 'Property on EboHomes',
-        text,
-        url,
-      })
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') return
-      console.error('Native share failed:', error)
-    }
-  }
-
-  /* ---------------- Data loading ---------------- */
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function fetchListing() {
-      setLoading(true)
-      setPageError('')
-      setNotAvailable(false)
-
-      // A mistyped or malformed link is "Listing not found", not a database error.
-      if (!id || !isValidListingId(id)) {
-        setListing(null)
-        setLoading(false)
-        return
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from('listings')
-          .select(
-            'id, landlord_id, title, description, location_text, price_monthly, service_charge, caution_deposit, duration_months, notice_days, payment_schedule, house_rules, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, listed_by_role, status, properties(public_id)'
-          )
-          .eq('id', id)
-          .maybeSingle()
-
-        if (cancelled) return
-
-        if (error) {
-          console.error('Failed to load listing:', error.message)
-          setPageError(
-            'We could not load this property right now. Please try again.'
-          )
-          setLoading(false)
-          return
-        }
-
-        if (!data) {
-          setLoading(false)
-          return
-        }
-
-        if (data.status !== 'approved') {
-          setNotAvailable(true)
-          setLoading(false)
-          return
-        }
-
-        setListing(data)
-
-        const listingId: string = data.id
-        const landlordId: string | null = data.landlord_id ?? null
-
-        // Everything below only needs the listing id, the landlord id or the signed-in user,
-        // so these requests run at the same time instead of one after another.
-        const [datesResult, landlordResult, inspectionResult, trustResult, authorityResult, holdResult, authResult] =
-          await Promise.all([
-            loadListingDates(listingId),
-            landlordId
-              ? supabase
-                  .from('profiles_public')
-                  .select('full_name, verified')
-                  .eq('id', landlordId)
-                  .maybeSingle()
-              : Promise.resolve(null),
-            supabase
-              .from('public_listing_inspections')
-              .select(
-                'inspected_at, road_condition, road_matches, water_source, water_matches, electricity_notes, electricity_matches, network_notes, network_matches, security_notes, security_matches, neighborhood_type, nearby_landmarks, environment_notes, environment_matches, condition_notes, condition_matches, overall_notes'
-              )
-              .eq('listing_id', listingId)
-              .order('inspected_at', { ascending: false })
-              .limit(1)
-              .maybeSingle(),
-            supabase.rpc('listing_trust', { p_listing: listingId }),
-            // Has EboHomes accepted the authority evidence for this property? A yes/no only.
-            supabase.rpc('listing_authority_reviewed', { p_listing: listingId }),
-            // Is the property on hold? New applications and viewings are blocked in the
-            // database while it is. This only lets the page explain it before the tenant types.
-            supabase.rpc('listing_on_hold', { p_listing: listingId }),
-            supabase.auth.getUser(),
-          ])
-
-        if (cancelled) return
-
-        // Date added / updated (null if it could not be read; the page still works)
-        if (datesResult) setDates(datesResult)
-
-        // Public landlord profile
-        if (landlordResult) {
-          if (landlordResult.error) {
-            console.error(
-              'Failed to load public landlord profile:',
-              landlordResult.error.message
-            )
-          } else {
-            setLandlord(landlordResult.data)
-          }
-        }
-
-        // Physical inspection
-        setInspectionFailed(Boolean(inspectionResult.error))
-        if (inspectionResult.error) {
-          console.error(
-            'Failed to load listing inspection:',
-            inspectionResult.error.message
-          )
-        } else {
-          setInspection(inspectionResult.data)
-        }
-
-        // Trust information
-        setTrustFailed(Boolean(trustResult.error))
-        if (trustResult.error) {
-          console.error(
-            'Failed to load listing trust information:',
-            trustResult.error.message
-          )
-        } else {
-          setTrust(
-            Array.isArray(trustResult.data) ? trustResult.data[0] ?? null : null
-          )
-        }
-
-        // Authority review (null = could not be loaded)
-        if (authorityResult.error) {
-          console.error('Failed to load authority review:', authorityResult.error.message)
-        } else {
-          setAuthorityReviewed(authorityResult.data === true)
-        }
-
-        // Hold
-        if (holdResult.error) {
-          console.error('Failed to check property hold:', holdResult.error.message)
-        } else {
-          setOnHold(holdResult.data === true)
-        }
-
-        // Signed-in user
-        if (authResult.error) {
-          console.error('Failed to check current user:', authResult.error.message)
-        }
-
-        const uid = authResult.data?.user?.id ?? null
-        setUserId(uid)
-
-        if (uid && landlordId !== uid) {
-          // The tenant's own saved state and open application. Only their own rows are read,
-          // so no other tenant's data is involved. The two checks do not depend on each other.
-          const [savedState, appResult] = await Promise.all([
-            checkSaved(uid, listingId),
-            supabase
-              .from('applications')
-              .select('id, status')
-              .eq('listing_id', listingId)
-              .eq('tenant_id', uid)
-              .in('status', [...APPLICATION_OPEN_STATUSES])
-              .order('created_at', { ascending: false })
-              .limit(1),
-          ])
-
-          if (cancelled) return
-
-          if (savedState === null) {
-            setSavedKnown(false)
-          } else {
-            setSavedKnown(true)
-            setSaved(savedState)
-          }
-
-          if (appResult.error) {
-            console.error('Failed to check your application:', appResult.error.message)
-          } else if (appResult.data && appResult.data.length > 0) {
-            const app = appResult.data[0] as { id: string; status: string }
-            setMyApplication({ id: app.id, status: app.status })
-
-            // The viewing belongs to the application, so it has to wait for it.
-            const { data: viewingRows, error: viewingError } = await supabase
-              .from('viewings')
-              .select('id, status')
-              .eq('application_id', app.id)
-              .in('status', VIEWING_OPEN_STATUSES)
-              .order('created_at', { ascending: false })
-              .limit(1)
-
-            if (!cancelled) {
-              if (viewingError) {
-                console.error(
-                  'Failed to check your viewing:',
-                  viewingError.message
-                )
-              } else if (viewingRows && viewingRows.length > 0) {
-                setMyViewing({
-                  status: (viewingRows[0] as { status: string }).status,
-                })
-              }
-            }
-          }
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('Unexpected listing error:', error)
-          setPageError(
-            'Something went wrong while loading this property. Please try again.'
-          )
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    fetchListing()
-
-    return () => {
-      cancelled = true
-    }
-  }, [id])
-
-  async function handleToggleSave() {
-    if (savedBusy || !listing) return
-
-    if (!userId) {
-      router.push(`/login?redirect=${encodeURIComponent(`/listing/${id}`)}`)
-      return
-    }
-
-    // The owner never saves their own listing.
-    if (listing.landlord_id === userId) return
-
-    setSavedBusy(true)
-    setPageError('')
-    setSaveMessage('')
-
-    try {
-      let isSaved = saved
-
-      // The first check failed earlier, so the heart may be wrong. Check again before acting.
-      if (!savedKnown) {
-        const state = await checkSaved(userId, listing.id)
-
-        if (state === null) {
-          setPageError(
-            'We could not check your saved list. Please try again.'
-          )
-          return
-        }
-
-        setSavedKnown(true)
-        setSaved(state)
-
-        if (state) {
-          setSaveMessage('This property is already in your saved list.')
-          return
-        }
-
-        isSaved = false
-      }
-
-      if (isSaved) {
-        const { error } = await supabase
-          .from('saved_properties')
-          .delete()
-          .eq('tenant_id', userId)
-          .eq('listing_id', listing.id)
-
-        if (error) {
-          console.error('Failed to remove saved property:', error.message)
-          setPageError(
-            'Could not remove this property from your saved list. Please try again.'
-          )
-          return
-        }
-
-        setSaved(false)
-        setSaveMessage('Removed from your saved properties.')
-      } else {
-        const { error } = await supabase.from('saved_properties').insert({
-          tenant_id: userId,
-          listing_id: listing.id,
-        })
-
-        // 23505 = already saved (unique rule on tenant and listing). Not a failure.
-        if (error && error.code !== '23505') {
-          console.error('Failed to save property:', error.message)
-          setPageError('Could not save this property. Please try again.')
-          return
-        }
-
-        setSaved(true)
-        setSaveMessage(
-          error
-            ? 'This property is already in your saved list.'
-            : 'Saved. You can find it under Saved properties.'
-        )
-      }
-    } catch (error) {
-      console.error('Unexpected save error:', error)
-      setPageError('Something went wrong. Please try again.')
-    } finally {
-      setSavedBusy(false)
-    }
-  }
-
-  /* ---------------- Early returns ---------------- */
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-
-        <main
-          role="status"
-          aria-label="Loading property"
-          className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8"
-        >
-          <div className="grid animate-pulse grid-cols-1 gap-8 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <div className="aspect-[4/3] w-full rounded-card bg-secondary sm:aspect-[16/10]" />
-              <div className="mt-2 flex gap-2">
-                <div className="h-14 w-20 rounded-md bg-secondary" />
-                <div className="h-14 w-20 rounded-md bg-secondary" />
-                <div className="h-14 w-20 rounded-md bg-secondary" />
-              </div>
-              <div className="mt-4 h-28 rounded-card bg-secondary" />
-              <div className="mt-4 h-40 rounded-card bg-secondary lg:hidden" />
-            </div>
-            <div className="hidden space-y-4 lg:block">
-              <div className="h-56 rounded-card bg-secondary" />
-              <div className="h-40 rounded-card bg-secondary" />
-            </div>
-          </div>
-        </main>
-
-        <Footer />
-      </div>
-    )
-  }
-
-  if (pageError && !listing) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-
-        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-20 text-center">
-          <h1 className="mb-2 text-h2 font-bold text-foreground">
-            Unable to load property
-          </h1>
-
-          <p role="alert" className="mb-6 text-body text-muted-foreground">
-            {pageError}
-          </p>
-
-          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button onClick={() => window.location.reload()}>Try again</Button>
-
-            <button
-              type="button"
-              onClick={() => router.push('/search')}
-              className="inline-flex min-h-11 items-center px-3 text-body font-semibold text-primary hover:underline"
-            >
-              Back to search
-            </button>
-          </div>
-        </main>
-
-        <Footer />
-      </div>
-    )
-  }
-
-  if (!listing || notAvailable) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-
-        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-20 text-center">
-          <h1 className="mb-2 text-h2 font-bold text-foreground">
-            {notAvailable
-              ? 'This listing is no longer available'
-              : 'Listing not found'}
-          </h1>
-
-          <p className="mb-6 text-body text-muted-foreground">
-            {notAvailable
-              ? 'This property is not currently available for applications.'
-              : 'We could not find the property you requested. The link may be mistyped or the listing may have been removed.'}
-          </p>
-
-          <button
-            type="button"
-            onClick={() => router.push('/search')}
-            className="inline-flex min-h-11 items-center rounded-lg bg-primary px-5 text-body font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          >
-            Browse available homes
-          </button>
-        </main>
-
-        <Footer />
-      </div>
-    )
-  }
-
-  /* ---------------- Derived values ---------------- */
-
-  // Contact goes through the EboHomes in-app inbox (one conversation per property).
-  const openEboHomesChat = (category: 'viewing' | 'property') => {
-    if (!listing) return
-    const params = new URLSearchParams({
-      new: '1',
-      category,
-      listing: String(listing.id),
-      subject: `${category === 'viewing' ? 'Viewing' : 'Question'}: ${String(listing.title ?? 'Property').slice(0, 90)}`,
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+// Stage 2 (Idea 1): what a flat or house looks like on the overview.
+type TileState = 'not_listed' | 'waiting' | 'live' | 'reserved' | 'rented' | 'paused' | 'attention' | 'listed'
+
+const TILE_META: Record<TileState, { label: string; cls: string }> = {
+  not_listed: { label: 'Not listed', cls: 'border border-dashed border-border bg-card text-muted-foreground' },
+  waiting: { label: 'In review', cls: 'border border-warning bg-warning-soft text-warning' },
+  live: { label: 'Live', cls: 'border border-success bg-success-soft text-success' },
+  reserved: { label: 'Reserved', cls: 'border border-primary bg-secondary text-primary' },
+  rented: { label: 'Rented', cls: 'border border-transparent bg-muted text-muted-foreground' },
+  paused: { label: 'Paused', cls: 'border border-border bg-card text-muted-foreground' },
+  attention: { label: 'Needs you', cls: 'border border-danger bg-danger-soft text-danger' },
+  listed: { label: 'Listed', cls: 'border border-border bg-card text-foreground' },
+}
+
+function tileState(u: UnitRow, listingStatus: string | undefined): TileState {
+  if (!u.listing_id) return 'not_listed'
+  if (u.status === 'rented' || listingStatus === 'rented') return 'rented'
+  if (u.status === 'reserved') return 'reserved'
+  if (listingStatus === undefined) return 'listed'
+  if (listingStatus === 'approved') return 'live'
+  if (listingStatus === 'paused') return 'paused'
+  if (listingStatus === 'rejected' || listingStatus === 'suspended') return 'attention'
+  return 'waiting'
+}
+
+function listingName(l: MyListing): string {
+  const t = (l.title ?? '').trim()
+  return t !== '' ? t : 'Untitled home'
+}
+
+// Works out the flats of a compound: one block per building, named A-1A, A-1B, B-1A and so on.
+function buildCompound(bs: Bldg[]): { units: UnitDraft[]; error: string | null } {
+  const all: UnitDraft[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < bs.length; i++) {
+    const b = bs[i]
+    const name = b.name.trim()
+    if (name === '') return { units: [], error: `Give building ${letterOf(i)} a name.` }
+    const key = name.toLowerCase()
+    if (seen.has(key)) return { units: [], error: `Two buildings are called "${name}". Give each one its own name.` }
+    seen.add(key)
+    const r = buildUnits({
+      kind: 'block',
+      floors: toNum(b.floors),
+      perFloor: toNum(b.perFloor),
+      groundCount: b.ground.trim() === '' ? undefined : (toNum(b.ground) ?? NaN),
     })
-    const target = `/messages?${params.toString()}`
-    if (!userId) {
-      router.push(`/login?redirect=${encodeURIComponent(target)}`)
-      return
+    if (r.error) return { units: [], error: `${name}: ${r.error}` }
+    for (const u of r.units) {
+      all.push({ unit_label: `${letterOf(i)}-${u.unit_label}`, floor_no: u.floor_no, group_label: name.slice(0, 60) })
     }
-    router.push(target)
   }
+  if (all.length > MAX_UNITS) return { units: [], error: `That is ${all.length} flats. You can add up to ${MAX_UNITS} at a time.` }
+  return { units: all, error: null }
+}
 
-  const listedByLabel: string | null = toListedByLabel(listing.listed_by_role)
+// Uploads one photo to Cloudinary, the same way the listing form does. Returns the photo link.
+async function uploadCover(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('Choose a photo (JPG or PNG).')
+  if (file.size > 10 * 1024 * 1024) throw new Error('That photo is too large. Use one under 10MB.')
+  const data = new FormData()
+  data.append('file', file)
+  data.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!)
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+    { method: 'POST', body: data },
+  )
+  const json = await res.json()
+  if (!json.secure_url) throw new Error('The photo did not upload. Check your network and try again.')
+  return json.secure_url as string
+}
 
-  const addedText = formatDate(dates.created_at)
-  const updatedText = formatDate(dates.updated_at)
-  const showUpdated =
-    !!dates.created_at &&
-    !!dates.updated_at &&
-    Math.abs(
-      new Date(dates.updated_at).getTime() -
-        new Date(dates.created_at).getTime()
-    ) > 86400000 &&
-    !!updatedText
-
-  const cleanedDescription = cleanDescription(listing.description ?? '')
-
-  const isOwner =
-    !!userId && !!listing.landlord_id && listing.landlord_id === userId
-
-  const actions = decidePropertyActions({
-    listingId: String(listing.id),
-    listingStatus: listing.status,
-    signedIn: !!userId,
-    isOwner,
-    onHold,
-    reserved,
-    application: myApplication,
-    viewing: myViewing,
-  })
-
-  // Jump-to pills: only sections that really have content on this listing.
-  const navItems: SectionNavItem[] = [
-    ...(cleanedDescription ? [{ id: 'about', label: 'About' }] : []),
-    ...(amenityLabels(listing.amenities).length > 0 ? [{ id: 'amenities', label: 'Amenities' }] : []),
-    { id: 'trust', label: 'Verification' },
-    { id: 'location', label: 'Location' },
-  ]
-
-  const rentNumber = toMoney(listing.price_monthly)
-  const barPriceText =
-    rentNumber !== null && rentNumber > 0 ? `₦${rentNumber.toLocaleString('en-NG')}` : null
-
-  // Opens the verify popup instead of the apply page, only for tenants who still need to verify.
-  const onGate = viewerGate ? () => setShowVerifyPrompt(true) : undefined
-
-  /* ---------------- Main render ---------------- */
-
+// A number with minus and plus buttons. Easier than typing on a phone.
+function Stepper({ label, value, onChange, min, max }: { label: string; value: string; onChange: (v: string) => void; min: number; max: number }) {
+  const n = Number.parseInt(value, 10)
+  const current = Number.isFinite(n) ? n : 0
+  const set = (v: number) => onChange(String(Math.min(max, Math.max(min, v))))
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
-
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-[calc(10rem+env(safe-area-inset-bottom))] md:pb-32 lg:py-6">
-        <button
-          type="button"
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.history.length > 1) {
-              router.back()
-            } else {
-              router.push('/search')
-            }
-          }}
-          className="mb-2 inline-flex min-h-11 items-center rounded-md pr-3 text-body font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        >
-          ← Back
+    <div>
+      <p className="mb-1 text-sm font-semibold text-foreground">{label}</p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => set(current - 1)} disabled={current <= min} aria-label={`Fewer: ${label}`} className="focus-ring flex h-11 w-11 items-center justify-center rounded-button border border-border bg-card text-foreground disabled:opacity-40">
+          <Minus size={16} aria-hidden />
         </button>
-
-        {pageError && (
-          <div
-            role="alert"
-            className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-          >
-            {pageError}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <div className="relative mb-4">
-              <PropertyGallery
-                key={listing.id}
-                images={photos}
-                title={displayTitle(listing)}
-              />
-
-              {/* Save property (hidden for the listing owner) */}
-              {actions.canSave && (
-              <button
-                type="button"
-                onClick={handleToggleSave}
-                disabled={savedBusy}
-                aria-label={
-                  saved ? 'Remove from saved properties' : 'Save property'
-                }
-                aria-pressed={saved}
-                className="absolute right-16 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-forest shadow-md transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50"
-              >
-                <Heart
-                  size={19}
-                  className={
-                    saved
-                      ? 'fill-destructive text-destructive'
-                      : 'text-forest'
-                  }
-                />
-              </button>
-              )}
-
-              {/* Share property */}
-              <button
-                type="button"
-                onClick={handleShare}
-                aria-label="Share property"
-                className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-forest shadow-md transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              >
-                <Share2 size={18} className="text-forest" />
-              </button>
-            </div>
-
-            {/* Save feedback: also read out by screen readers */}
-            <div
-              role="status"
-              aria-live="polite"
-              className={
-                saveMessage
-                  ? 'mb-4 flex items-center gap-2 text-caption font-medium text-primary'
-                  : 'sr-only'
-              }
-            >
-              {saveMessage && <Check size={14} aria-hidden />}
-              {saveMessage}
-            </div>
-
-            {/* Share feedback */}
-            {shareMessage && (
-              <div
-                role="status"
-                className="mb-4 flex items-center gap-2 text-caption font-medium text-primary"
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-                {shareMessage}
-              </div>
-            )}
-
-            <div className="mb-4">
-              <PropertyHeader
-                title={displayTitle(listing)}
-                location={listing.location_text}
-                publicId={listing.properties?.public_id}
-                listedByLabel={listedByLabel}
-                addedText={addedText}
-                updatedText={showUpdated ? updatedText : undefined}
-              />
-            </div>
-
-            <UnitBadge listingId={String(listing.id)} className="mb-4" />
-
-            <AvailabilityNote
-              listingId={listing.id}
-              listingStatus={listing.status}
-              className="mb-4"
-            />
-
-            {/* Rent card: shown here on phones and tablets, in the side column on desktop */}
-            <PropertyRentCard
-              priceMonthly={listing.price_monthly}
-              serviceCharge={listing.service_charge}
-              cautionDeposit={listing.caution_deposit}
-              className="mb-4 lg:hidden"
-            />
-
-            <div className="mb-6">
-              <PropertyKeyFacts
-                propertyType={listing.property_type}
-                bedrooms={listing.bedrooms}
-                bathrooms={listing.bathrooms}
-                availabilityDate={listing.availability_date}
-              />
-            </div>
-
-            <PropertySectionNav items={navItems} className="mb-6" />
-
-            <PropertyVideo
-              key={String(listing.video_url ?? '')}
-              url={listing.video_url}
-              title={displayTitle(listing)}
-              posterPhoto={photos[0]}
-              className="mb-6"
-            />
-
-            <div id="about" className="scroll-mt-32">
-              <PropertyDescription text={cleanedDescription} className="mb-6" />
-            </div>
-
-            <div id="amenities" className="scroll-mt-32">
-              <PropertyAmenities amenities={listing.amenities} className="mb-6" />
-            </div>
-
-            <ListingTerms
-              durationMonths={listing.duration_months}
-              noticeDays={listing.notice_days}
-              paymentSchedule={listing.payment_schedule}
-              houseRules={listing.house_rules}
-              className="mb-6"
-            />
-
-            <PropertyTrust
-              trust={trust}
-              trustFailed={trustFailed}
-              authorityReviewed={authorityReviewed}
-              inspection={inspection}
-              inspectionFailed={inspectionFailed}
-              className="mb-6"
-            />
-
-            <RemoteInspectionEntry
-              listingId={String(listing.id)}
-              listingStatus={listing.status}
-              userId={userId}
-              isOwner={isOwner}
-              onHold={onHold}
-              className="mb-6"
-            />
-
-            <div id="location" className="scroll-mt-32">
-              <ListingLocation
-                listingId={listing.id}
-                title={displayTitle(listing)}
-                address={listing.location_text}
-              />
-            </div>
-
-            {/* Safety tip */}
-            <div className="mt-6 rounded-card border border-warning/25 bg-warning-soft p-card">
-              <div className="flex items-start gap-3">
-                <ShieldCheck
-                  size={20}
-                  className="mt-0.5 shrink-0 text-warning"
-                />
-
-                <div className="min-w-0">
-                  <h2 className="text-body font-extrabold text-warning">
-                    Stay safe: never pay outside EboHomes
-                  </h2>
-
-                  <ul className="mt-1.5 list-disc space-y-1 pl-4 text-caption leading-relaxed text-warning">
-                    <li>
-                      Do not send money to any person or account that is not
-                      arranged through EboHomes.
-                    </li>
-                    <li>
-                      Inspect the property before you pay, and confirm the
-                      rent, agreement and documents.
-                    </li>
-                    <li>
-                      Unsure about anything? Tap the chat button and ask
-                      EboHomes first.
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            {/* Report property */}
-            <div className="mt-4 flex flex-col gap-3 rounded-card border border-border bg-card p-card shadow-rest sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <h2 className="text-body font-semibold text-foreground">
-                  Something doesn&apos;t look right?
-                </h2>
-
-                <p className="text-caption text-muted-foreground">
-                  Report fake, wrong or already-rented listings so EboHomes can
-                  check them.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowReportModal(true)}
-                className="flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-destructive px-4 text-body font-semibold text-destructive transition-colors hover:bg-destructive hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-destructive"
-              >
-                <Flag size={14} />
-                Report property
-              </button>
-            </div>
-
-            {showReportModal && (
-              <ReportListingModal
-                listingId={listing.id}
-                onClose={() => setShowReportModal(false)}
-              />
-            )}
-          </div>
-
-          <div className="lg:col-span-1">
-            <div className="sticky top-24 space-y-4">
-              <PropertyRentCard
-                priceMonthly={listing.price_monthly}
-                serviceCharge={listing.service_charge}
-                cautionDeposit={listing.caution_deposit}
-                className="hidden lg:block"
-              />
-
-              <div className="rounded-card border border-border bg-card p-card shadow-rest">
-                {landlord && (
-                  <div className="mb-4 border-b border-border pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-foreground">
-                        {landlord.full_name?.[0] ?? 'L'}
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {listing.landlord_id ? (
-                            <Link href={`/landlord/${listing.landlord_id}`} className="hover:underline">
-                              {landlord.full_name}
-                            </Link>
-                          ) : (
-                            landlord.full_name
-                          )}
-                        </p>
-
-                        <a
-                          href="#trust"
-                          className="text-caption font-semibold text-primary hover:underline"
-                        >
-                          {identityState(trust, trustFailed) === 'yes'
-                            ? 'Identity checked'
-                            : identityState(trust, trustFailed) === 'no'
-                              ? 'Identity not yet checked'
-                              : 'Verification details'}
-                          {' · see details'}
-                        </a>
-
-                        {listing.landlord_id && (
-                          <div>
-                            <Link
-                              href={`/landlord/${listing.landlord_id}`}
-                              className="focus-ring inline-flex min-h-11 items-center text-caption font-semibold text-primary hover:underline"
-                            >
-                              See all properties by this landlord
-                            </Link>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <PropertyActionsSidebar
-                  actions={actions}
-                  onChat={() => openEboHomesChat('property')}
-                  onGate={onGate}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {/* Sticky action bar (mobile and tablet). Same decision as the sidebar. */}
-      <PropertyActionsBar
-        actions={actions}
-        onChat={() => openEboHomesChat('property')}
-        priceText={barPriceText}
-        onGate={onGate}
-      />
-
-      {/* Verify popup: only opens when an unverified tenant taps Apply */}
-      {showVerifyPrompt && viewerGate && (
-        <VerifyPromptModal
-          gate={viewerGate}
-          listingId={String(listing.id)}
-          onClose={() => setShowVerifyPrompt(false)}
+        <input
+          className={`${input} text-center font-semibold`}
+          inputMode="numeric"
+          aria-label={label}
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))}
         />
-      )}
-
-      {/* Share sheet */}
-      {showShareMenu && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
-          onClick={() => setShowShareMenu(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Share this property"
-        >
-          <div
-            ref={shareDialogRef}
-            className="max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-t-modal bg-background p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-modal sm:rounded-modal sm:pb-5"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mb-1 flex items-center justify-between">
-              <h2 className="text-base font-bold text-foreground">
-                Share this property
-              </h2>
-
-              <button
-                ref={shareCloseRef}
-                type="button"
-                onClick={() => setShowShareMenu(false)}
-                aria-label="Close share menu"
-                className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <p className="mb-4 truncate text-caption text-muted-foreground">
-              {listing.title}
-            </p>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => openShareLink('whatsapp')}
-                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <MessageCircle size={18} className="text-emerald-600" />
-                WhatsApp
-              </button>
-
-              <button
-                type="button"
-                onClick={() => openShareLink('facebook')}
-                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold leading-none text-white">
-                  f
-                </span>
-                Facebook
-              </button>
-
-              <button
-                type="button"
-                onClick={() => openShareLink('x')}
-                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black text-[10px] font-bold leading-none text-white">
-                  X
-                </span>
-                X (Twitter)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => openShareLink('telegram')}
-                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <Send size={18} className="text-sky-500" />
-                Telegram
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <Copy size={18} />
-                Copy link
-              </button>
-
-              {canNativeShare && (
-                <button
-                  type="button"
-                  onClick={handleNativeShare}
-                  className="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-3 text-body font-medium text-foreground transition hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
-                >
-                  <Share2 size={18} />
-                  More apps
-                </button>
-              )}
-            </div>
-
-            <p className="mt-4 text-caption leading-snug text-muted-foreground">
-              For TikTok or Instagram, tap &quot;More apps&quot; on your phone,
-              or copy the link and paste it into your post or story.
-            </p>
-          </div>
-        </div>
-      )}
-
-      <Footer />
+        <button type="button" onClick={() => set(current + 1)} disabled={current >= max} aria-label={`More: ${label}`} className="focus-ring flex h-11 w-11 items-center justify-center rounded-button border border-border bg-card text-foreground disabled:opacity-40">
+          <Plus size={16} aria-hidden />
+        </button>
+      </div>
     </div>
   )
 }
+
+export default function ListAPropertyPage() {
+  const [estates, setEstates] = useState<EstateRow[]>([])
+  const [myListings, setMyListings] = useState<MyListing[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+
+  const [choice, setChoice] = useState<Choice | null>(null)
+  const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
+  const [floors, setFloors] = useState('4')
+  const [perFloor, setPerFloor] = useState('4')
+  const [more, setMore] = useState(false)
+  const [differ, setDiffer] = useState(false)
+  const [hasGround, setHasGround] = useState(false)
+  const [groundStr, setGroundStr] = useState('')
+  const [floorCountsStr, setFloorCountsStr] = useState<string[]>([])
+  const [count, setCount] = useState('10')
+  const [groupLabel, setGroupLabel] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  // Stage D: the buildings of a compound.
+  const [buildings, setBuildings] = useState<Bldg[]>([newBuilding(0)])
+  const [moreCount, setMoreCount] = useState('1')
+
+  // Stage B3a: the overview photo for a new place, and for places that already exist.
+  const [coverUrl, setCoverUrl] = useState('')
+  const [coverUploading, setCoverUploading] = useState(false)
+  const [coverMsg, setCoverMsg] = useState<string | null>(null)
+  const [cardBusy, setCardBusy] = useState<string | null>(null)
+  const [cardMsg, setCardMsg] = useState<{ id: string; text: string } | null>(null)
+
+  // The flat or house the landlord just tapped
+  const [pickUnit, setPickUnit] = useState<{ id: string; label: string; estateName: string; noun: string; hasCover: boolean } | null>(null)
+  const [showAttach, setShowAttach] = useState(false)
+  const [pickListingId, setPickListingId] = useState<string | null>(null)
+  const [attaching, setAttaching] = useState(false)
+  const [attachMsg, setAttachMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  // Tapping a flat that already has a listing opens a small sheet with its status.
+  const [viewUnit, setViewUnit] = useState<{ listingId: string; label: string; estateName: string; noun: string; state: TileState } | null>(null)
+
+  const loadEstates = async () => {
+    setLoading(true)
+    setLoadError(false)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setLoading(false)
+      return
+    }
+    const [estatesResult, listingsResult] = await Promise.all([
+      supabase
+        .from('estates')
+        .select('id, name, kind, address_text, cover_photo_url, legacy_listing_id, units(id, unit_label, floor_no, group_label, status, listing_id)')
+        .eq('owner_id', user.id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('listings')
+        .select('id, title, location_text, status')
+        .eq('landlord_id', user.id)
+        .order('created_at', { ascending: false }),
+    ])
+    if (estatesResult.error) setLoadError(true)
+    else setEstates((estatesResult.data ?? []) as unknown as EstateRow[])
+    // The listing list only feeds the attach panel. If it fails, the rest of the page still works.
+    if (!listingsResult.error) setMyListings((listingsResult.data ?? []) as MyListing[])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadEstates()
+  }, [])
+
+  // When a flat is tapped, bring its card into view so nobody has to hunt for it.
+  useEffect(() => {
+    if (pickUnit || viewUnit) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [pickUnit, viewUnit, showAttach])
+
+  // The database kind behind each plain choice. A compound is stored as a block with building names.
+  const kind: EstateKind = choice === 'houses' ? 'estate' : 'block'
+
+  const floorsNum = toNum(floors)
+  const floorCountsNums = useMemo(() => {
+    if (kind !== 'block' || !differ) return undefined
+    if (floorsNum === undefined || !Number.isInteger(floorsNum) || floorsNum < 1) return undefined
+    return Array.from({ length: Math.min(floorsNum, MAX_FLOORS) }, (_, i) => {
+      const own = floorCountsStr[i]
+      return toNum(own !== undefined && own.trim() !== '' ? own : perFloor) ?? NaN
+    })
+  }, [kind, differ, floorsNum, floorCountsStr, perFloor])
+
+  const built = useMemo(
+    () => buildUnits({
+      kind,
+      floors: floorsNum,
+      perFloor: toNum(perFloor),
+      floorCounts: floorCountsNums,
+      groundCount: kind === 'block' && hasGround ? (toNum(groundStr) ?? NaN) : undefined,
+      count: toNum(count),
+      groupLabel,
+    }),
+    [kind, floorsNum, perFloor, floorCountsNums, hasGround, groundStr, count, groupLabel],
+  )
+
+  const compoundBuilt = useMemo(() => buildCompound(buildings), [buildings])
+
+  const isCompoundChoice = choice === 'compound'
+  const units: UnitDraft[] = isCompoundChoice ? compoundBuilt.units : built.units
+  const buildError: string | null = isCompoundChoice ? compoundBuilt.error : built.error
+  const unitCount = units.length
+  const [one, many] = noun(kind)
+
+  const resetForm = () => {
+    setName('')
+    setAddress('')
+    setFloors('4')
+    setPerFloor('4')
+    setMore(false)
+    setDiffer(false)
+    setHasGround(false)
+    setGroundStr('')
+    setFloorCountsStr([])
+    setCount('10')
+    setGroupLabel('')
+    setBuildings([newBuilding(0)])
+    setMoreCount('1')
+    setCoverUrl('')
+    setCoverMsg(null)
+  }
+
+  const updateBuilding = (i: number, patch: Partial<Bldg>) => {
+    setBuildings((prev) => prev.map((b, idx) => (idx === i ? { ...b, ...patch } : b)))
+  }
+
+  const removeBuilding = (i: number) => {
+    setBuildings((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev))
+  }
+
+  // New buildings copy the floors and flats of the last one. Names carry on: Building B, Building C...
+  const addBuildings = (n: number) => {
+    setBuildings((prev) => {
+      const out = [...prev]
+      const last = prev[prev.length - 1]
+      for (let k = 0; k < n && out.length < MAX_BUILDINGS; k++) out.push(newBuilding(out.length, last))
+      return out
+    })
+  }
+
+  // Photo for the place being created.
+  const onPickCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = e.target
+    const file = el.files?.[0]
+    if (!file) return
+    setCoverMsg(null)
+    setCoverUploading(true)
+    try {
+      setCoverUrl(await uploadCover(file))
+    } catch (err) {
+      setCoverMsg(err instanceof Error ? err.message : 'The photo did not upload. Try again.')
+    }
+    setCoverUploading(false)
+    el.value = ''
+  }
+
+  // Photo for a place that already exists (add one, or change it).
+  const onCardCover = async (estateId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = e.target
+    const file = el.files?.[0]
+    if (!file) return
+    setCardMsg(null)
+    setCardBusy(estateId)
+    try {
+      const url = await uploadCover(file)
+      const { error } = await supabase.rpc('set_estate_cover_photo', { p_estate: estateId, p_url: url })
+      if (error) throw new Error(error.message || 'Could not save the photo. Try again.')
+      await loadEstates()
+    } catch (err) {
+      setCardMsg({ id: estateId, text: err instanceof Error ? err.message : 'The photo did not save. Try again.' })
+    }
+    setCardBusy(null)
+    el.value = ''
+  }
+
+  const wholeWord = choice === 'houses' ? 'estate' : choice === 'compound' ? 'compound' : 'building'
+
+  const create = async () => {
+    setMsg(null)
+    if (name.trim().length < 1) {
+      setMsg({ ok: false, text: 'Enter a name for this place.' })
+      return
+    }
+    if (!coverUrl) {
+      setMsg({ ok: false, text: `Add an overview photo of the whole ${wholeWord}.` })
+      return
+    }
+    if (buildError) {
+      setMsg({ ok: false, text: buildError })
+      return
+    }
+    const placeName = name.trim()
+    setSaving(true)
+    const { error } = await supabase.rpc('create_estate_with_units', {
+      p_name: placeName,
+      p_kind: kind,
+      p_address: address.trim() || null,
+      p_units: units,
+    })
+    if (error) {
+      setSaving(false)
+      setMsg({ ok: false, text: error.message || 'Could not save this place. Try again.' })
+      return
+    }
+
+    // Attach the overview photo to the place we just made (the newest one with this name).
+    let attached = false
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: row } = await supabase
+          .from('estates')
+          .select('id')
+          .eq('owner_id', user.id)
+          .eq('name', placeName)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (row) {
+          const { error: coverError } = await supabase.rpc('set_estate_cover_photo', { p_estate: (row as { id: string }).id, p_url: coverUrl })
+          attached = !coverError
+        }
+      }
+    } catch (err) {
+      console.error('Overview photo did not attach:', err)
+    }
+    setSaving(false)
+
+    setMsg({
+      ok: true,
+      text: attached
+        ? `Saved. ${plural(unitCount, one, many)} added to your places below. Nothing is public until you list one.`
+        : `Saved. ${plural(unitCount, one, many)} added, but the overview photo did not attach. Add it on the place card below.`,
+    })
+    resetForm()
+    setChoice(null)
+    loadEstates()
+  }
+
+  const ownEstates = estates.filter((e) => !e.legacy_listing_id)
+  const singleCount = estates.length - ownEstates.length
+
+  // Listings that are not yet on one of the owner's own places. A listing that only sits on its automatic
+  // single-house record can be moved. The database does the move.
+  const placedIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const e of ownEstates) for (const u of e.units ?? []) if (u.listing_id) ids.add(u.listing_id)
+    return ids
+  }, [ownEstates])
+  // Rented and rejected listings cannot go on a flat, so they are not offered.
+  const attachable = myListings.filter((l) => !placedIds.has(l.id) && l.status !== 'rented' && l.status !== 'rejected')
+
+  const statusById = useMemo(() => new Map(myListings.map((l) => [l.id, l.status ?? ''])), [myListings])
+  const stateOf = (u: UnitRow): TileState => tileState(u, u.listing_id ? statusById.get(u.listing_id) || undefined : undefined)
+
+  const openPicker = (u: UnitRow, estate: EstateRow) => {
+    const [w] = noun(estate.kind)
+    if (u.listing_id) {
+      setPickUnit(null)
+      setShowAttach(false)
+      setViewUnit({ listingId: u.listing_id, label: u.unit_label, estateName: estate.name, noun: w, state: stateOf(u) })
+      return
+    }
+    setViewUnit(null)
+    setPickUnit({ id: u.id, label: u.unit_label, estateName: estate.name, noun: w, hasCover: !!estate.cover_photo_url })
+    setShowAttach(false)
+    setPickListingId(null)
+    setAttachMsg(null)
+  }
+
+  const closePicker = () => {
+    setViewUnit(null)
+    setPickUnit(null)
+    setShowAttach(false)
+    setPickListingId(null)
+  }
+
+  const attach = async () => {
+    if (!pickUnit || !pickListingId) return
+    setAttaching(true)
+    setAttachMsg(null)
+    const { error } = await supabase.rpc('attach_listing_to_unit', { p_unit: pickUnit.id, p_listing: pickListingId })
+    setAttaching(false)
+    if (error) {
+      setAttachMsg({ ok: false, text: error.message || 'Could not attach the listing. Try again.' })
+      return
+    }
+    setMsg({ ok: true, text: `The listing is now on ${cap(pickUnit.noun)} ${pickUnit.label}, ${pickUnit.estateName}. Tenants see it once the listing is live.` })
+    closePicker()
+    loadEstates()
+  }
+
+  // Preview: top floors first, then "...", then the bottom floor. Houses show the first few numbers.
+  const previewRows: { label: string; tiles: string[] }[] = []
+  let previewMore = false
+  if (!built.error && choice !== null && choice !== 'single' && choice !== 'compound') {
+    if (kind === 'block') {
+      const byFloor = new Map<number, string[]>()
+      for (const u of units) {
+        const f = u.floor_no ?? 0
+        byFloor.set(f, [...(byFloor.get(f) ?? []), u.unit_label])
+      }
+      const order = [...byFloor.keys()].sort((a, b) => b - a)
+      const shown = order.length > 4 ? [...order.slice(0, 2), ...order.slice(-1)] : order
+      previewMore = order.length > 4
+      for (const f of shown) previewRows.push({ label: floorWord(f), tiles: byFloor.get(f) ?? [] })
+    } else {
+      previewRows.push({ label: '', tiles: units.slice(0, 12).map((u) => u.unit_label) })
+      previewMore = units.length > 12
+    }
+  }
+
+  const cardBase = 'focus-ring flex min-h-20 w-full items-center gap-3 rounded-card border border-border bg-card p-4 text-left hover:bg-secondary'
+
+  // One flat or house tile on a place card. Colour and a word both show the status.
+  const tileFor = (u: UnitRow, e: EstateRow, oneE: string) => {
+    const st = stateOf(u)
+    return (
+      <button
+        key={u.id}
+        type="button"
+        onClick={() => openPicker(u, e)}
+        aria-label={`${cap(oneE)} ${u.unit_label}, ${TILE_META[st].label}. Tap to open`}
+        className={`focus-ring flex min-h-12 flex-col items-center justify-center rounded-button px-1 py-1 text-sm font-semibold ${TILE_META[st].cls}`}
+      >
+        <span>{u.unit_label}</span>
+        <span className="text-[11px] font-normal leading-tight">{TILE_META[st].label}</span>
+      </button>
+    )
+  }
+
+  // Flats in floor rows, top floor first. Houses and rooms (no floors) are one grid.
+  const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const unitsView = (list: UnitRow[], e: EstateRow, oneE: string, prefix: string) => {
+    const hasFloors = list.some((u) => u.floor_no !== null)
+    if (!hasFloors) {
+      return (
+        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+          {list.slice(0, 120).map((u) => tileFor(u, e, oneE))}
+          {list.length > 120 && <span className="px-1 py-1 text-xs text-muted-foreground">+{list.length - 120} more</span>}
+        </div>
+      )
+    }
+    const byFloor = new Map<number, UnitRow[]>()
+    for (const u of list) byFloor.set(u.floor_no ?? 0, [...(byFloor.get(u.floor_no ?? 0) ?? []), u])
+    const floors = [...byFloor.keys()].sort((a, b) => b - a)
+    return (
+      <div className="space-y-2">
+        {floors.length >= 10 && (
+          <label className="flex items-center gap-2 text-xs font-semibold text-foreground">
+            Jump to floor
+            <select
+              defaultValue=""
+              onChange={(ev) => { if (ev.target.value) jumpTo(ev.target.value) }}
+              className="min-h-11 rounded-button border border-border bg-card px-2 text-sm font-normal"
+            >
+              <option value="" disabled>Choose</option>
+              {floors.map((f) => <option key={f} value={`${prefix}-f${f}`}>{f === 0 ? 'Ground' : floorWord(f)}</option>)}
+            </select>
+          </label>
+        )}
+        {floors.map((f) => (
+          <div key={f} id={`${prefix}-f${f}`} className="scroll-mt-4">
+            <p className="mb-1 text-xs font-semibold text-muted-foreground">{floorWord(f)} floor</p>
+            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">{(byFloor.get(f) ?? []).map((u) => tileFor(u, e, oneE))}</div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // One line for the top of a place card: "40 flats: 6 live, 2 in review, 32 not listed."
+  const summaryOf = (us: UnitRow[], oneE: string, manyE: string) => {
+    const c: Record<TileState, number> = { not_listed: 0, waiting: 0, live: 0, reserved: 0, rented: 0, paused: 0, attention: 0, listed: 0 }
+    for (const u of us) c[stateOf(u)]++
+    const parts: string[] = []
+    if (c.live) parts.push(`${c.live} live`)
+    if (c.waiting) parts.push(`${c.waiting} in review`)
+    if (c.reserved) parts.push(`${c.reserved} reserved`)
+    if (c.rented) parts.push(`${c.rented} rented`)
+    if (c.paused + c.attention + c.listed) parts.push(`${c.paused + c.attention + c.listed} to check`)
+    if (c.not_listed) parts.push(`${c.not_listed} not listed`)
+    return `${plural(us.length, oneE, manyE)}: ${parts.join(', ')}.`
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-6 p-4 sm:p-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">List a property</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Tell us what you are adding. You add photos and rent for each one after this.</p>
+      </div>
+
+      {choice === null && (
+        <section className="space-y-3" aria-label="What are you adding?">
+          <h2 className="text-lg font-bold text-foreground">What are you adding?</h2>
+
+          <Link href="/list-property" className={cardBase}>
+            <Home size={22} aria-hidden className="shrink-0 text-primary" />
+            <span className="flex-1">
+              <span className="block text-sm font-semibold text-foreground">One house or flat</span>
+              <span className="block text-xs text-muted-foreground">List it straight away.</span>
+            </span>
+            <ArrowRight size={16} aria-hidden className="text-muted-foreground" />
+          </Link>
+
+          <button type="button" onClick={() => { setChoice('building'); setMsg(null) }} className={cardBase}>
+            <Building2 size={22} aria-hidden className="shrink-0 text-primary" />
+            <span className="flex-1">
+              <span className="block text-sm font-semibold text-foreground">A building with flats or rooms</span>
+              <span className="block text-xs text-muted-foreground">A block, a lodge or a hostel.</span>
+            </span>
+            <ArrowRight size={16} aria-hidden className="text-muted-foreground" />
+          </button>
+
+          <button type="button" onClick={() => { setChoice('compound'); setMsg(null) }} className={cardBase}>
+            <Building2 size={22} aria-hidden className="shrink-0 text-primary" />
+            <span className="flex-1">
+              <span className="block text-sm font-semibold text-foreground">A compound with several buildings</span>
+              <span className="block text-xs text-muted-foreground">Building A, Building B and so on, in one place.</span>
+            </span>
+            <ArrowRight size={16} aria-hidden className="text-muted-foreground" />
+          </button>
+
+          <button type="button" onClick={() => { setChoice('houses'); setMsg(null) }} className={cardBase}>
+            <Trees size={22} aria-hidden className="shrink-0 text-primary" />
+            <span className="flex-1">
+              <span className="block text-sm font-semibold text-foreground">An estate of houses or duplexes</span>
+              <span className="block text-xs text-muted-foreground">Numbered 1, 2, 3 and so on.</span>
+            </span>
+            <ArrowRight size={16} aria-hidden className="text-muted-foreground" />
+          </button>
+        </section>
+      )}
+
+      {msg && choice === null && (
+        <p role="status" className={`rounded-card border p-3 text-sm ${msg.ok ? 'border-success bg-success-soft text-success' : 'border-danger bg-danger-soft text-danger'}`}>
+          {msg.text}
+        </p>
+      )}
+
+      {(choice === 'building' || choice === 'houses' || choice === 'compound') && (
+        <section className="space-y-4 rounded-card border border-border bg-card p-4" aria-label="Add a place">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-foreground">
+              {choice === 'building' ? 'Your building' : choice === 'compound' ? 'Your compound' : 'Your estate'}
+            </h2>
+            <button type="button" onClick={() => { setChoice(null); setMsg(null) }} className="focus-ring min-h-11 rounded-button px-3 text-sm font-semibold text-primary">Back</button>
+          </div>
+
+          <label className="block text-sm font-semibold text-foreground">
+            Name
+            <input className={`${input} mt-1 font-normal`} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} placeholder="For example: Maker Man's Lodge" />
+          </label>
+
+          <label className="block text-sm font-semibold text-foreground">
+            Street or landmark <span className="font-normal text-muted-foreground">(optional)</span>
+            <input className={`${input} mt-1 font-normal`} value={address} maxLength={200} onChange={(e) => setAddress(e.target.value)} />
+          </label>
+
+          {/* Stage B3a: the photo tenants see first. */}
+          <div>
+            <p className="text-sm font-semibold text-foreground">Photo of the whole {wholeWord} *</p>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Show the full {wholeWord} from outside, so tenants can see it before they pick a {one}.
+            </p>
+            {coverUrl ? (
+              <div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={coverUrl} alt={`Overview of ${name || wholeWord}`} className="h-44 w-full rounded-lg object-cover" />
+                <button type="button" onClick={() => setCoverUrl('')} className="focus-ring mt-1 min-h-11 text-sm font-semibold text-destructive">
+                  Remove photo
+                </button>
+              </div>
+            ) : (
+              <label
+                htmlFor="cover-new"
+                className="block min-h-14 cursor-pointer rounded-lg border-2 border-dashed border-border p-5 text-center hover:bg-secondary focus-within:ring-2 focus-within:ring-primary"
+              >
+                <ImagePlus size={28} className="mx-auto mb-1 text-muted-foreground" aria-hidden />
+                <p className="text-sm font-semibold text-foreground">Tap to add the overview photo</p>
+                {coverUploading && (
+                  <p role="status" className="mt-2 flex items-center justify-center gap-2 text-sm text-primary">
+                    <Loader2 size={14} className="animate-spin" aria-hidden /> Uploading...
+                  </p>
+                )}
+                <input id="cover-new" type="file" accept="image/*" onChange={onPickCover} disabled={coverUploading} className="sr-only" />
+              </label>
+            )}
+            {coverMsg && <p role="alert" className="mt-2 text-sm font-medium text-danger">{coverMsg}</p>}
+          </div>
+
+          {choice === 'building' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Stepper label="Floors above the ground" value={floors} onChange={setFloors} min={1} max={MAX_FLOORS} />
+                <Stepper label="Flats on each floor" value={perFloor} onChange={setPerFloor} min={1} max={MAX_PER_FLOOR} />
+              </div>
+
+              <button type="button" onClick={() => setMore(!more)} aria-expanded={more} className="focus-ring min-h-11 text-sm font-semibold text-primary underline">
+                {more ? 'Hide extra options' : 'Ground floor has flats, or floors are different?'}
+              </button>
+
+              {more && (
+                <div className="space-y-3 rounded-card border border-border bg-background p-3">
+                  <label className="flex min-h-11 items-center gap-3 text-sm text-foreground">
+                    <input type="checkbox" className="h-5 w-5" checked={hasGround} onChange={(e) => setHasGround(e.target.checked)} />
+                    The ground floor has flats too
+                  </label>
+                  {hasGround && (
+                    <Stepper label="Flats on the ground floor" value={groundStr} onChange={setGroundStr} min={0} max={MAX_PER_FLOOR} />
+                  )}
+                  <label className="flex min-h-11 items-center gap-3 text-sm text-foreground">
+                    <input type="checkbox" className="h-5 w-5" checked={differ} onChange={(e) => setDiffer(e.target.checked)} />
+                    Some floors have a different number of flats
+                  </label>
+                  {differ && floorsNum !== undefined && Number.isInteger(floorsNum) && floorsNum >= 1 && floorsNum <= MAX_FLOORS && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {Array.from({ length: floorsNum }, (_, i) => (
+                        <label key={i} className="block text-xs text-muted-foreground">
+                          {floorWord(i + 1)} floor
+                          <input
+                            className={`${input} mt-1 text-foreground`}
+                            inputMode="numeric"
+                            value={floorCountsStr[i] ?? ''}
+                            placeholder={perFloor || '0'}
+                            onChange={(e) => {
+                              const next = [...floorCountsStr]
+                              next[i] = e.target.value.replace(/\D/g, '')
+                              setFloorCountsStr(next)
+                            }}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {choice === 'compound' && (
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground">Your buildings</p>
+
+              {buildings.map((b, i) => (
+                <div key={i} className="space-y-3 rounded-card border border-border bg-background p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">Building {letterOf(i)}</p>
+                    {buildings.length > 1 && (
+                      <button type="button" onClick={() => removeBuilding(i)} className="focus-ring min-h-11 rounded-button px-3 text-sm font-semibold text-destructive">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <label className="block text-sm font-semibold text-foreground">
+                    Name
+                    <input
+                      className={`${input} mt-1 font-normal`}
+                      value={b.name}
+                      maxLength={60}
+                      onChange={(e) => updateBuilding(i, { name: e.target.value })}
+                    />
+                  </label>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Stepper label="Floors above the ground" value={b.floors} onChange={(v) => updateBuilding(i, { floors: v })} min={1} max={MAX_FLOORS} />
+                    <Stepper label="Flats on each floor" value={b.perFloor} onChange={(v) => updateBuilding(i, { perFloor: v })} min={1} max={MAX_PER_FLOOR} />
+                  </div>
+                  <Stepper label="Flats on the ground floor (0 if none)" value={b.ground} onChange={(v) => updateBuilding(i, { ground: v })} min={0} max={MAX_PER_FLOOR} />
+                </div>
+              ))}
+
+              <div className="space-y-2 rounded-card border border-dashed border-border p-3">
+                <button
+                  type="button"
+                  onClick={() => addBuildings(1)}
+                  disabled={buildings.length >= MAX_BUILDINGS}
+                  className="focus-ring min-h-11 w-full rounded-button border border-primary bg-card px-4 text-sm font-semibold text-primary disabled:opacity-50"
+                >
+                  Add a building like {buildings[buildings.length - 1]?.name.trim() || `Building ${letterOf(buildings.length - 1)}`}
+                </button>
+                <Stepper label="Or add several at once" value={moreCount} onChange={setMoreCount} min={1} max={10} />
+                <button
+                  type="button"
+                  onClick={() => addBuildings(Math.max(1, Number.parseInt(moreCount, 10) || 1))}
+                  disabled={buildings.length >= MAX_BUILDINGS}
+                  className="focus-ring min-h-11 w-full rounded-button border border-border bg-card px-4 text-sm font-semibold text-foreground disabled:opacity-50"
+                >
+                  Add {Math.max(1, Number.parseInt(moreCount, 10) || 1)} more like the last one
+                </button>
+              </div>
+            </div>
+          )}
+
+          {choice === 'houses' && (
+            <div className="space-y-3">
+              <Stepper label="How many houses?" value={count} onChange={setCount} min={1} max={300} />
+              <label className="block text-sm font-semibold text-foreground">
+                Street or phase <span className="font-normal text-muted-foreground">(optional)</span>
+                <input className={`${input} mt-1 font-normal`} value={groupLabel} maxLength={60} onChange={(e) => setGroupLabel(e.target.value)} placeholder="Phase 1" />
+              </label>
+            </div>
+          )}
+
+          <div className="rounded-card border border-border bg-background p-3" aria-live="polite">
+            {buildError ? (
+              <p className="text-xs text-muted-foreground">{buildError}</p>
+            ) : choice === 'compound' ? (
+              <>
+                <p className="text-sm font-semibold text-foreground">
+                  That makes {plural(buildings.length, 'building', 'buildings')} and {plural(unitCount, 'flat', 'flats')}.{' '}
+                  <span className="font-normal text-muted-foreground">Flats are named A-1A, A-1B, B-1A and so on.</span>
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {buildings.map((b, i) => {
+                    const n = units.filter((u) => u.group_label === b.name.trim().slice(0, 60)).length
+                    return (
+                      <li key={i} className="text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground">{b.name.trim()}</span>: {plural(n, 'flat', 'flats')}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-foreground">
+                  That makes {plural(unitCount, one, many)}.{' '}
+                  <span className="font-normal text-muted-foreground">
+                    {choice === 'building' ? 'We number them 1A, 1B, 2A and so on.' : `We number them 1 to ${unitCount}.`}
+                  </span>
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {previewRows.map((row, i) => (
+                    <div key={i}>
+                      {previewMore && kind === 'block' && i === 2 && <p className="py-0.5 pl-12 text-xs text-muted-foreground">...</p>}
+                      <div className="flex items-start gap-2">
+                        {row.label !== '' && <span className="w-10 shrink-0 pt-1.5 text-xs text-muted-foreground">{row.label}</span>}
+                        <div className="flex flex-wrap gap-1.5">
+                          {row.tiles.map((t) => (
+                            <span key={t} className="rounded-chip bg-secondary px-2.5 py-1 text-xs font-semibold text-primary">{t}</span>
+                          ))}
+                          {kind !== 'block' && previewMore && <span className="px-1 py-1 text-xs text-muted-foreground">... to {units[units.length - 1]?.unit_label}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={create}
+            disabled={saving || coverUploading}
+            className="focus-ring min-h-12 w-full rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save this place'}
+          </button>
+          {msg && !msg.ok && (
+            <p role="alert" className="rounded-card border border-danger bg-danger-soft p-3 text-sm text-danger">{msg.text}</p>
+          )}
+          <p className="text-xs text-muted-foreground">You do not have to list every {one} today. Nothing goes public until you list one and EboHomes reviews it.</p>
+        </section>
+      )}
+
+      <section className="space-y-3" aria-label="Your places">
+        <h2 className="text-lg font-bold text-foreground">Your places</h2>
+        {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+        {loadError && <p className="text-sm text-danger">Could not load your places. Refresh the page.</p>}
+        {!loading && !loadError && ownEstates.length === 0 && (
+          <p className="rounded-card border border-border bg-card p-4 text-sm text-muted-foreground">Nothing here yet. Choose what you are adding above.</p>
+        )}
+
+        {viewUnit && (
+          <div ref={panelRef} role="dialog" aria-label={`${cap(viewUnit.noun)} ${viewUnit.label}`} className="space-y-3 rounded-card border-2 border-primary bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-bold text-foreground">{cap(viewUnit.noun)} {viewUnit.label}</p>
+                <p className="text-xs text-muted-foreground">{viewUnit.estateName}</p>
+              </div>
+              <button type="button" onClick={closePicker} className="focus-ring min-h-11 shrink-0 rounded-button px-3 text-sm font-semibold text-primary">Close</button>
+            </div>
+            <p className={`inline-block rounded-chip px-2.5 py-1 text-xs font-semibold ${TILE_META[viewUnit.state].cls}`}>{TILE_META[viewUnit.state].label}</p>
+            <p className="text-xs text-muted-foreground">
+              {viewUnit.state === 'live' && 'Tenants can see and apply for this one.'}
+              {viewUnit.state === 'waiting' && 'EboHomes is reviewing it. Tenants see it once it is live.'}
+              {viewUnit.state === 'reserved' && 'A tenant has reserved it. It stays reserved until the handover is done.'}
+              {viewUnit.state === 'rented' && 'This one is rented.'}
+              {viewUnit.state === 'paused' && 'It is paused and hidden from tenants. Open My Properties to confirm it is still available.'}
+              {viewUnit.state === 'attention' && 'This listing was rejected or suspended. Open it to see why.'}
+              {viewUnit.state === 'listed' && 'This one has a listing.'}
+            </p>
+            {(viewUnit.state === 'live' || viewUnit.state === 'reserved') && (
+              <Link href={`/listing/${viewUnit.listingId}`} className="focus-ring flex min-h-12 w-full items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground">
+                View as a tenant sees it
+              </Link>
+            )}
+            <Link
+              href={`/dashboard/edit/${viewUnit.listingId}`}
+              className={
+                viewUnit.state === 'live' || viewUnit.state === 'reserved'
+                  ? 'focus-ring flex min-h-12 w-full items-center justify-center rounded-button border border-border bg-card px-4 text-sm font-semibold text-primary'
+                  : 'focus-ring flex min-h-12 w-full items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground'
+              }
+            >
+              Edit listing
+            </Link>
+          </div>
+        )}
+
+        {pickUnit && (
+          <div ref={panelRef} role="dialog" aria-label={`${cap(pickUnit.noun)} ${pickUnit.label}`} className="space-y-3 rounded-card border-2 border-primary bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-bold text-foreground">{cap(pickUnit.noun)} {pickUnit.label}</p>
+                <p className="text-xs text-muted-foreground">{pickUnit.estateName}</p>
+              </div>
+              <button type="button" onClick={closePicker} className="focus-ring min-h-11 shrink-0 rounded-button px-3 text-sm font-semibold text-primary">Close</button>
+            </div>
+
+            {!showAttach && (
+              <>
+                {pickUnit.hasCover ? (
+                  <Link
+                    href={`/list-property?unit=${pickUnit.id}`}
+                    className="focus-ring flex min-h-12 w-full items-center justify-center rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground"
+                  >
+                    List this {pickUnit.noun}
+                  </Link>
+                ) : (
+                  <p role="status" className="rounded-card border border-border bg-background p-3 text-sm text-foreground">
+                    Add an overview photo of {pickUnit.estateName} first. Find it on the place card below, then tap this {pickUnit.noun} again.
+                  </p>
+                )}
+                {pickUnit.hasCover && attachable.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAttach(true)}
+                    className="focus-ring min-h-11 w-full rounded-button border border-border bg-card px-4 text-sm font-semibold text-primary"
+                  >
+                    Use a listing I already made
+                  </button>
+                )}
+              </>
+            )}
+
+            {showAttach && (
+              <>
+                <p className="text-xs text-muted-foreground">Choose the listing for this {pickUnit.noun}.</p>
+                <div className="space-y-2">
+                  {attachable.map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setPickListingId(l.id)}
+                      aria-pressed={pickListingId === l.id}
+                      className={`focus-ring w-full rounded-button border px-3 py-2 text-left ${pickListingId === l.id ? 'border-primary bg-secondary' : 'border-border bg-card'}`}
+                    >
+                      <span className="block text-sm font-semibold text-foreground">{listingName(l)}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {l.location_text ? `${l.location_text} · ` : ''}{l.status ?? 'status unknown'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {attachMsg && (
+                  <p role="alert" className={`rounded-card border p-3 text-sm ${attachMsg.ok ? 'border-success bg-success-soft text-success' : 'border-danger bg-danger-soft text-danger'}`}>
+                    {attachMsg.text}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={attach}
+                  disabled={attaching || !pickListingId}
+                  className="focus-ring min-h-12 w-full rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50"
+                >
+                  {attaching ? 'Attaching...' : 'Use this listing here'}
+                </button>
+                <button type="button" onClick={() => setShowAttach(false)} className="focus-ring min-h-11 w-full rounded-button px-4 text-sm font-semibold text-primary">Back</button>
+              </>
+            )}
+          </div>
+        )}
+
+        {ownEstates.map((e) => {
+          const [oneE, manyE] = noun(e.kind)
+          const us = [...(e.units ?? [])].sort((a, b) => (b.floor_no ?? 0) - (a.floor_no ?? 0) || a.unit_label.localeCompare(b.unit_label, undefined, { numeric: true }))
+          const busy = cardBusy === e.id
+
+          // A compound: flats that have floors and a building name. Shown one fold-out section per building.
+          const isCompound = us.some((u) => u.floor_no !== null && (u.group_label ?? '').trim() !== '')
+          const buildingNames = isCompound
+            ? [...new Set(us.map((u) => (u.group_label ?? '').trim() || 'Other'))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+            : []
+
+          return (
+            <div key={e.id} className="rounded-card border border-border bg-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-foreground">{e.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isCompound ? `Compound with ${plural(buildingNames.length, 'building', 'buildings')}` : (KIND_LABEL[e.kind] ?? e.kind)}
+                    {e.address_text ? `, ${e.address_text}` : ''}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-2 text-sm font-semibold text-foreground">{summaryOf(us, oneE, manyE)}</p>
+
+              {/* Stage B3a: the overview photo, or the way to add it. */}
+              {e.cover_photo_url ? (
+                <div className="mt-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={e.cover_photo_url} alt={`Overview of ${e.name}`} className="h-36 w-full rounded-lg object-cover" />
+                  <label htmlFor={`cover-${e.id}`} className="focus-ring mt-1 inline-flex min-h-11 cursor-pointer items-center text-sm font-semibold text-primary">
+                    {busy ? 'Uploading...' : 'Change overview photo'}
+                    <input id={`cover-${e.id}`} type="file" accept="image/*" onChange={(ev) => onCardCover(e.id, ev)} disabled={busy} className="sr-only" />
+                  </label>
+                </div>
+              ) : (
+                <label
+                  htmlFor={`cover-${e.id}`}
+                  className="mt-3 block min-h-14 cursor-pointer rounded-lg border-2 border-dashed border-primary p-4 text-center hover:bg-secondary focus-within:ring-2 focus-within:ring-primary"
+                >
+                  <ImagePlus size={24} className="mx-auto mb-1 text-primary" aria-hidden />
+                  <p className="text-sm font-semibold text-foreground">{busy ? 'Uploading...' : 'Add an overview photo of the whole place'}</p>
+                  <p className="text-xs text-muted-foreground">Needed before you can list a {oneE} here.</p>
+                  <input id={`cover-${e.id}`} type="file" accept="image/*" onChange={(ev) => onCardCover(e.id, ev)} disabled={busy} className="sr-only" />
+                </label>
+              )}
+              {cardMsg && cardMsg.id === e.id && <p role="alert" className="mt-2 text-sm font-medium text-danger">{cardMsg.text}</p>}
+
+              {isCompound ? (
+                <div className="mt-3 space-y-2">
+                  {buildingNames.map((bn, bi) => {
+                    const inB = us.filter((u) => ((u.group_label ?? '').trim() || 'Other') === bn)
+                    const listed = inB.filter((u) => u.listing_id).length
+                    return (
+                      <details key={bn} open={buildingNames.length <= 2 || bi === 0} className="rounded-lg border border-border bg-background p-3">
+                        <summary className="focus-ring cursor-pointer text-sm font-semibold text-foreground">
+                          {bn} <span className="font-normal text-muted-foreground">· {plural(inB.length, oneE, manyE)}, {listed} listed</span>
+                        </summary>
+                        <div className="mt-3">{unitsView(inB, e, oneE, `${e.id}-b${bi}`)}</div>
+                      </details>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="mt-3">{unitsView(us, e, oneE, e.id)}</div>
+              )}
+              <p className="mt-3 text-xs text-muted-foreground">Dashed: not listed, tap to list it. Green: live. Amber: in review. Grey: rented.</p>
+            </div>
+          )
+        })}
+        {singleCount > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {singleCount} single {singleCount === 1 ? 'property is' : 'properties are'} in <Link href="/dashboard/listings" className="font-semibold text-primary underline">My Properties</Link>.
+          </p>
+        )}
+      </section>
+    </div>
+  )
+                  }
