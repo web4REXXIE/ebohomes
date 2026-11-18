@@ -517,8 +517,8 @@ export default function HomeClient() {
         <section aria-labelledby="home-hero-heading">
           <div className="relative isolate overflow-hidden bg-forest">
             <HeroBackground />
-            <div className="absolute inset-0 z-[3] bg-forest/70" aria-hidden="true" />
-            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/30 via-transparent to-forest" aria-hidden="true" />
+            {/* A light dark layer only, so the photo shows and the white text stays readable. No green tint. */}
+            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/45 via-black/25 to-black/40" aria-hidden="true" />
             <div className="container-content relative z-10 pb-32 pt-14 text-center md:pb-44 md:pt-24">
               <motion.p
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
