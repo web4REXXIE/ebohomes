@@ -350,19 +350,41 @@ function EmptyInventory() {
   )
 }
 
+function AboutEboHomes() {
+  return (
+    <Section aria-labelledby="about-home-heading" spacing="sm">
+      <Reveal>
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-caption font-semibold uppercase tracking-wide text-primary">About EboHomes</p>
+          <h2 id="about-home-heading" className="mt-2 text-balance text-h2 font-bold text-foreground">
+            Renting in Ebonyi, without the guesswork.
+          </h2>
+          <p className="mt-4 text-body-lg text-muted-foreground">
+            EboHomes is a rental platform for Ebonyi State. Every listing is reviewed before it goes live, so you can see real homes,
+            request a viewing and apply online. We built it because tenants lose time and inspection money on listings that are not real or not available.
+          </p>
+          <Link href="/about" className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
+            Learn more about EboHomes <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+        </div>
+      </Reveal>
+    </Section>
+  )
+}
+
 function InstitutionsStrip() {
   return (
     <div className="rounded-card border border-border/60 bg-card px-6 py-8 text-center shadow-rest md:py-10">
       <h3 className="text-xl font-bold text-foreground md:text-2xl">Built with Ebonyi&apos;s students and professionals in mind</h3>
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-x-10 gap-y-5">
+      <div className="mx-auto mt-6 grid max-w-xl gap-3 sm:grid-cols-2">
         {INSTITUTIONS.map((i) => (
-          <div key={i.short} className="flex items-center gap-3.5 text-left">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-secondary/40 p-1.5">
-              <img src={i.logo} alt="" loading="lazy" className="h-full w-full object-contain" />
+          <div key={i.short} className="flex items-center gap-4 rounded-xl border border-border/60 bg-background p-3 text-left">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-white p-2 ring-1 ring-border/60">
+              <img src={i.logo} alt={`${i.name} logo`} loading="lazy" className="h-full w-full object-contain" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-base font-bold text-primary">{i.short}</p>
-              <p className="text-xs text-muted-foreground">{i.name}</p>
+              <p className="text-xs leading-snug text-muted-foreground">{i.name}</p>
             </div>
           </div>
         ))}
@@ -566,25 +588,26 @@ export default function HomeClient() {
         <section aria-labelledby="home-hero-heading">
           <div className="relative isolate overflow-hidden bg-forest">
             <HeroBackground />
-            {/* A light dark layer only, so the photo shows and the white text stays readable. No green tint. */}
-            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/60 via-black/50 to-black/60" aria-hidden="true" />
+            {/* Neutral dark layer (no green) so the photo still shows, plus a darker pool behind the text so it is easy to read. */}
+            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/45 via-black/40 to-black/55" aria-hidden="true" />
+            <div className="absolute inset-0 z-[3] [background:radial-gradient(ellipse_75%_55%_at_50%_42%,rgba(0,0,0,0.6),transparent_75%)]" aria-hidden="true" />
             <div className="container-content relative z-10 pb-32 pt-14 text-center md:pb-44 md:pt-24">
               <motion.p
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                className="mb-4 text-caption font-semibold uppercase tracking-widest text-featured [text-shadow:0_1px_8px_rgba(0,0,0,0.6)]"
+                className="mb-4 text-caption font-semibold uppercase tracking-widest text-featured [text-shadow:0_1px_3px_rgba(0,0,0,0.9),0_2px_12px_rgba(0,0,0,0.8)]"
               >
                 Real Estate You Can Trust.
               </motion.p>
               <motion.h1
                 id="home-hero-heading"
                 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.06, ease: [0.22, 1, 0.36, 1] }}
-                className="mx-auto max-w-3xl text-balance text-display font-bold text-white [text-shadow:0_2px_14px_rgba(0,0,0,0.6)]"
+                className="mx-auto max-w-3xl text-balance text-display font-bold text-white [text-shadow:0_2px_4px_rgba(0,0,0,0.85),0_4px_22px_rgba(0,0,0,0.75)]"
               >
                 Find a place that feels like home.
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                className="mx-auto mt-4 max-w-xl text-pretty text-body-lg text-white [text-shadow:0_1px_10px_rgba(0,0,0,0.65)]"
+                className="mx-auto mt-4 max-w-xl text-pretty text-body-lg text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95),0_2px_14px_rgba(0,0,0,0.85)]"
               >
                 Find Homes. Skip the Stress. Browse reviewed rental homes across Ebonyi State, request a viewing and apply online, all in one place.
               </motion.p>
@@ -869,6 +892,9 @@ export default function HomeClient() {
 
         {/* 8. LANDLORDS */}
         <LandlordCta />
+
+        {/* 9a. ABOUT EBOHOMES (short; the founder story below explains why it exists) */}
+        <AboutEboHomes />
 
         {/* 9. FOUNDER */}
         <FounderSection />
