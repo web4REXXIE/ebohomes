@@ -61,7 +61,7 @@ export function buildSteps(inp: NextStepInput): Step[] {
     } else if (v.status === 'completed' && v.tenant_decision === 'interested') {
       const needsConfirm = !!app && app.status === 'approved' && !app.tenant_interest_at && !tenancyApps.has(app.id)
       if (needsConfirm) {
-        out.push({ ...base, key: 'vi-' + v.id, priority: 35, owner: 'you', href: '/applications', title: 'Confirm you want to proceed', body: 'Your application is approved. Confirm on your application so the landlord can set up your tenancy. No payment is taken.', cta: 'Open my application' })
+        out.push({ ...base, key: 'vi-' + v.id, priority: 35, owner: 'you', href: '/applications', title: 'Confirm you want to proceed', body: 'Your application is approved. Confirm on your application so EboHomes can prepare your rental offer. No payment is taken.', cta: 'Open my application' })
       } else if (!(app && tenancyApps.has(app.id))) {
         out.push({ ...base, key: 'vw-' + v.id, priority: 90, owner: 'ebohomes', title: 'EboHomes is reviewing your choice', body: 'EboHomes will confirm the property is available and agree the rent and terms. Nothing is reserved yet.', cta: null })
       }
@@ -83,7 +83,7 @@ export function buildSteps(inp: NextStepInput): Step[] {
       out.push({ ...base, key: 'a-' + a.id, priority: 85, owner: 'ebohomes', href: '/applications', title: 'EboHomes is reviewing your application', body: 'Nothing is approved yet and you do not need to pay anything.', cta: null })
     } else if (a.status === 'approved' && !tenancyApps.has(a.id)) {
       if (a.tenant_interest_at) {
-        out.push({ ...base, key: 'a-' + a.id, priority: 88, owner: 'ebohomes', href: '/applications', title: 'Your tenancy is being set up', body: 'You confirmed you want to proceed. The landlord sets up your tenancy and rental terms next. Nothing is due yet.', cta: null })
+        out.push({ ...base, key: 'a-' + a.id, priority: 88, owner: 'ebohomes', href: '/applications', title: 'Your rental offer is being prepared', body: 'You confirmed you want to proceed. EboHomes prepares your rental offer next. Nothing is due yet.', cta: null })
       } else if (!hasViewingFor.has(a.id)) {
         out.push({ ...base, key: 'a-' + a.id, priority: 70, owner: 'you', href: '/viewings', title: 'Request a viewing', body: 'Your application is approved. See the property in person before you pay anything.', cta: 'Request a viewing' })
       }
