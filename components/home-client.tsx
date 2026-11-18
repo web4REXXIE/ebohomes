@@ -398,6 +398,8 @@ export default function HomeClient() {
   const [loadError, setLoadError] = useState(false)
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({})
   const [categoryPhotos, setCategoryPhotos] = useState<Record<string, string>>({})
+  // Newest real listing photo for each area (keyed by the lower-case area name). Nothing is invented: no photo means no image.
+  const [areaPhotos, setAreaPhotos] = useState<Record<string, string>>({})
   const [verifiedLandlords, setVerifiedLandlords] = useState(0)
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([])
   const [isSearching, startSearch] = useTransition()
@@ -433,6 +435,7 @@ export default function HomeClient() {
       const types: Record<string, number> = {}
       const typePhotos: Record<string, string> = {}
       const places: Record<string, { name: string; count: number }> = {}
+      const placePhotos: Record<string, string> = {}
       for (const r of rows) {
         if (r.property_type) {
           types[r.property_type] = (types[r.property_type] ?? 0) + 1
@@ -443,11 +446,14 @@ export default function HomeClient() {
         if (name) {
           const key = name.toLowerCase()
           places[key] = { name: places[key]?.name ?? name, count: (places[key]?.count ?? 0) + 1 }
+          // rows are newest first, so the first photo seen is the newest listing's photo
+          if (!placePhotos[key] && r.photos?.[0]) placePhotos[key] = r.photos[0]
         }
       }
       setCategoryCounts(types)
       setCategoryPhotos(typePhotos)
       setAreas(Object.values(places).sort((a, b) => b.count - a.count))
+      setAreaPhotos(placePhotos)
       setTotal(rows.length)
       setLoading(false)
     }
@@ -750,16 +756,30 @@ export default function HomeClient() {
             <SectionHead title="Explore by area" sub={areas.length > 0 ? 'Real listing counts. Tap an area to see its properties.' : 'Search the areas around Ebonyi State.'} href="/search" cta="All areas" />
             {areas.length > 0 && (
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-                {areas.slice(0, 8).map((a) => (
-                  <Link key={a.name} href={`/search?location=${encodeURIComponent(a.name)}`} className="group flex flex-col justify-between rounded-card border border-border bg-card p-4 shadow-rest transition hover:-translate-y-0.5 hover:border-primary hover:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:p-5">
-                    <p className="text-4xl font-bold leading-none text-foreground sm:text-5xl">{a.count}</p>
-                    <div className="mt-6">
-                      <p className="line-clamp-1 text-base font-bold capitalize text-foreground">{a.name}</p>
-                      <p className="text-xs text-muted-foreground">{a.count === 1 ? 'property' : 'properties'} available</p>
-                      <p className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-primary">Explore <ArrowRight size={14} aria-hidden="true" className="transition-transform group-hover:translate-x-0.5" /></p>
-                    </div>
-                  </Link>
-                ))}
+                {areas.slice(0, 8).map((a) => {
+                  const photo = areaPhotos[a.name.toLowerCase()]
+                  return (
+                    <Link
+                      key={a.name}
+                      href={`/search?location=${encodeURIComponent(a.name)}`}
+                      className="group relative aspect-[4/5] overflow-hidden rounded-card border border-border bg-forest text-left shadow-rest transition-all hover:-translate-y-0.5 hover:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      {photo ? (
+                        <SmartImage src={img(photo, 500)} alt="" dark className="transition-transform duration-500 group-hover:scale-105" />
+                      ) : (
+                        <MapPin size={44} aria-hidden="true" className="absolute right-4 top-4 text-white/25" />
+                      )}
+                      <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-transparent" />
+                      <span className="absolute inset-x-0 bottom-0 p-3.5">
+                        <span className="line-clamp-1 block text-base font-bold capitalize text-white">{a.name}</span>
+                        <span className="mt-0.5 block text-xs text-white/85">{a.count} {a.count === 1 ? 'property' : 'properties'} available</span>
+                        <span className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-featured">
+                          Explore <ArrowRight size={14} aria-hidden="true" className="transition-transform group-hover:translate-x-0.5" />
+                        </span>
+                      </span>
+                    </Link>
+                  )
+                })}
               </div>
             )}
             {extraAreas.length > 0 && (
