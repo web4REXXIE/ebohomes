@@ -57,6 +57,8 @@ export default function DashboardOverview() {
   const [openApplications, setOpenApplications] = useState<number | null>(null)
   // Offers waiting for this landlord to confirm. null = could not be loaded. Shown as "could not check", never as "none".
   const [offers, setOffers] = useState<{ id: string; listing_id: string; expires_at: string | null }[] | null>(null)
+  // Tenancies whose proposed rental terms wait for this landlord to accept. null = could not be loaded.
+  const [termsToAccept, setTermsToAccept] = useState<{ id: string; listing_id: string }[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
 
@@ -86,6 +88,29 @@ export default function DashboardOverview() {
     setActivity(nRes.data ?? [])
     setOpenApplications(aRes.error ? null : aRes.count ?? 0)
     setOffers(oRes.error ? null : ((oRes.data ?? []) as { id: string; listing_id: string; expires_at: string | null }[]))
+
+    // Rental terms the tenant may already have accepted but this landlord has not. Read only. If either read fails, show "could not check", never "none".
+    const tRes = await supabase.from('tenancies').select('id, listing_id').eq('landlord_id', user.id)
+    if (tRes.error) {
+      setTermsToAccept(null)
+    } else {
+      const ten = (tRes.data ?? []) as { id: string; listing_id: string }[]
+      if (ten.length === 0) {
+        setTermsToAccept([])
+      } else {
+        const rRes = await supabase
+          .from('rental_terms')
+          .select('tenancy_id')
+          .in('tenancy_id', ten.map((t) => t.id))
+          .eq('status', 'proposed')
+          .is('landlord_accepted_at', null)
+        if (rRes.error) setTermsToAccept(null)
+        else {
+          const waiting = new Set(((rRes.data ?? []) as { tenancy_id: string }[]).map((r) => r.tenancy_id))
+          setTermsToAccept(ten.filter((t) => waiting.has(t.id)))
+        }
+      }
+    }
     setLoading(false)
   }
 
@@ -143,6 +168,7 @@ export default function DashboardOverview() {
     offers: offers === null ? null : offers.map((o) => ({ id: o.id, title: displayTitle(listings.find((l) => l.id === o.listing_id) as any), expires_at: o.expires_at })),
     verification: { needsAction: verification.needsAction, rejected: verification.state === 'rejected', detail: verification.detail, actionLabel: verification.actionLabel },
     openApplications,
+    termsToAccept: termsToAccept === null ? null : termsToAccept.map((t) => ({ id: t.id, title: displayTitle(listings.find((l) => l.id === t.listing_id) as any) })),
   })
 
   const QUICK_ACTIONS = [
