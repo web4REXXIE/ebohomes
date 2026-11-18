@@ -76,6 +76,10 @@ type FormShape = {
   annualRent: string
   serviceCharge: string
   cautionDeposit: string
+  durationMonths: string
+  noticeDays: string
+  houseRules: string
+  paymentSchedule: string
   location: string
   lat: number | null
   lng: number | null
@@ -102,6 +106,10 @@ type SiblingListingRow = {
   price_monthly: number | null
   service_charge: number | null
   caution_deposit: number | null
+  duration_months: number | null
+  notice_days: number | null
+  house_rules: string | null
+  payment_schedule: string | null
   location_text: string | null
   lat: number | null
   lng: number | null
@@ -110,7 +118,7 @@ type SiblingListingRow = {
 }
 
 const SIBLING_COLUMNS =
-  'id, listing_type, property_type, bedrooms, bathrooms, toilets, furnished, description, amenities, price_monthly, service_charge, caution_deposit, location_text, lat, lng, contact_info, availability_date'
+  'id, listing_type, property_type, bedrooms, bathrooms, toilets, furnished, description, amenities, price_monthly, service_charge, caution_deposit, duration_months, notice_days, house_rules, payment_schedule, location_text, lat, lng, contact_info, availability_date'
 
 function text(n: number | null | undefined): string {
   return n === null || n === undefined ? '' : String(n)
@@ -128,6 +136,10 @@ function copyDataFrom(row: SiblingListingRow): Partial<FormShape> {
     annualRent: row.price_monthly ? String(row.price_monthly * 12) : '',
     serviceCharge: text(row.service_charge),
     cautionDeposit: text(row.caution_deposit),
+    durationMonths: text(row.duration_months),
+    noticeDays: text(row.notice_days),
+    houseRules: row.house_rules ?? '',
+    paymentSchedule: row.payment_schedule ?? '',
     availabilityDate: date,
     listingType: row.listing_type === 'sale' ? 'sale' : 'rent',
     propertyType: row.property_type ?? '',
@@ -242,6 +254,10 @@ export default function ListPropertyPage() {
     annualRent: '',
     serviceCharge: '',
     cautionDeposit: '',
+    durationMonths: '',
+    noticeDays: '',
+    houseRules: '',
+    paymentSchedule: '',
     location: '',
     lat: null as number | null,
     lng: null as number | null,
@@ -521,6 +537,10 @@ export default function ListPropertyPage() {
         device_id: getDeviceId() ? getDeviceId() : null,
         service_charge: formData.serviceCharge ? Number(formData.serviceCharge) : null,
         caution_deposit: formData.cautionDeposit ? Number(formData.cautionDeposit) : null,
+        duration_months: formData.durationMonths ? Number(formData.durationMonths) : null,
+        notice_days: formData.noticeDays ? Number(formData.noticeDays) : null,
+        house_rules: formData.houseRules.trim() || null,
+        payment_schedule: formData.paymentSchedule.trim() || null,
         status: 'pending', // critical: must be set for search filtering + admin review queue
       })
       .select('id')
@@ -1041,6 +1061,58 @@ export default function ListPropertyPage() {
                 />
               </Field>
 
+              <Field id="lp-duration" label="Tenancy length (months, optional)">
+                <input
+                  id="lp-duration"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="60"
+                  value={formData.durationMonths}
+                  onChange={(e) => setFormData((p) => ({ ...p, durationMonths: e.target.value }))}
+                  placeholder="e.g., 12"
+                  className={INPUT}
+                />
+              </Field>
+
+              <Field id="lp-notice" label="Notice period (days, optional)">
+                <input
+                  id="lp-notice"
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max="365"
+                  value={formData.noticeDays}
+                  onChange={(e) => setFormData((p) => ({ ...p, noticeDays: e.target.value }))}
+                  placeholder="e.g., 30"
+                  className={INPUT}
+                />
+              </Field>
+
+              <Field id="lp-schedule" label="How rent is paid (optional)">
+                <input
+                  id="lp-schedule"
+                  type="text"
+                  maxLength={300}
+                  value={formData.paymentSchedule}
+                  onChange={(e) => setFormData((p) => ({ ...p, paymentSchedule: e.target.value }))}
+                  placeholder="e.g., Full year upfront"
+                  className={INPUT}
+                />
+              </Field>
+
+              <Field id="lp-rules" label="House rules (optional)">
+                <textarea
+                  id="lp-rules"
+                  rows={3}
+                  maxLength={2000}
+                  value={formData.houseRules}
+                  onChange={(e) => setFormData((p) => ({ ...p, houseRules: e.target.value }))}
+                  placeholder="e.g., No smoking. Quiet after 10pm."
+                  className={INPUT}
+                />
+              </Field>
+
               <Field id="lp-available" label="Availability Date">
                 <input
                   id="lp-available"
@@ -1117,6 +1189,10 @@ export default function ListPropertyPage() {
                     ['Annual rent', naira(formData.annualRent)],
                     ['Service charge', naira(formData.serviceCharge)],
                     ['Caution / deposit', naira(formData.cautionDeposit)],
+                    ['Tenancy length', formData.durationMonths ? `${formData.durationMonths} months` : '—'],
+                    ['Notice period', formData.noticeDays ? `${formData.noticeDays} days` : '—'],
+                    ['How rent is paid', formData.paymentSchedule || '—'],
+                    ['House rules', formData.houseRules || '—'],
                     ['Phone', formData.phoneNumber],
                     ['Available from', formData.availabilityDate || '—'],
                   ],
