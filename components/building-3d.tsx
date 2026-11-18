@@ -248,28 +248,41 @@ function treeSpots(l: Layout): Spot[] {
   return t
 }
 
-// Small extras: lamps, bushes and cars. They only show if their model files exist.
+// Small extras: lamps, bushes, cars, and the Nigerian touches (generator, water tank, gate, people, bus).
+// Each one only shows if its model file exists in public/models.
 function Extras({ l }: { l: Layout }) {
   if (l.hasFloors) {
     const front = l.d / 2 + 1.5
+    const side = l.w / 2 + 0.9
     return (
       <>
         <Prop kind="lamp" x={-l.w / 2 - 0.2} z={front} height={1.3} />
         <Prop kind="lamp" x={l.w / 2 + 0.2} z={front} height={1.3} />
         <Prop kind="car" x={-l.w / 4} z={front + 0.9} height={0.5} rotY={Math.PI / 2} />
         <Prop kind="car" x={l.w / 5} z={front + 0.9} height={0.5} rotY={-Math.PI / 2} />
+        <Prop kind="bus" x={-l.w / 2 - 3.5} z={front + 0.9} height={0.9} rotY={Math.PI / 2} />
         <Prop kind="bush" x={-l.w / 2 + 0.3} z={l.d / 2 + 0.9} height={0.4} />
         <Prop kind="bush" x={l.w / 2 - 0.3} z={l.d / 2 + 0.9} height={0.4} />
+        <Prop kind="generator" x={side} z={-0.2} height={0.6} rotY={-Math.PI / 2} />
+        <Prop kind="tank" x={-side} z={-0.4} height={1.5} />
+        <Prop kind="gate" x={-l.w / 2 - 0.7} z={l.d / 2 + 1.2} height={0.9} />
+        <Prop kind="person" x={l.w / 2 + 0.7} z={l.d / 2 + 0.9} height={0.55} rotY={0.4} animation="Idle" />
       </>
     )
   }
   const front = (l.rows * HOUSE_SP) / 2 + 1.5
+  const back = -(l.rows * HOUSE_SP) / 2 - 0.1
   return (
     <>
       <Prop kind="lamp" x={-l.w / 2 + 0.4} z={front} height={1.3} />
       <Prop kind="lamp" x={l.w / 2 - 0.4} z={front} height={1.3} />
       <Prop kind="car" x={-l.w / 5} z={front + 0.3} height={0.5} rotY={Math.PI / 2} />
       <Prop kind="car" x={l.w / 5} z={front + 0.3} height={0.5} rotY={-Math.PI / 2} />
+      <Prop kind="bus" x={-l.w / 2 - 1} z={front + 0.3} height={1} rotY={Math.PI / 2} />
+      <Prop kind="generator" x={l.w / 2 - 0.8} z={back} height={0.6} />
+      <Prop kind="tank" x={-l.w / 2 + 0.8} z={back} height={1.5} />
+      <Prop kind="gate" x={0} z={front - 0.5} height={0.9} />
+      <Prop kind="person" x={1.4} z={front - 0.6} height={0.7} rotY={-0.5} animation="Idle" />
     </>
   )
 }
