@@ -13,8 +13,7 @@ import {
   ChevronUp,
   CheckCircle2,
   AlertTriangle,
-  Check,
-  Minus,
+  FileText,
   Route,
   Droplet,
   Zap,
@@ -44,27 +43,6 @@ const DETAIL_ICONS: Record<IconKey, ComponentType<{ size?: number; className?: s
   building: Building2,
   leaf: Leaf,
   home: Home,
-}
-
-// One short pill in the summary row: what was looked at, and whether EboHomes has it on record.
-function CheckPill({ label, state }: { label: string; state: RowState }) {
-  const yes = state === 'yes'
-  const unavailable = state === 'unavailable'
-  const status = yes ? 'Checked' : unavailable ? 'Unavailable' : 'Not yet'
-
-  return (
-    <li
-      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-caption font-semibold ${
-        yes
-          ? 'border-primary/30 bg-primary/10 text-primary'
-          : 'border-border bg-muted text-muted-foreground'
-      }`}
-    >
-      {yes ? <Check size={14} aria-hidden /> : <Minus size={14} aria-hidden />}
-      <span>{label}</span>
-      <span className="sr-only">: {status}</span>
-    </li>
-  )
 }
 
 // One line in the block: an icon, a short title and a plain explanation.
@@ -173,6 +151,67 @@ export function PropertyTrust({
   const nearby = nearbyText(inspection)
   const hasDetails = facts.length + notes.length + nearby.length > 0
 
+  const checks: {
+    key: string
+    state: RowState
+    YesIcon: ComponentType<{ size?: number; className?: string }>
+    NoIcon: ComponentType<{ size?: number; className?: string }>
+    yesTitle: string
+    noTitle: string
+    yesText: string
+    noText: string
+    extra?: React.ReactNode
+  }[] = [
+    {
+      key: 'inspection', state: inspected, YesIcon: ClipboardCheck, NoIcon: ClipboardList,
+      yesTitle: date ? `Inspected by EboHomes on ${date}` : 'Inspected by EboHomes',
+      noTitle: 'Property not inspected yet',
+      yesText: 'An EboHomes inspector visited this property and EboHomes reviewed the report.',
+      noText: 'EboHomes has no current inspection of this property on record.',
+      extra: inspected === 'yes' && hasDetails ? (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-controls={panelId}
+          className="mt-2 inline-flex items-center gap-1 text-caption font-semibold text-primary hover:underline"
+        >
+          {open ? 'Hide inspection details' : 'See inspection details'}
+          {open ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+        </button>
+      ) : null,
+    },
+    {
+      key: 'authority', state: authority, YesIcon: FileCheck2, NoIcon: FileQuestion,
+      yesTitle: 'Listing authority checked',
+      noTitle: 'Listing authority not yet checked',
+      yesText: PUBLIC_INDICATOR_TEXT.authority.meaning,
+      noText: 'EboHomes has not reviewed evidence that the lister may rent out this property.',
+    },
+    {
+      key: 'identity', state: identity, YesIcon: ShieldCheck, NoIcon: ShieldQuestion,
+      yesTitle: 'Landlord identity checked',
+      noTitle: 'Landlord identity not yet checked',
+      yesText: 'EboHomes reviewed the identity document this landlord submitted.',
+      noText: 'EboHomes has not confirmed who this landlord is.',
+    },
+  ]
+
+  const renderCheck = (c: (typeof checks)[number]) => (
+    <Row
+      key={c.key}
+      state={c.state}
+      YesIcon={c.YesIcon}
+      NoIcon={c.NoIcon}
+      yesTitle={c.yesTitle}
+      noTitle={c.noTitle}
+      yesText={c.yesText}
+      noText={c.noText}
+    >
+      {c.extra}
+    </Row>
+  )
+
   return (
     <section
       id="trust"
@@ -187,62 +226,51 @@ export function PropertyTrust({
         This shows what EboHomes has actually checked. Anything not marked as checked has not been confirmed.
       </p>
 
-      <ul aria-label="Checks at a glance" className="mb-1 flex flex-wrap gap-2">
-        <CheckPill label="Identity" state={identity} />
-        <CheckPill label="Authority" state={authority} />
-        <CheckPill label="Inspection" state={inspected} />
-      </ul>
       {canCount && (
         <p className="mb-4 text-caption font-medium text-muted-foreground">
-          {checksDone} of 3 checks on record
+          {checksDone === 0 ? 'EboHomes has not checked anything on this listing yet.' : `${checksDone} of 3 checks on record`}
         </p>
       )}
       {!canCount && <div className="mb-4" />}
 
-      <ul className="space-y-4">
-        <Row
-          state={identity}
-          YesIcon={ShieldCheck}
-          NoIcon={ShieldQuestion}
-          yesTitle="Landlord identity checked"
-          noTitle="Landlord identity not yet checked"
-          yesText="EboHomes reviewed the identity document this landlord submitted."
-          noText="EboHomes has not confirmed who this landlord is."
-        />
+      {checks.filter((c) => c.state === 'yes').length > 0 && (
+        <div className="mb-4">
+          <h3 className="mb-2 text-caption font-semibold uppercase tracking-wide text-primary">Checked by EboHomes</h3>
+          <ul className="space-y-4">{checks.filter((c) => c.state === 'yes').map(renderCheck)}</ul>
+        </div>
+      )}
 
-        <Row
-          state={authority}
-          YesIcon={FileCheck2}
-          NoIcon={FileQuestion}
-          yesTitle={PUBLIC_INDICATOR_TEXT.authority.title}
-          noTitle="Authority not yet reviewed"
-          yesText={PUBLIC_INDICATOR_TEXT.authority.meaning}
-          noText="EboHomes has not reviewed evidence that the lister may rent out this property."
-        />
+      {checks.filter((c) => c.state === 'no').length > 0 && (
+        <div className="mb-4">
+          <h3 className="mb-2 text-caption font-semibold uppercase tracking-wide text-muted-foreground">Not yet checked</h3>
+          <p className="mb-2 text-caption text-muted-foreground">EboHomes has not independently confirmed these yet.</p>
+          <ul className="space-y-4">{checks.filter((c) => c.state === 'no').map(renderCheck)}</ul>
+        </div>
+      )}
 
-        <Row
-          state={inspected}
-          YesIcon={ClipboardCheck}
-          NoIcon={ClipboardList}
-          yesTitle={date ? `Inspected by EboHomes on ${date}` : 'Inspected by EboHomes'}
-          noTitle="Not inspected yet"
-          yesText="An EboHomes inspector visited this property and EboHomes reviewed the report."
-          noText="EboHomes has no current inspection of this property on record."
-        >
-          {inspected === 'yes' && hasDetails && (
-            <button
-              type="button"
-              onClick={() => setOpen((value) => !value)}
-              aria-expanded={open}
-              aria-controls={panelId}
-              className="mt-2 inline-flex items-center gap-1 text-caption font-semibold text-primary hover:underline"
-            >
-              {open ? 'Hide inspection details' : 'See inspection details'}
-              {open ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-            </button>
-          )}
-        </Row>
-      </ul>
+      {checks.filter((c) => c.state === 'unavailable').length > 0 && (
+        <div className="mb-4">
+          <h3 className="mb-2 text-caption font-semibold uppercase tracking-wide text-muted-foreground">Could not load</h3>
+          <ul className="space-y-4">{checks.filter((c) => c.state === 'unavailable').map(renderCheck)}</ul>
+        </div>
+      )}
+
+      <div className="mb-4">
+        <h3 className="mb-2 text-caption font-semibold uppercase tracking-wide text-muted-foreground">Stated by the landlord</h3>
+        <ul>
+          <li className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground" aria-hidden>
+              <FileText size={18} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-body font-semibold text-foreground">Rent, description and availability</p>
+              <p className="text-caption text-muted-foreground">
+                The landlord provided these. EboHomes has not independently confirmed them, except where an inspection above says so.
+              </p>
+            </div>
+          </li>
+        </ul>
+      </div>
 
       {inspected === 'yes' && hasDetails && open && (
         <div id={panelId} className="mt-4 overflow-hidden rounded-control border border-border bg-cream">
