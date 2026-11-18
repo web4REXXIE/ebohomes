@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import { naturalSort, type ViewUnit } from '@/lib/estate-view'
+import { Prop } from '@/components/scenery'
 
 type Props = {
   units: ViewUnit[]
@@ -18,8 +19,9 @@ type Props = {
 const GAP = 1.15
 const FLOOR_H = 1.1
 const BODY_D = 1.2
-const HOUSE_SP = 2.3
+const HOUSE_SP = 2.4
 const LABEL_DF = 10 // label size: raise to make numbers bigger, lower to make them smaller
+const HOUSE_H = 1.6 // house model height: change if your house model looks too big or small
 
 const C = {
   sky: '#cfe8f7',
@@ -121,15 +123,10 @@ function Flat({ p, tone, selected, showLabel, onSelect }: { p: Placed; tone: str
   )
 }
 
-function House({ p, tone, selected, onSelect }: { p: Placed; tone: string; selected: boolean; onSelect?: (id: string) => void }) {
-  const roof = toneColor(tone, selected)
-  const lit = tone === 'to_let' || selected
-  const click = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation()
-    onSelect?.(p.unit.id)
-  }
+// The old hand-built house. Shown only if house.glb is missing or still loading.
+function PlainHouse({ roof, lit }: { roof: string; lit: boolean }) {
   return (
-    <group position={[p.x, 0, p.z]} scale={selected ? 1.07 : 1} onClick={click}>
+    <>
       <mesh position={[0, 0.45, 0]} castShadow receiveShadow>
         <boxGeometry args={[1.3, 0.9, 1.2]} />
         <meshStandardMaterial color={C.body} />
@@ -142,22 +139,38 @@ function House({ p, tone, selected, onSelect }: { p: Placed; tone: string; selec
         <boxGeometry args={[0.26, 0.5, 0.03]} />
         <meshStandardMaterial color={C.door} />
       </mesh>
-      <mesh position={[-0.42, 0.55, 0.61]}>
-        <boxGeometry args={[0.25, 0.25, 0.03]} />
-        <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
+    </>
+  )
+}
+
+function House({ p, tone, selected, onSelect }: { p: Placed; tone: string; selected: boolean; onSelect?: (id: string) => void }) {
+  const color = toneColor(tone, selected)
+  const lit = tone === 'to_let' || selected
+  const click = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    onSelect?.(p.unit.id)
+  }
+  return (
+    <group position={[p.x, 0, p.z]} scale={selected ? 1.07 : 1} onClick={click}>
+      {/* Status ring on the ground: green to let, grey taken, gold selected */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+        <ringGeometry args={[0.85, 1.05, 32]} />
+        <meshStandardMaterial color={color} emissive={lit ? color : '#000000'} emissiveIntensity={lit ? 0.4 : 0} />
       </mesh>
-      <mesh position={[0.42, 0.55, 0.61]}>
-        <boxGeometry args={[0.25, 0.25, 0.03]} />
-        <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <circleGeometry args={[0.85, 32]} />
+        <meshStandardMaterial color="#e9e3d3" transparent opacity={0.8} />
       </mesh>
-      <Html center position={[0, 1.95, 0]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+      <Prop kind="house" height={HOUSE_H} fallback={<PlainHouse roof={color} lit={lit} />} />
+      <Html center position={[0, HOUSE_H + 0.5, 0]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
         <Pill text={`No. ${p.unit.unit_label}`} />
       </Html>
     </group>
   )
 }
 
-function Tree({ x, z, s = 1 }: { x: number; z: number; s?: number }) {
+// The old hand-built tree. Shown only if tree.glb is missing or still loading.
+function PlainTree({ x, z, s = 1 }: { x: number; z: number; s?: number }) {
   return (
     <group position={[x, 0, z]} scale={s}>
       <mesh position={[0, 0.25, 0]} castShadow>
@@ -176,8 +189,10 @@ function Tree({ x, z, s = 1 }: { x: number; z: number; s?: number }) {
   )
 }
 
-function treeSpots(l: Layout): { x: number; z: number; s: number }[] {
-  const t: { x: number; z: number; s: number }[] = []
+type Spot = { x: number; z: number; s: number }
+
+function treeSpots(l: Layout): Spot[] {
+  const t: Spot[] = []
   if (l.hasFloors) {
     const a = l.w / 2 + 1.2
     t.push({ x: -a, z: 1.6, s: 1.1 }, { x: a, z: 1.8, s: 1 }, { x: -a - 1, z: 0.2, s: 0.9 }, { x: a + 1, z: -0.4, s: 1.2 })
@@ -194,14 +209,33 @@ function treeSpots(l: Layout): { x: number; z: number; s: number }[] {
     const z = (r - (l.rows - 1) / 2) * HOUSE_SP
     t.push({ x: -xEdge, z, s: 1 }, { x: xEdge, z: z + 0.6, s: 1.1 })
   }
-  for (let r = 0; r < l.rows; r++) {
-    for (let c = 0; c < l.cols - 1; c++) {
-      if ((r * l.cols + c) % 3 === 0) {
-        t.push({ x: (c - (l.cols - 1) / 2) * HOUSE_SP + HOUSE_SP / 2, z: (r - (l.rows - 1) / 2) * HOUSE_SP + 0.5, s: 0.7 })
-      }
-    }
-  }
   return t
+}
+
+// Small extras: lamps, bushes and cars. They only show if their model files exist.
+function Extras({ l }: { l: Layout }) {
+  if (l.hasFloors) {
+    const front = l.d / 2 + 1.5
+    return (
+      <>
+        <Prop kind="lamp" x={-l.w / 2 - 0.2} z={front} height={1.3} />
+        <Prop kind="lamp" x={l.w / 2 + 0.2} z={front} height={1.3} />
+        <Prop kind="car" x={-l.w / 4} z={front + 0.9} height={0.5} rotY={Math.PI / 2} />
+        <Prop kind="car" x={l.w / 5} z={front + 0.9} height={0.5} rotY={-Math.PI / 2} />
+        <Prop kind="bush" x={-l.w / 2 + 0.3} z={l.d / 2 + 0.9} height={0.4} />
+        <Prop kind="bush" x={l.w / 2 - 0.3} z={l.d / 2 + 0.9} height={0.4} />
+      </>
+    )
+  }
+  const front = (l.rows * HOUSE_SP) / 2 + 1.3
+  return (
+    <>
+      <Prop kind="lamp" x={-l.w / 2 + 0.4} z={front} height={1.3} />
+      <Prop kind="lamp" x={l.w / 2 - 0.4} z={front} height={1.3} />
+      <Prop kind="car" x={-l.w / 5} z={front + 0.3} height={0.5} rotY={Math.PI / 2} />
+      <Prop kind="car" x={l.w / 5} z={front + 0.3} height={0.5} rotY={-Math.PI / 2} />
+    </>
+  )
 }
 
 function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn }: Props & { layout: Layout; shadowsOn: boolean }) {
@@ -276,14 +310,15 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn 
       )}
 
       {!layout.hasFloors && name && !preview && (
-        <Html center position={[0, 0.2, (layout.rows * HOUSE_SP) / 2 + 1.4]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+        <Html center position={[0, 0.2, (layout.rows * HOUSE_SP) / 2 + 2.6]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
           <Pill text={name} dark={false} />
         </Html>
       )}
 
       {trees.map((t, i) => (
-        <Tree key={i} x={t.x} z={t.z} s={t.s} />
+        <Prop key={i} kind="tree" x={t.x} z={t.z} height={1.5 * t.s} fallback={<PlainTree x={t.x} z={t.z} s={t.s} />} />
       ))}
+      <Extras l={layout} />
 
       <OrbitControls
         target={[0, layout.hasFloors ? layout.h / 2 : 0.6, 0]}
