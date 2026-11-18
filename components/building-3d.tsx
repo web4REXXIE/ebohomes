@@ -6,6 +6,7 @@ import { Canvas, useThree, useFrame, type ThreeEvent } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import { naturalSort, type ViewUnit } from '@/lib/estate-view'
 import { Prop } from '@/components/scenery'
+import { themeOf } from '@/lib/lodge-themes'
 
 type Props = {
   units: ViewUnit[]
@@ -15,6 +16,7 @@ type Props = {
   name?: string
   preview?: boolean
   height?: number
+  theme?: string | null
 }
 
 const GAP = 1.15
@@ -357,7 +359,7 @@ function Intro({ target, skip }: { target: [number, number, number]; skip: boole
   return null
 }
 
-function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn, mood, camPos }: Props & { layout: Layout; shadowsOn: boolean; mood: Mood; camPos: [number, number, number] }) {
+function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn, mood, camPos, theme }: Props & { layout: Layout; shadowsOn: boolean; mood: Mood; camPos: [number, number, number] }) {
   const { camera } = useThree()
   const [front, setFront] = useState(true)
   const size = Math.max(layout.w, layout.h + ROOF_H, layout.d, 4)
@@ -365,6 +367,7 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn,
   const useHouseModel = layout.placed.length <= MODEL_HOUSE_MAX
   const s = size * 1.3
   const M = MOODS[mood]
+  const T = themeOf(theme)
   const night = mood !== 'day'
   const roadZ = layout.hasFloors ? layout.d / 2 + 2.4 : (layout.rows * HOUSE_SP) / 2 + 1.8
   const roadLen = Math.max(layout.w, layout.d) + 18
@@ -403,7 +406,7 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn,
       </mesh>
       <mesh position={[0, 0.0, 0]} receiveShadow>
         <boxGeometry args={[layout.w + 2, 0.04, layout.d + 2.4]} />
-        <meshStandardMaterial color={M.plaza} />
+        <meshStandardMaterial color={mood === 'day' ? T.plaza : M.plaza} />
       </mesh>
       {/* Road in front, with a dashed centre line */}
       <mesh position={[0, 0.01, roadZ]} receiveShadow>
@@ -421,23 +424,23 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn,
         <>
           <mesh position={[0, layout.h / 2, 0]} castShadow receiveShadow>
             <boxGeometry args={[layout.w, layout.h, layout.d]} />
-            <meshStandardMaterial color={C.body} />
+            <meshStandardMaterial color={T.body} />
           </mesh>
           {layout.floors.map((f, fi) => (
             <mesh key={`b${f}`} position={[0, fi * FLOOR_H + 0.12, layout.d / 2 + 0.22]} castShadow receiveShadow>
               <boxGeometry args={[layout.w + 0.2, 0.06, 0.5]} />
-              <meshStandardMaterial color="#d8d1c0" />
+              <meshStandardMaterial color={T.ledge} />
             </mesh>
           ))}
           {/* Roof edge, then a pitched roof on top */}
           <mesh position={[0, layout.h + 0.04, 0]} castShadow>
             <boxGeometry args={[layout.w + 0.5, 0.14, layout.d + 0.5]} />
-            <meshStandardMaterial color={C.forest} />
+            <meshStandardMaterial color={T.edge} />
           </mesh>
           <group position={[0, layout.h + 0.11, 0]} scale={[(layout.w + 0.7) / Math.SQRT2, ROOF_H, (layout.d + 0.7) / Math.SQRT2]}>
             <mesh position={[0, 0.5, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
               <coneGeometry args={[1, 1, 4]} />
-              <meshStandardMaterial color={C.roof} flatShading />
+              <meshStandardMaterial color={T.roof} flatShading />
             </mesh>
           </group>
           {name && !preview && (
