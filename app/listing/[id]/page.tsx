@@ -1,420 +1,390 @@
-'use client';
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { Loader2, Lock, MapPin } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { useRouter, useParams } from 'next/navigation';
-import dynamic from 'next/dynamic';
-import { cleanDescription } from '@/lib/clean-description';
+'use client'
 
-const LocationPickerModal = dynamic(
-  () => import('@/components/location-picker-modal').then((mod) => ({ default: mod.LocationPickerModal })),
-  { ssr: false }
-);
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import dynamic from 'next/dynamic'
+import { useParams, useRouter } from 'next/navigation'
+import { Flag, Heart, Loader2 } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { Header } from '@/components/header'
+import { Footer } from '@/components/footer'
+import { PropertyGallery } from '@/components/property-gallery'
+import { PropertyVideo } from '@/components/property-video'
+import {
+  PropertyAmenities,
+  PropertyDescription,
+  PropertyHeader,
+  PropertyKeyFacts,
+  PropertyLocationFallback,
+  PropertyRentCard,
+} from '@/components/property-details'
+import { PropertyTrust } from '@/components/property-trust'
+import { ListingTerms } from '@/components/listing-terms'
+import { PropertySectionNav } from '@/components/property-section-nav'
+import { PropertyActionsBar, PropertyActionsSidebar } from '@/components/property-actions'
+import { RemoteInspectionEntry } from '@/components/remote-inspection-entry'
+import { ListingLocationPublic } from '@/components/listing-location-public'
+import { VerifyPromptModal, type ViewerGate } from '@/components/verify-prompt-modal'
+import { decidePropertyActions } from '@/lib/property-actions'
+import { displayTitle, toMoney } from '@/lib/property-display'
+import { listedByLabel } from '@/lib/listing-authority'
+import { isValidListingId } from '@/lib/listing-id'
+import { tenantVerificationState } from '@/lib/tenant-verification'
 
-const PROPERTY_TYPES = [
-  'Flat / Apartment',
-  'Bungalow',
-  'Duplex',
-  'Self Contain',
-  'Penthouse',
-  'Hostel',
-  'Office',
-  'Shop / Mall',
-  'Warehouse',
-  'Land / Plot',
-  'Event Center',
-];
+const ReportListingModal = dynamic(
+  () => import('@/components/report-listing-modal').then((m) => ({ default: m.ReportListingModal })),
+  { ssr: false },
+)
 
-const inputCls = 'focus-ring w-full min-h-12 rounded-lg border border-border bg-input px-3 py-2.5 text-base';
-const labelCls = 'mb-1 block text-sm font-semibold text-foreground';
+// The public property details page. Anyone can read it. Only approved listings are shown.
+// Everything here is read only except Save and Report. Apply and Viewing open the tenant's own application.
+// Exact map pins are never read here: ListingLocationPublic decides what each viewer may see.
 
-type Errors = Partial<Record<'location' | 'propertyType' | 'bedrooms' | 'monthlyRent' | 'phoneNumber' | 'durationMonths' | 'noticeDays', string>>;
+const OPEN_APPLICATION = ['pending', 'info_requested', 'approved']
 
-export default function EditListingPage() {
-  const router = useRouter();
-  const params = useParams();
-  const id = params.id as string;
+type Listing = {
+  id: string
+  landlord_id: string | null
+  title: string | null
+  description: string | null
+  location_text: string | null
+  price_monthly: number | null
+  service_charge: number | null
+  caution_deposit: number | null
+  property_type: string | null
+  bedrooms: number | null
+  bathrooms: number | null
+  amenities: unknown
+  photos: unknown
+  video_url: string | null
+  availability_date: string | null
+  status: string | null
+  listed_by_role: string | null
+  created_at: string | null
+  duration_months: number | null
+  notice_days: number | null
+  payment_schedule: string | null
+  house_rules: string | null
+  properties?: { public_id?: string | null } | { public_id?: string | null }[] | null
+}
 
-  const [loading, setLoading] = useState(true);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [errors, setErrors] = useState<Errors>({});
-  const [showMap, setShowMap] = useState(false);
-  const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
-  // True while a tenant has applied, an offer is open or a tenancy is in progress.
-  // The database enforces this too (listing_rent_locked). Here it only locks the field and explains why.
-  const [rentLocked, setRentLocked] = useState(false);
+const COLUMNS =
+  'id, landlord_id, title, description, location_text, price_monthly, service_charge, caution_deposit, property_type, bedrooms, bathrooms, amenities, photos, video_url, availability_date, status, listed_by_role, created_at, duration_months, notice_days, payment_schedule, house_rules, properties(public_id)'
 
-  const [formData, setFormData] = useState({
-    location: '',
-    propertyType: '',
-    bedrooms: '',
-    monthlyRent: '',
-    description: '',
-    phoneNumber: '',
-    availabilityDate: '',
-    durationMonths: '',
-    noticeDays: '',
-    paymentSchedule: '',
-    houseRules: '',
-  });
+function addedOn(iso: string | null): string | undefined {
+  if (!iso) return undefined
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? undefined : d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+export default function ListingDetailPage() {
+  const router = useRouter()
+  const params = useParams()
+  const id = String(params?.id ?? '')
+
+  const [state, setState] = useState<'loading' | 'ok' | 'error' | 'notfound'>('loading')
+  const [listing, setListing] = useState<Listing | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [onHold, setOnHold] = useState(false)
+  const [reserved, setReserved] = useState(false)
+  const [application, setApplication] = useState<{ id: string; status: string } | null>(null)
+  const [viewing, setViewing] = useState<{ status: string } | null>(null)
+  const [trust, setTrust] = useState<unknown>(null)
+  const [trustFailed, setTrustFailed] = useState(false)
+  const [authority, setAuthority] = useState<boolean | null>(null)
+  const [inspection, setInspection] = useState<unknown>(null)
+  const [inspectionFailed, setInspectionFailed] = useState(false)
+  const [gate, setGate] = useState<ViewerGate | null>(null)
+  const [showGate, setShowGate] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [reporting, setReporting] = useState(false)
+
+  const load = useCallback(async () => {
+    if (!isValidListingId(id)) {
+      setState('notfound')
+      return
+    }
+    const { data, error } = await supabase.from('listings').select(COLUMNS).eq('id', id).maybeSingle()
+    if (error) {
+      console.error('Listing load failed:', error.code, error.message)
+      setState('error')
+      return
+    }
+    // The page itself refuses to show anything that is not approved.
+    if (!data || data.status !== 'approved') {
+      setListing((data as Listing | null) ?? null)
+      setState('notfound')
+      return
+    }
+    const l = data as unknown as Listing
+    setListing(l)
+    setState('ok')
+
+    const { data: auth } = await supabase.auth.getUser()
+    const uid = auth?.user?.id ?? null
+    setUserId(uid)
+
+    const [hold, res, auth2, insp, tr] = await Promise.all([
+      supabase.rpc('listing_on_hold', { p_listing: id }),
+      supabase.rpc('listing_reserved', { p_listing: id }),
+      supabase.rpc('listing_authority_reviewed', { p_listing: id }),
+      supabase.from('public_listing_inspections').select('*').eq('listing_id', id).maybeSingle(),
+      l.landlord_id ? supabase.from('landlord_trust').select('*').eq('landlord_id', l.landlord_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    ])
+    setOnHold(hold.data === true)
+    setReserved(res.data === true)
+    setAuthority(auth2.error ? null : auth2.data === true)
+    setInspection(insp.error ? null : insp.data ?? null)
+    setInspectionFailed(!!insp.error)
+    setTrust(tr.error ? null : tr.data ?? null)
+    setTrustFailed(!!tr.error)
+
+    if (!uid) return
+
+    // The tenant's own open application and viewing for this property, if any.
+    const { data: apps } = await supabase
+      .from('applications')
+      .select('id, status')
+      .eq('listing_id', id)
+      .eq('tenant_id', uid)
+      .in('status', OPEN_APPLICATION)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const app = (apps ?? [])[0] ?? null
+    setApplication(app)
+    if (app) {
+      const { data: vws } = await supabase
+        .from('viewings')
+        .select('status')
+        .eq('application_id', app.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      setViewing((vws ?? [])[0] ?? null)
+    } else setViewing(null)
+
+    const [{ data: profile }, { data: sv }] = await Promise.all([
+      supabase.from('profiles').select('role, id_document_type, id_document_url, selfie_url, verification_status, verified').eq('id', uid).maybeSingle(),
+      supabase.from('saved_properties').select('listing_id').eq('tenant_id', uid).eq('listing_id', id).maybeSingle(),
+    ])
+    setSaved(!!sv)
+    if (profile?.role === 'tenant') {
+      const s = tenantVerificationState(profile)
+      setGate(s === 'verified' ? null : (s as ViewerGate))
+    } else setGate(null)
+  }, [id])
 
   useEffect(() => {
-    const fetchListing = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    void load()
+  }, [load])
 
-      if (!user) {
-        setMessage('You must be logged in to edit a listing.');
-        setLoadFailed(true);
-        setLoading(false);
-        return;
-      }
+  const isOwner = !!userId && !!listing && listing.landlord_id === userId
+  const actions = useMemo(
+    () =>
+      decidePropertyActions({
+        listingId: id,
+        listingStatus: listing?.status,
+        signedIn: !!userId,
+        isOwner,
+        onHold,
+        reserved,
+        application,
+        viewing,
+      }),
+    [id, listing?.status, userId, isOwner, onHold, reserved, application, viewing],
+  )
 
-      const { data, error } = await supabase
-        .from('listings')
-        .select('id, location_text, property_type, bedrooms, price_monthly, description, availability_date, contact_info, duration_months, notice_days, payment_schedule, house_rules')
-        .eq('id', id)
-        .eq('landlord_id', user.id)
-        .single();
-
-      const { data: contactRow } = await supabase
-        .from('listing_contacts')
-        .select('contact_info')
-        .eq('listing_id', id)
-        .maybeSingle();
-
-      if (error || !data) {
-        setMessage('Could not load this listing.');
-        setLoadFailed(true);
-        setLoading(false);
-        return;
-      }
-
-      setFormData({
-        location: data.location_text || '',
-        propertyType: data.property_type || '',
-        bedrooms: data.bedrooms ? String(data.bedrooms) : '',
-        monthlyRent: data.price_monthly ? String(data.price_monthly) : '',
-        description: data.description || '',
-        // listing_contacts is not created by any migration in this repo, so it may be empty or missing.
-        // The create page and this page both save the number to listings.contact_info, so fall back to it.
-        phoneNumber: contactRow?.contact_info ?? data.contact_info ?? '',
-        availabilityDate: data.availability_date || '',
-        durationMonths: data.duration_months != null ? String(data.duration_months) : '',
-        noticeDays: data.notice_days != null ? String(data.notice_days) : '',
-        paymentSchedule: data.payment_schedule || '',
-        houseRules: data.house_rules || '',
-      });
-
-      // The exact pin is not readable from the table any more. The owner gets their own pin from this function.
-      const { data: exact } = await supabase.rpc('listing_exact_location', { p_listing: id });
-      if (exact && exact.lat != null && exact.lng != null) {
-        const lat = Number(exact.lat);
-        const lng = Number(exact.lng);
-        if (!Number.isNaN(lat) && !Number.isNaN(lng)) setPin({ lat, lng });
-      }
-
-      // If this cannot be read, the field stays open. The database still refuses the change.
-      const { data: locked } = await supabase.rpc('listing_rent_locked', { p_listing: id });
-      setRentLocked(locked === true);
-
-      setLoading(false);
-    };
-    fetchListing();
-  }, [id]);
-
-  const set = (k: keyof typeof formData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setFormData((p) => ({ ...p, [k]: e.target.value }));
-
-  const validate = (): Errors => {
-    const e: Errors = {};
-    if (!formData.location.trim()) e.location = 'Enter the neighbourhood or area.';
-    if (!formData.propertyType) e.propertyType = 'Choose a property type.';
-    if (!formData.bedrooms) e.bedrooms = 'Choose the number of bedrooms.';
-    if (!rentLocked && (!formData.monthlyRent || !(Number(formData.monthlyRent) > 0))) e.monthlyRent = 'Enter the monthly rent.';
-    if (!formData.phoneNumber.trim()) e.phoneNumber = 'Enter a phone number.';
-    if (!rentLocked) {
-      const d = formData.durationMonths.trim();
-      if (d && !(Number.isInteger(Number(d)) && Number(d) >= 1 && Number(d) <= 60)) e.durationMonths = 'Enter a whole number of months from 1 to 60.';
-      const n = formData.noticeDays.trim();
-      if (n && !(Number.isInteger(Number(n)) && Number(n) >= 0 && Number(n) <= 365)) e.noticeDays = 'Enter a whole number of days from 0 to 365.';
+  const toggleSave = async () => {
+    if (!userId) {
+      router.push(`/login?redirect=${encodeURIComponent(`/listing/${id}`)}`)
+      return
     }
-    return e;
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (saving) return;
-    setMessage('');
-    const found = validate();
-    setErrors(found);
-    if (Object.keys(found).length > 0) {
-      setMessage('Please fix the highlighted fields.');
-      return;
-    }
-    setSaving(true);
-
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      setMessage('You must be logged in to save changes.');
-      setSaving(false);
-      return;
-    }
-
-    const { error } = await supabase
-      .from('listings')
-      .update({
-        title: `${formData.bedrooms} bed ${formData.propertyType} in ${formData.location}`,
-        location_text: formData.location,
-        lat: pin ? pin.lat : null,
-        lng: pin ? pin.lng : null,
-        property_type: formData.propertyType,
-        bedrooms: Number(formData.bedrooms),
-        // While the rent is locked it is not sent at all, so a save can never touch it.
-        ...(rentLocked
-          ? {}
-          : {
-              price_monthly: Number(formData.monthlyRent),
-              duration_months: formData.durationMonths.trim() ? Number(formData.durationMonths) : null,
-              notice_days: formData.noticeDays.trim() ? Number(formData.noticeDays) : null,
-              payment_schedule: formData.paymentSchedule.trim() || null,
-              house_rules: formData.houseRules.trim() || null,
-            }),
-        description: cleanDescription(formData.description),
-        contact_info: formData.phoneNumber,
-        availability_date: formData.availabilityDate || null,
-      })
-      .eq('id', id)
-      .eq('landlord_id', user.id);
-
-    setSaving(false);
-
-    if (error) {
-      setMessage('Failed to save: ' + error.message);
-      return;
-    }
-
-    router.push('/dashboard');
-  };
-
-  const fieldErr = (k: keyof Errors) =>
-    errors[k] ? <p id={`edit-${k}-err`} role="alert" className="mt-1 text-xs font-medium text-danger">{errors[k]}</p> : null;
-  const aria = (k: keyof Errors) => ({ 'aria-invalid': !!errors[k], 'aria-describedby': errors[k] ? `edit-${k}-err` : undefined });
-
-  if (loading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
-        <Loader2 className="animate-spin text-primary" size={28} aria-hidden />
-      </div>
-    );
+    if (saving) return
+    setSaving(true)
+    const { error } = saved
+      ? await supabase.from('saved_properties').delete().eq('tenant_id', userId).eq('listing_id', id)
+      : await supabase.from('saved_properties').insert({ tenant_id: userId, listing_id: id })
+    if (!error) setSaved(!saved)
+    setSaving(false)
   }
 
-  if (loadFailed) {
-    return (
-      <div className="mx-auto max-w-xl space-y-3 p-4">
-        <h1 className="text-xl font-bold text-foreground">Edit listing</h1>
-        <p role="alert" className="rounded-card border border-danger/30 bg-danger-soft p-3 text-sm font-medium text-danger">{message}</p>
-        <Link href="/dashboard/listings" className="focus-ring flex min-h-12 items-center justify-center rounded-button bg-primary px-4 font-bold text-primary-foreground">Back to My Properties</Link>
-      </div>
-    );
+  const onChat = () => {
+    if (!userId) {
+      router.push(`/login?redirect=${encodeURIComponent(`/listing/${id}`)}`)
+      return
+    }
+    const subject = encodeURIComponent(`Question about ${listing ? displayTitle(listing) : 'a property'}`)
+    router.push(`/messages?new=1&category=property&listing=${id}&subject=${subject}`)
   }
+
+  const onGate = gate ? () => setShowGate(true) : undefined
+
+  if (state === 'loading') {
+    return (
+      <>
+        <Header />
+        <div className="flex min-h-[60vh] items-center justify-center" role="status" aria-label="Loading property">
+          <Loader2 className="animate-spin text-primary" size={28} aria-hidden />
+        </div>
+        <Footer />
+      </>
+    )
+  }
+
+  if (state !== 'ok' || !listing) {
+    const failed = state === 'error'
+    return (
+      <>
+        <Header />
+        <main className="mx-auto w-full max-w-xl space-y-3 px-4 py-16 text-center">
+          <h1 className="text-xl font-bold text-foreground">{failed ? 'We could not load this property' : 'This property is not available'}</h1>
+          <p className="text-sm text-muted-foreground">
+            {failed
+              ? 'This is usually temporary. Please try again.'
+              : 'It may have been removed, rented, or is not open to the public right now.'}
+          </p>
+          <div className="flex justify-center gap-2">
+            {failed && (
+              <button
+                type="button"
+                onClick={() => {
+                  setState('loading')
+                  void load()
+                }}
+                className="inline-flex min-h-11 items-center rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground"
+              >
+                Try again
+              </button>
+            )}
+            <Link href="/search" className="inline-flex min-h-11 items-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground">
+              Browse properties
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </>
+    )
+  }
+
+  const title = displayTitle(listing)
+  const props = Array.isArray(listing.properties) ? listing.properties[0] : listing.properties
+  const rent = toMoney(listing.price_monthly)
+  const hasTerms =
+    listing.duration_months != null || listing.notice_days != null || !!listing.payment_schedule?.trim() || !!listing.house_rules?.trim()
+
+  const sections = [
+    { id: 'about', label: 'About' },
+    { id: 'trust', label: 'Verification' },
+    { id: 'location', label: 'Location' },
+  ]
 
   return (
-    <div className="mx-auto max-w-xl p-4 sm:p-6">
-      <h1 className="text-xl font-bold text-foreground">Edit listing</h1>
-      <p className="mb-4 text-sm text-muted-foreground">Update the details tenants see. Photos are not changed here.</p>
+    <>
+      <Header />
+      <main className="mx-auto w-full max-w-6xl px-4 pb-40 pt-4 lg:pb-12">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0 space-y-5">
+            <PropertyGallery images={Array.isArray(listing.photos) ? (listing.photos as string[]) : []} title={title} />
 
-      <form onSubmit={handleSave} noValidate className="space-y-4">
-        <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Property details">
-          <div>
-            <label htmlFor="edit-type" className={labelCls}>Property type</label>
-            <select id="edit-type" value={formData.propertyType} onChange={set('propertyType')} className={inputCls} {...aria('propertyType')}>
-              <option value="">Select type</option>
-              {PROPERTY_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-            {fieldErr('propertyType')}
-          </div>
-
-          <div>
-            <label htmlFor="edit-beds" className={labelCls}>Bedrooms</label>
-            <select id="edit-beds" value={formData.bedrooms} onChange={set('bedrooms')} className={inputCls} {...aria('bedrooms')}>
-              <option value="">Select bedrooms</option>
-              {[1, 2, 3, 4, 5, 6, 7].map((num) => (
-                <option key={num} value={num}>{num}</option>
-              ))}
-            </select>
-            {fieldErr('bedrooms')}
-          </div>
-
-          <div>
-            <label htmlFor="edit-desc" className={labelCls}>Description</label>
-            <textarea id="edit-desc" value={formData.description} onChange={set('description')} rows={5} className={`${inputCls} resize-y`} />
-          </div>
-        </section>
-
-        <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Location">
-          <div>
-            <label htmlFor="edit-location" className={labelCls}>Neighbourhood / area</label>
-            <input id="edit-location" value={formData.location} onChange={set('location')} className={inputCls} autoComplete="off" {...aria('location')} />
-            {fieldErr('location')}
-          </div>
-
-          <div>
-            <span className={labelCls}>Map location</span>
-            <button
-              type="button"
-              onClick={() => setShowMap(true)}
-              className="focus-ring flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-card px-3 font-bold text-primary"
-            >
-              <MapPin size={16} aria-hidden />
-              {pin ? 'Pin set. Tap to change it' : 'Drop a pin on the map'}
-            </button>
-            {pin && (
-              <p className="mt-1.5 text-xs text-muted-foreground">Pin: {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}</p>
-            )}
-          </div>
-        </section>
-
-        <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Price and contact">
-          <div>
-            <label htmlFor="edit-rent" className={labelCls}>Monthly rent (₦)</label>
-            <input
-              id="edit-rent"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={formData.monthlyRent}
-              onChange={set('monthlyRent')}
-              disabled={rentLocked}
-              aria-describedby={rentLocked ? 'edit-rent-locked' : errors.monthlyRent ? 'edit-monthlyRent-err' : undefined}
-              aria-invalid={!!errors.monthlyRent}
-              className={`${inputCls} ${rentLocked ? 'cursor-not-allowed bg-muted text-muted-foreground' : ''}`}
+            <PropertyHeader
+              title={title}
+              location={listing.location_text}
+              publicId={props?.public_id ?? null}
+              listedByLabel={listedByLabel(listing.listed_by_role)}
+              addedText={addedOn(listing.created_at)}
             />
-            {rentLocked && (
-              <p id="edit-rent-locked" className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground">
-                <Lock size={14} className="mt-0.5 shrink-0" aria-hidden />
-                <span>
-                  The rent and rental terms are locked because a tenant has applied or a rental is in progress. They
-                  unlock when the applications and rental are closed.
-                </span>
-              </p>
-            )}
-            {fieldErr('monthlyRent')}
-          </div>
 
-          <div>
-            <label htmlFor="edit-duration" className={labelCls}>Tenancy length (months, optional)</label>
-            <input
-              id="edit-duration"
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={60}
-              value={formData.durationMonths}
-              onChange={set('durationMonths')}
-              disabled={rentLocked}
-              placeholder="e.g., 12"
-              {...aria('durationMonths')}
-              className={`${inputCls} ${rentLocked ? 'cursor-not-allowed bg-muted text-muted-foreground' : ''}`}
+            <PropertySectionNav items={sections} />
+
+            <section id="about" className="scroll-mt-28 space-y-5">
+              <PropertyKeyFacts
+                propertyType={listing.property_type}
+                bedrooms={listing.bedrooms}
+                bathrooms={listing.bathrooms}
+                availabilityDate={listing.availability_date}
+              />
+              <PropertyRentCard priceMonthly={listing.price_monthly} serviceCharge={listing.service_charge} cautionDeposit={listing.caution_deposit} />
+              {hasTerms && (
+                <ListingTerms
+                  durationMonths={listing.duration_months}
+                  noticeDays={listing.notice_days}
+                  paymentSchedule={listing.payment_schedule}
+                  houseRules={listing.house_rules}
+                />
+              )}
+              <PropertyDescription text={listing.description ?? ''} />
+              <PropertyAmenities amenities={listing.amenities} />
+              <PropertyVideo key={listing.video_url ?? 'none'} url={listing.video_url} title={title} posterPhoto={Array.isArray(listing.photos) ? ((listing.photos as string[])[0] ?? null) : null} />
+            </section>
+
+            <PropertyTrust
+              trust={trust}
+              trustFailed={trustFailed}
+              authorityReviewed={authority}
+              authorityFailed={authority === null}
+              inspection={inspection}
+              inspectionFailed={inspectionFailed}
             />
-            {fieldErr('durationMonths')}
+
+            <RemoteInspectionEntry listingId={listing.id} listingStatus={listing.status} userId={userId} isOwner={isOwner} onHold={onHold} />
+
+            <section id="location" className="scroll-mt-28">
+              <ListingLocationPublic listingId={listing.id} title={title} address={listing.location_text} />
+              {!listing.location_text && <PropertyLocationFallback address={listing.location_text} />}
+            </section>
+
+            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4 text-sm">
+              {actions.canSave && (
+                <button
+                  type="button"
+                  onClick={toggleSave}
+                  disabled={saving}
+                  aria-pressed={saved}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-card px-4 font-semibold text-foreground hover:bg-secondary disabled:opacity-50"
+                >
+                  <Heart size={16} className={saved ? 'fill-current text-destructive' : ''} aria-hidden />
+                  {saved ? 'Saved' : 'Save property'}
+                </button>
+              )}
+              {!isOwner && (
+                <button
+                  type="button"
+                  onClick={() => (userId ? setReporting(true) : router.push(`/login?redirect=${encodeURIComponent(`/listing/${id}`)}`))}
+                  className="inline-flex min-h-11 items-center gap-2 px-2 text-muted-foreground underline hover:text-destructive"
+                >
+                  <Flag size={14} aria-hidden /> Report this listing
+                </button>
+              )}
+              {isOwner && (
+                <Link href={`/dashboard/edit/${listing.id}`} className="inline-flex min-h-11 items-center rounded-lg border border-border bg-card px-4 font-semibold text-foreground hover:bg-secondary">
+                  Edit this listing
+                </Link>
+              )}
+            </div>
           </div>
 
-          <div>
-            <label htmlFor="edit-notice" className={labelCls}>Notice period (days, optional)</label>
-            <input
-              id="edit-notice"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={365}
-              value={formData.noticeDays}
-              onChange={set('noticeDays')}
-              disabled={rentLocked}
-              placeholder="e.g., 30"
-              {...aria('noticeDays')}
-              className={`${inputCls} ${rentLocked ? 'cursor-not-allowed bg-muted text-muted-foreground' : ''}`}
-            />
-            {fieldErr('noticeDays')}
-          </div>
-
-          <div>
-            <label htmlFor="edit-schedule" className={labelCls}>How rent is paid (optional)</label>
-            <input
-              id="edit-schedule"
-              type="text"
-              maxLength={300}
-              value={formData.paymentSchedule}
-              onChange={set('paymentSchedule')}
-              disabled={rentLocked}
-              placeholder="e.g., Full year upfront"
-              className={`${inputCls} ${rentLocked ? 'cursor-not-allowed bg-muted text-muted-foreground' : ''}`}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="edit-rules" className={labelCls}>House rules (optional)</label>
-            <textarea
-              id="edit-rules"
-              rows={3}
-              maxLength={2000}
-              value={formData.houseRules}
-              onChange={set('houseRules')}
-              disabled={rentLocked}
-              placeholder="e.g., No smoking. Quiet after 10pm."
-              className={`${inputCls} resize-y ${rentLocked ? 'cursor-not-allowed bg-muted text-muted-foreground' : ''}`}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="edit-phone" className={labelCls}>Phone number</label>
-            <input id="edit-phone" type="tel" autoComplete="tel" value={formData.phoneNumber} onChange={set('phoneNumber')} className={inputCls} {...aria('phoneNumber')} />
-            {fieldErr('phoneNumber')}
-          </div>
-
-          <div>
-            <label htmlFor="edit-date" className={labelCls}>Availability date</label>
-            <input id="edit-date" type="date" value={formData.availabilityDate} onChange={set('availabilityDate')} className={inputCls} />
-          </div>
-        </section>
-
-        <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 -mx-4 space-y-2 border-t border-border bg-card px-4 py-3 sm:-mx-6 sm:px-6 md:bottom-0">
-          {message && <p role="alert" className="rounded-lg border border-danger/30 bg-danger-soft p-2.5 text-sm font-medium text-danger">{message}</p>}
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="focus-ring flex min-h-12 flex-1 items-center justify-center gap-2 rounded-button bg-primary px-4 font-bold text-primary-foreground disabled:opacity-60"
-            >
-              {saving ? <><Loader2 size={16} className="animate-spin" aria-hidden /> Saving...</> : 'Save changes'}
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => router.push('/dashboard')}
-              className="focus-ring min-h-12 flex-1 rounded-button border border-border bg-card px-4 font-semibold text-foreground disabled:opacity-60"
-            >
-              Cancel
-            </button>
-          </div>
+          <aside className="hidden lg:block">
+            <div className="sticky top-24 space-y-4">
+              <div className="rounded-card border border-border bg-card p-card shadow-rest">
+                {rent !== null && (
+                  <p className="mb-3 text-h3 font-bold text-foreground">
+                    ₦{rent.toLocaleString('en-NG')}
+                    <span className="text-caption font-normal text-muted-foreground"> per month</span>
+                  </p>
+                )}
+                <PropertyActionsSidebar actions={actions} onChat={onChat} onGate={onGate} />
+              </div>
+            </div>
+          </aside>
         </div>
-      </form>
 
-      {showMap && (
-        <LocationPickerModal
-          initial={pin}
-          onClose={() => setShowMap(false)}
-          onConfirm={(lat, lng) => {
-            setPin({ lat, lng });
-            setShowMap(false);
-          }}
-        />
-      )}
-    </div>
-  );
-        }
+      </main>
+
+      <PropertyActionsBar actions={actions} onChat={onChat} priceText={rent !== null ? `₦${rent.toLocaleString('en-NG')}` : null} onGate={onGate} />
+
+      {showGate && gate && <VerifyPromptModal gate={gate} listingId={listing.id} onClose={() => setShowGate(false)} />}
+      {reporting && <ReportListingModal listingId={listing.id} onClose={() => setReporting(false)} />}
+      <Footer />
+    </>
+  )
+}
