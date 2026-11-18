@@ -725,19 +725,17 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   const detailBody: Record<StepKey, React.ReactNode> = {
     application: detailApplication, decision: detailDecision, viewing: detailViewing, setup: detailSetup, active: detailActive,
   }
-  const prev = selIndex > 0 ? STEP_ORDER[selIndex - 1] : null
-  const next = selIndex < STEP_ORDER.length - 1 ? STEP_ORDER[selIndex + 1] : null
-
-  // ---------- stepper ----------
-
   const sr = (s: JourneyStep) => (s.state === 'done' ? 'completed' : s.state === 'current' ? 'current step' : s.state === 'stopped' ? 'closed' : 'not reached yet')
 
+  const curIndex = STEP_ORDER.indexOf(journey.currentKey)
+  // While EboHomes reviews, the viewing is the next thing the tenant can do. The form is the existing one.
+  const canRequestViewing = journey.phase === 'under_review' && !panel.cta
+
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-6">
+    <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
       <div ref={topRef} className="scroll-mt-4">
         <Link href="/journey?all=1" className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={14} aria-hidden /> All my journeys</Link>
         <h1 className="text-2xl font-bold text-foreground">Your rental journey</h1>
-        <p className="text-sm text-muted-foreground">Five stages from application to moving in. Tap any stage to read about it.</p>
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4">
@@ -745,36 +743,12 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         <p className="mt-2 text-xs text-muted-foreground">{app.case_ref ? `Application ${app.case_ref} · ` : ''}Submitted {day(app.created_at)}</p>
       </div>
 
-      {intro && (
-        <div role="region" aria-label="How the journey works" className="relative rounded-xl border border-primary/30 bg-accent p-4 pr-12 text-sm text-accent-foreground">
-          <p className="font-bold">How this works</p>
-          <p className="mt-1">You apply (01). EboHomes decides (02). You see the property and confirm you want to proceed (03). The landlord sets up your tenancy and rental terms (04). Then your tenancy is active (05). A viewing can be requested while your application is still being reviewed.</p>
-          <button onClick={dismissIntro} className="mt-2 min-h-11 font-semibold underline">Got it, hide this</button>
-          <button onClick={dismissIntro} aria-label="Dismiss introduction" className="absolute right-1 top-1 inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-black/5"><X size={16} aria-hidden /></button>
-        </div>
-      )}
-
-      {justSubmitted && app.status === 'pending' && (
-        <section role="status" aria-labelledby="submitted-heading" className="space-y-2 rounded-xl border-2 border-emerald-500 bg-emerald-50 p-4 text-sm text-emerald-950">
-          <h2 id="submitted-heading" className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 size={22} aria-hidden /> Application submitted</h2>
-          <p>Stage 1 is complete{app.case_ref ? `. Your reference is ${app.case_ref}` : ''}. EboHomes will now review your application.</p>
-          <p className="font-medium">This is not an approval, a reservation or a payment. Nothing has been charged.</p>
-          <button type="button" onClick={() => setJustSubmitted(false)} className="min-h-11 font-semibold underline">Got it, hide this</button>
-        </section>
-      )}
-
-      {showsNoReservationNotice(journey.phase) && (
-        <p role="note" className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-          <Info size={16} className="mt-0.5 shrink-0" aria-hidden />
-          <span>{NO_RESERVATION_NOTICE}</span>
-        </p>
-      )}
-
       {warn && <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{warn}</p>}
 
-      {/* Stepper */}
-      <nav aria-label="Rental journey stages" className="rounded-xl border border-border bg-card p-3 sm:p-4">
-        <ol className="flex flex-col sm:flex-row">
+      {/* Progress: one row. Tap a circle to read that stage. */}
+      <nav aria-label="Rental journey stages" className="rounded-xl border border-border bg-card p-4">
+        <p className="text-sm font-semibold text-foreground">Step {curIndex + 1} of {STEP_ORDER.length}: {STEP_TITLE[journey.currentKey]}</p>
+        <ol className="mt-3 flex items-center">
           {journey.steps.map((s, i) => {
             const isSel = s.key === selected
             const isCur = s.key === journey.currentKey
@@ -785,34 +759,18 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
               : s.state === 'stopped' ? 'border-red-600 bg-red-50 text-red-700'
               : 'border-border bg-card text-muted-foreground'
             return (
-              <li key={s.key} className="relative sm:flex-1">
-                {!last && (
-                  <span
-                    aria-hidden
-                    className={`absolute left-[1.65rem] top-12 bottom-0 w-0.5 sm:left-1/2 sm:right-auto sm:top-[1.7rem] sm:bottom-auto sm:h-0.5 sm:w-full ${s.state === 'done' ? 'bg-primary' : 'bg-border'}`}
-                  />
-                )}
+              <li key={s.key} className={`flex items-center ${last ? '' : 'flex-1'}`}>
                 <button
                   type="button"
                   onClick={() => selectStep(s.key)}
                   aria-current={isCur ? 'step' : undefined}
                   aria-pressed={isSel}
-                  className="relative z-10 flex min-h-11 w-full items-start gap-3 rounded-lg p-2 pb-4 text-left focus-visible:outline-2 focus-visible:outline-primary sm:flex-col sm:items-center sm:pb-2 sm:text-center"
+                  aria-label={`${s.number} ${s.title}, ${sr(s)}`}
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-primary ${circle} ${isSel ? 'ring-4 ring-primary/25' : ''}`}
                 >
-                  {isCur && <span className="hidden items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-primary sm:inline-flex">You are here <ArrowDown size={12} aria-hidden /></span>}
-                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 bg-card text-sm font-bold transition ${circle} ${isSel ? 'ring-4 ring-primary/25' : ''}`}>
-                    {s.state === 'done' ? <Check size={18} aria-hidden /> : s.state === 'stopped' ? <X size={18} aria-hidden /> : s.number}
-                  </span>
-                  <span className="min-w-0 flex-1 space-y-1 sm:flex-none">
-                    {isCur && <span className="block text-[11px] font-bold uppercase tracking-wide text-primary sm:hidden">You are here</span>}
-                    <span className={`block text-sm font-semibold leading-tight ${s.state === 'upcoming' ? 'text-muted-foreground' : 'text-foreground'} ${isSel ? 'underline decoration-primary decoration-2 underline-offset-4' : ''}`}>
-                      {s.number} {s.title}
-                    </span>
-                    <span className="block"><Pill tone={s.tone}>{s.label}</Pill></span>
-                    {s.needsYou && <span className="block text-[11px] font-bold text-amber-900">Your action needed</span>}
-                    <span className="sr-only">Status: {sr(s)}.</span>
-                  </span>
+                  {s.state === 'done' ? <Check size={18} aria-hidden /> : s.state === 'stopped' ? <X size={18} aria-hidden /> : s.number}
                 </button>
+                {!last && <span aria-hidden className={`h-0.5 flex-1 ${s.state === 'done' ? 'bg-primary' : 'bg-border'}`} />}
               </li>
             )
           })}
@@ -829,9 +787,8 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       {unlocked && (
         <div role="status" className="space-y-2 rounded-xl border-2 border-primary bg-primary/5 p-4 text-sm">
           <p className="flex items-center gap-2 text-base font-bold text-primary">
-            <CheckCircle2 size={20} aria-hidden /> Stage {STEP_ORDER.indexOf(unlocked.from) + 1} complete
+            <CheckCircle2 size={20} aria-hidden /> {STEP_TITLE[unlocked.to]} is now open
           </p>
-          <p className="text-foreground">Stage {STEP_ORDER.indexOf(unlocked.to) + 1}, {STEP_TITLE[unlocked.to]}, is now open.</p>
           <div className="flex flex-wrap gap-2">
             <button type="button" className={btnP} onClick={() => { const k = unlocked.to; setUnlocked(null); selectStep(k) }}>Go to {STEP_TITLE[unlocked.to]} <ArrowDown size={15} aria-hidden /></button>
             <button type="button" className={btnS} onClick={() => setUnlocked(null)}>Dismiss</button>
@@ -839,20 +796,20 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         </div>
       )}
 
-      {/* Current status panel */}
+      {/* The one status and action card */}
       <section aria-labelledby="status-heading" className={`rounded-xl border border-border border-t-4 bg-card p-4 sm:p-5 ${TOP[panel.tone]}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Pill tone={panel.needsYou ? 'amber' : 'grey'}>{panel.needsYou ? 'Action needed from you' : 'No action needed from you'}</Pill>
-          <span className="text-xs font-semibold text-muted-foreground">Current stage: {STEP_TITLE[journey.currentKey]}</span>
-        </div>
-        <h2 id="status-heading" className="text-lg font-bold leading-snug text-foreground">{panel.heading}</h2>
-        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">What has happened</dt><dd className="text-sm text-foreground">{panel.happened}</dd></div>
-          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">What it means</dt><dd className="text-sm text-foreground">{panel.means}</dd></div>
-          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">What happens next</dt><dd className="text-sm text-foreground">{panel.next}</dd></div>
-          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">What you need to do</dt><dd className="text-sm font-semibold text-foreground">{panel.action}</dd></div>
-        </dl>
-        {panel.cta && (
+        {justSubmitted && app.status === 'pending' && (
+          <p role="status" className="mb-3 flex items-start gap-2 rounded-lg bg-primary/10 p-3 text-sm font-medium text-primary">
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden />
+            <span>Application submitted{app.case_ref ? `. Your reference is ${app.case_ref}` : ''}. Nothing has been charged.</span>
+          </p>
+        )}
+        <Pill tone={panel.needsYou ? 'amber' : 'grey'}>{panel.needsYou ? 'Your action needed' : 'Nothing needed from you'}</Pill>
+        <h2 id="status-heading" className="mt-2 text-lg font-bold leading-snug text-foreground">{panel.heading}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{panel.happened}</p>
+        <p className="mt-3 text-sm font-semibold text-foreground">{panel.action}</p>
+
+        {panel.cta ? (
           <div className="mt-4">
             {panel.cta.href && panel.cta.href !== '/viewings' ? (
               <Link href={panel.cta.href} className={btnP}>{panel.cta.label} <ArrowRight size={15} aria-hidden /></Link>
@@ -860,25 +817,39 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
               <button type="button" onClick={() => selectStep(panel.cta!.step ?? 'viewing')} className={btnP}>{panel.cta.label} <ArrowDown size={15} aria-hidden /></button>
             )}
           </div>
+        ) : canRequestViewing ? (
+          <div className="mt-4">
+            <button type="button" onClick={() => selectStep('viewing')} className={btnP}>{v ? 'See my viewing' : 'Request a viewing'} <ArrowDown size={15} aria-hidden /></button>
+          </div>
+        ) : null}
+
+        <details className="mt-4 rounded-lg border border-border p-3 text-sm">
+          <summary className="min-h-11 cursor-pointer py-2 font-semibold text-foreground">More about this step</summary>
+          <div className="space-y-3 pt-1">
+            <div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">What it means</p><p className="text-foreground">{panel.means}</p></div>
+            <div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">What happens next</p><p className="text-foreground">{panel.next}</p></div>
+          </div>
+        </details>
+
+        {showsNoReservationNotice(journey.phase) && (
+          <p role="note" className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
+            <Info size={14} className="mt-0.5 shrink-0" aria-hidden />
+            <span>{NO_RESERVATION_NOTICE}</span>
+          </p>
         )}
       </section>
 
-      {/* Selected stage details */}
+      {/* The working area for the selected stage */}
       <section aria-labelledby="detail-heading" className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Stage {selStep.number} of 05</p>
-            <h2 id="detail-heading" ref={detailRef} tabIndex={-1} className="scroll-mt-4 text-lg font-bold text-foreground outline-none">{selStep.title}</h2>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="detail-heading" ref={detailRef} tabIndex={-1} className="scroll-mt-4 text-lg font-bold text-foreground outline-none">{selStep.title}</h2>
           <Pill tone={selStep.tone}>{selStep.label}</Pill>
         </div>
-        <p className="text-sm text-muted-foreground">{selStep.blurb}</p>
 
         {selected !== journey.currentKey && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-secondary p-2 text-sm">
-            <Info size={15} aria-hidden className="shrink-0" />
-            <span>You are reading a different stage from your current one.</span>
-            <button type="button" onClick={() => { setPicked(null); toOverview() }} className="min-h-11 font-semibold text-primary underline">Back to my current stage</button>
+          <div className="space-y-2 rounded-lg bg-secondary p-3 text-sm">
+            <p className="flex items-start gap-2"><Info size={15} className="mt-0.5 shrink-0" aria-hidden /><span>{selStep.blurb}</span></p>
+            <button type="button" onClick={() => { setPicked(null); toOverview() }} className="min-h-11 font-semibold text-primary underline">Back to my current step</button>
           </div>
         )}
 
@@ -897,13 +868,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
           : locked
             ? null
             : detailBody[selected]}
-
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-          {prev ? <button type="button" onClick={() => selectStep(prev)} className={btnS}><ArrowLeft size={15} aria-hidden /> Previous: {STEP_TITLE[prev]}</button> : <span />}
-          {next && <button type="button" onClick={() => selectStep(next)} className={btnS}>Next: {STEP_TITLE[next]} <ArrowRight size={15} aria-hidden /></button>}
-        </div>
-        <button type="button" onClick={toOverview} className="min-h-11 text-sm font-semibold text-primary underline">Back to overview</button>
       </section>
     </div>
   )
-                                                                                                           }
+}
