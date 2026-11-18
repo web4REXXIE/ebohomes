@@ -19,9 +19,11 @@ type Props = {
 const GAP = 1.15
 const FLOOR_H = 1.1
 const BODY_D = 1.2
-const HOUSE_SP = 2.4
+const HOUSE_SP = 2.6
 const LABEL_DF = 6 // label size: raise to make numbers bigger, lower to make them smaller
-const HOUSE_H = 1.6 // house model height: change if your house model looks too big or small
+const HOUSE_H = 1.6 // house model height: change if your house looks too big or small
+const ROOF_H = 0.9 // roof height on blocks of flats
+const MODEL_HOUSE_MAX = 24 // above this many homes, use the light built-in house so phones stay fast
 
 const C = {
   sky: '#cfe8f7',
@@ -29,12 +31,14 @@ const C = {
   plaza: '#ddd6c6',
   body: '#f4efe3',
   forest: '#0A2E1A',
+  roof: '#2b3a33',
   green: '#22c55e',
   taken: '#b9b4aa',
   blue: '#3b82f6',
   gold: '#f5b301',
   glass: '#5b7fa6',
   glassLit: '#fff1b8',
+  frame: '#fbfaf6',
   trunk: '#7a5230',
   leaf: '#2f8f4e',
   leaf2: '#3da35d',
@@ -110,8 +114,13 @@ function Flat({ p, tone, selected, showLabel, onSelect }: { p: Placed; tone: str
         <boxGeometry args={[1, 0.8, 0.14]} />
         <meshStandardMaterial color={base} emissive={lit ? base : '#000000'} emissiveIntensity={lit ? 0.25 : 0} />
       </mesh>
-      <mesh position={[0, 0.13, 0.08]}>
-        <boxGeometry args={[0.7, 0.3, 0.03]} />
+      {/* White window frame, then the glass in front of it */}
+      <mesh position={[0, 0.13, 0.075]}>
+        <boxGeometry args={[0.78, 0.38, 0.02]} />
+        <meshStandardMaterial color={C.frame} />
+      </mesh>
+      <mesh position={[0, 0.13, 0.09]}>
+        <boxGeometry args={[0.7, 0.3, 0.02]} />
         <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
       </mesh>
       {showLabel && (
@@ -123,7 +132,7 @@ function Flat({ p, tone, selected, showLabel, onSelect }: { p: Placed; tone: str
   )
 }
 
-// The old hand-built house. Shown only if house.glb is missing or still loading.
+// The light built-in house. Shown if house.glb is missing, still loading, or the estate is big.
 function PlainHouse({ roof, lit }: { roof: string; lit: boolean }) {
   return (
     <>
@@ -139,29 +148,38 @@ function PlainHouse({ roof, lit }: { roof: string; lit: boolean }) {
         <boxGeometry args={[0.26, 0.5, 0.03]} />
         <meshStandardMaterial color={C.door} />
       </mesh>
+      <mesh position={[-0.42, 0.55, 0.61]}>
+        <boxGeometry args={[0.25, 0.25, 0.03]} />
+        <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
+      </mesh>
+      <mesh position={[0.42, 0.55, 0.61]}>
+        <boxGeometry args={[0.25, 0.25, 0.03]} />
+        <meshStandardMaterial color={lit ? C.glassLit : C.glass} emissive={lit ? C.glassLit : '#000000'} emissiveIntensity={lit ? 0.5 : 0} />
+      </mesh>
     </>
   )
 }
 
-function House({ p, tone, selected, onSelect }: { p: Placed; tone: string; selected: boolean; onSelect?: (id: string) => void }) {
+function House({ p, tone, selected, useModel, onSelect }: { p: Placed; tone: string; selected: boolean; useModel: boolean; onSelect?: (id: string) => void }) {
   const color = toneColor(tone, selected)
   const lit = tone === 'to_let' || selected
   const click = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     onSelect?.(p.unit.id)
   }
+  const plain = <PlainHouse roof={color} lit={lit} />
   return (
     <group position={[p.x, 0, p.z]} scale={selected ? 1.07 : 1} onClick={click}>
       {/* Status ring on the ground: green to let, grey taken, gold selected */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[0.85, 1.05, 32]} />
+        <ringGeometry args={[1.0, 1.2, 32]} />
         <meshStandardMaterial color={color} emissive={lit ? color : '#000000'} emissiveIntensity={lit ? 0.4 : 0} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[0.85, 32]} />
+        <circleGeometry args={[1.0, 32]} />
         <meshStandardMaterial color="#e9e3d3" transparent opacity={0.8} />
       </mesh>
-      <Prop kind="house" height={HOUSE_H} fallback={<PlainHouse roof={color} lit={lit} />} />
+      {useModel ? <Prop kind="house" height={HOUSE_H} shadows={false} fallback={plain} /> : plain}
       <Html center position={[0, HOUSE_H + 0.5, 0]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
         <Pill text={`No. ${p.unit.unit_label}`} />
       </Html>
@@ -199,8 +217,8 @@ function treeSpots(l: Layout): Spot[] {
     t.push({ x: -l.w / 3, z: -2.4, s: 1.1 }, { x: l.w / 4, z: -2.6, s: 1 })
     return t
   }
-  const zEdge = (l.rows * HOUSE_SP) / 2 + 0.7
-  const xEdge = (l.cols * HOUSE_SP) / 2 + 0.7
+  const zEdge = (l.rows * HOUSE_SP) / 2 + 0.9
+  const xEdge = (l.cols * HOUSE_SP) / 2 + 0.9
   for (let c = 0; c < l.cols; c += 2) {
     const x = (c - (l.cols - 1) / 2) * HOUSE_SP
     t.push({ x, z: -zEdge, s: 1.1 }, { x: x + 0.8, z: zEdge, s: 0.9 })
@@ -227,7 +245,7 @@ function Extras({ l }: { l: Layout }) {
       </>
     )
   }
-  const front = (l.rows * HOUSE_SP) / 2 + 1.3
+  const front = (l.rows * HOUSE_SP) / 2 + 1.5
   return (
     <>
       <Prop kind="lamp" x={-l.w / 2 + 0.4} z={front} height={1.3} />
@@ -241,8 +259,9 @@ function Extras({ l }: { l: Layout }) {
 function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn }: Props & { layout: Layout; shadowsOn: boolean }) {
   const { camera } = useThree()
   const [front, setFront] = useState(true)
-  const size = Math.max(layout.w, layout.h, layout.d, 4)
+  const size = Math.max(layout.w, layout.h + ROOF_H, layout.d, 4)
   const trees = useMemo(() => treeSpots(layout), [layout])
+  const useHouseModel = layout.placed.length <= MODEL_HOUSE_MAX
   const s = size * 1.3
 
   return (
@@ -283,12 +302,19 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn 
               <meshStandardMaterial color="#d8d1c0" />
             </mesh>
           ))}
-          <mesh position={[0, layout.h + 0.12, 0]} castShadow>
-            <boxGeometry args={[layout.w + 0.5, 0.25, layout.d + 0.5]} />
+          {/* Roof edge, then a pitched roof on top */}
+          <mesh position={[0, layout.h + 0.04, 0]} castShadow>
+            <boxGeometry args={[layout.w + 0.5, 0.14, layout.d + 0.5]} />
             <meshStandardMaterial color={C.forest} />
           </mesh>
+          <group position={[0, layout.h + 0.11, 0]} scale={[(layout.w + 0.7) / Math.SQRT2, ROOF_H, (layout.d + 0.7) / Math.SQRT2]}>
+            <mesh position={[0, 0.5, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+              <coneGeometry args={[1, 1, 4]} />
+              <meshStandardMaterial color={C.roof} flatShading />
+            </mesh>
+          </group>
           {name && !preview && (
-            <Html center position={[0, layout.h + 0.9, 0]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+            <Html center position={[0, layout.h + ROOF_H + 0.7, 0]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
               <Pill text={name} dark={false} />
             </Html>
           )}
@@ -305,12 +331,12 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn 
         layout.hasFloors ? (
           <Flat key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} showLabel={front && !preview} onSelect={onSelect} />
         ) : (
-          <House key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} onSelect={onSelect} />
+          <House key={p.unit.id} p={p} tone={toneOf(p.unit)} selected={p.unit.id === selectedId} useModel={useHouseModel} onSelect={onSelect} />
         ),
       )}
 
       {!layout.hasFloors && name && !preview && (
-        <Html center position={[0, 0.2, (layout.rows * HOUSE_SP) / 2 + 2.6]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+        <Html center position={[0, 0.2, (layout.rows * HOUSE_SP) / 2 + 2.8]} distanceFactor={LABEL_DF} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
           <Pill text={name} dark={false} />
         </Html>
       )}
@@ -321,7 +347,7 @@ function Scene({ layout, toneOf, selectedId, onSelect, name, preview, shadowsOn 
       <Extras l={layout} />
 
       <OrbitControls
-        target={[0, layout.hasFloors ? layout.h / 2 : 0.6, 0]}
+        target={[0, layout.hasFloors ? (layout.h + ROOF_H) / 2 : 0.6, 0]}
         enablePan={!preview}
         enableZoom={!preview}
         enableRotate={!preview}
@@ -355,7 +381,7 @@ export default function Building3D(props: Props) {
   }, [])
 
   const layout = useMemo(() => makeLayout(props.units), [props.units])
-  const size = Math.max(layout.w, layout.h, layout.d, 4)
+  const size = Math.max(layout.w, layout.h + ROOF_H, layout.d, 4)
   const dist = size * 1.05 + 5
   const camPos: [number, number, number] = layout.hasFloors
     ? [dist * 0.45, layout.h * 0.55 + 3, dist]
