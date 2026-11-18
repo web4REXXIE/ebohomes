@@ -156,12 +156,8 @@ export function decidePropertyActions(input: ActionInput): PropertyActions {
     return {
       ...none,
       apply: { label: 'Sign in to apply', shortLabel: 'Sign in to apply', href, statusLine: null },
-      viewing: {
-        label: 'Sign in to request a viewing',
-        shortLabel: 'Sign in',
-        href,
-        statusLine: null,
-      },
+      // One button only. A viewing is requested inside the application, after applying.
+      viewing: null,
       note: null,
       helper: REQUEST_HELPER,
     }
@@ -172,12 +168,8 @@ export function decidePropertyActions(input: ActionInput): PropertyActions {
     return {
       ...none,
       apply: { label: 'Apply now', shortLabel: 'Apply now', href, statusLine: null },
-      viewing: {
-        label: 'Apply to request a viewing',
-        shortLabel: 'Apply to view',
-        href,
-        statusLine: 'You apply first. Then you can ask for a viewing.',
-      },
+      // One button only. "Apply now" opens the application, and Viewing is the next step inside it.
+      viewing: null,
       note: null,
       helper: REQUEST_HELPER,
     }
