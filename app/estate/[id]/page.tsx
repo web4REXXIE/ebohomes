@@ -44,6 +44,10 @@ export default function EstatePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [landlord, setLandlord] = useState<LandlordInfo | null>(null)
   const [resident, setResident] = useState(false)
+  const [myUnit, setMyUnit] = useState<string | null>(null)
+  const [occupied, setOccupied] = useState<string[]>([])
+  const [knocking, setKnocking] = useState(false)
+  const [knockMsg, setKnockMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [mode, setMode] = useState<'3d' | 'flat'>('3d')
 
   const load = useCallback(async () => {
@@ -88,8 +92,15 @@ export default function EstatePage() {
 
     // Do I live here? Only residents see the report and ask buttons. If this fails, the page works without it.
     setResident(false)
+    setMyUnit(null)
+    setOccupied([])
     const rv = await supabase.rpc('estate_resident_view', { p_estate: e.id })
-    setResident(!rv.error && (rv.data as { resident?: boolean } | null)?.resident === true)
+    const view = rv.error ? null : (rv.data as { resident?: boolean; my_unit?: string | null; occupied?: string[] } | null)
+    if (view?.resident === true) {
+      setResident(true)
+      setMyUnit(typeof view.my_unit === 'string' ? view.my_unit : null)
+      setOccupied(Array.isArray(view.occupied) ? view.occupied.filter((x): x is string => typeof x === 'string') : [])
+    }
 
     // The landlord card is a bonus. If it cannot load, the building page works without it.
     setLandlord(null)
@@ -115,7 +126,13 @@ export default function EstatePage() {
   const hasFloors = units.some((u) => u.floor_no !== null)
   const toLet = useMemo(() => units.filter((u) => unitState(u, liveIds) === 'to_let'), [units, liveIds])
 
-  const toneOf = (u: ViewUnit): TileTone => (unitState(u, liveIds) === 'to_let' ? 'to_let' : 'taken')
+  // Residents also see their own home (purple) and neighbours they can greet (blue). Nobody sees names.
+  const toneOf = (u: ViewUnit): TileTone => {
+    if (unitState(u, liveIds) === 'to_let') return 'to_let'
+    if (resident && u.id === myUnit) return 'mine'
+    if (resident && occupied.includes(u.id)) return 'neighbour'
+    return 'taken'
+  }
   const sceneGroups = (list: typeof groups): SceneGroup[] =>
     list
       .map((g) => ({ ...g, shown: onlyLet ? g.units.filter((u) => unitState(u, liveIds) === 'to_let') : g.units }))
@@ -125,6 +142,19 @@ export default function EstatePage() {
   const selected = units.find((u) => u.id === selectedId) ?? null
   const selectedListing = selected?.listing_id ? live[selected.listing_id] : undefined
   const selectedOpen = selected ? unitState(selected, liveIds) === 'to_let' : false
+  const selectedIsMine = !!selected && resident && selected.id === myUnit
+  const selectedIsNeighbour = !!selected && resident && !selectedOpen && occupied.includes(selected.id)
+
+  useEffect(() => { setKnockMsg(null) }, [selectedId])
+
+  const knock = async (sticker: 'knock' | 'welcome' | 'howfar') => {
+    if (!selected || knocking) return
+    setKnocking(true)
+    setKnockMsg(null)
+    const { error } = await supabase.rpc('send_knock', { p_to_unit: selected.id, p_sticker: sticker })
+    setKnocking(false)
+    setKnockMsg(error ? { ok: false, text: error.message || 'Could not send it. Try again.' } : { ok: true, text: 'Sent. Your neighbour got a message with your door number only.' })
+  }
 
   const homeLine = (u: ViewUnit) => {
     const l = u.listing_id ? live[u.listing_id] : undefined
@@ -239,7 +269,7 @@ export default function EstatePage() {
               Show only homes to let
             </label>
           </div>
-          <p className="text-xs text-muted-foreground">Green: to let. Grey: taken or not available. Tap a home for details.</p>
+          <p className="text-xs text-muted-foreground">Green: to let. Grey: taken or not available.{resident ? ' Purple: your home. Blue: a neighbour you can greet.' : ''} Tap a home for details.</p>
 
           <div className="flex gap-2">
             <button type="button" className={mode === '3d' ? btnP : btnS} onClick={() => setMode('3d')}>3D view</button>
@@ -316,6 +346,24 @@ export default function EstatePage() {
                   <p className="font-semibold text-foreground">{displayTitle(selectedListing as any)}</p>
                   {homeLine(selected) && <p className="text-sm text-muted-foreground">{homeLine(selected)}</p>}
                   <Link href={`/listing/${selectedListing.id}`} className={`${btnP} w-full`}>View this home <ArrowRight size={15} aria-hidden /></Link>
+                </>
+              ) : selectedIsMine ? (
+                <>
+                  <span className="inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">Your home</span>
+                  <p className="text-sm text-muted-foreground">This is where you live.</p>
+                </>
+              ) : selectedIsNeighbour ? (
+                <>
+                  <span className="inline-block rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-foreground">Neighbour</span>
+                  <p className="text-sm text-muted-foreground">Someone lives here. Say hello. They only see your door number.</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    <button type="button" disabled={knocking} onClick={() => void knock('knock')} className={`${btnS} w-full disabled:opacity-50`}>👋 Knock knock</button>
+                    <button type="button" disabled={knocking} onClick={() => void knock('welcome')} className={`${btnS} w-full disabled:opacity-50`}>🏠 Welcome</button>
+                    <button type="button" disabled={knocking} onClick={() => void knock('howfar')} className={`${btnS} w-full disabled:opacity-50`}>🤝 How far?</button>
+                  </div>
+                  {knockMsg && (
+                    <p role="status" className={`rounded-xl border p-3 text-sm ${knockMsg.ok ? 'border-success bg-success/10 text-success' : 'border-danger bg-danger/10 text-danger'}`}>{knockMsg.text}</p>
+                  )}
                 </>
               ) : (
                 <>
