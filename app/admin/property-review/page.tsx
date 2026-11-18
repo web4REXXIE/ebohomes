@@ -278,7 +278,7 @@ export default function PropertyReviewPage() {
               <GroupLabel>Listing and evidence</GroupLabel>
               <div className="bg-card border border-border rounded-lg overflow-hidden">
                 {selected.photos?.[0] ? (
-                  <img src={selected.photos[0]} alt={`Photo of ${selected.title ?? 'the listing'}`} className="w-full h-56 object-cover sm:h-72" />
+                  <img src={selected.photos[0]} alt={`Photo of ${selected.title ?? 'the listing'}`} className="w-full h-56 bg-secondary object-contain sm:h-72" />
                 ) : (
                   <div className="w-full h-56 bg-secondary flex items-center justify-center text-muted-foreground sm:h-72">
                     No Photo
@@ -287,7 +287,7 @@ export default function PropertyReviewPage() {
                 {selected.photos?.length > 1 && (
                   <div className="flex gap-2 p-3 overflow-x-auto">
                     {selected.photos.slice(1, 6).map((p: string, i: number) => (
-                      <img key={i} src={p} alt={`Listing photo ${i + 2}`} className="w-16 h-16 object-cover rounded-md shrink-0" />
+                      <img key={i} src={p} alt={`Listing photo ${i + 2}`} className="w-16 h-16 bg-secondary object-contain rounded-md shrink-0" />
                     ))}
                     {selected.photos.length > 6 && (
                       <div className="w-16 h-16 rounded-md bg-secondary flex items-center justify-center text-xs text-muted-foreground shrink-0">
@@ -565,4 +565,4 @@ export default function PropertyReviewPage() {
       {dialog}
     </div>
   )
-              }
+                        }
