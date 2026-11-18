@@ -82,8 +82,6 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
   const [renewalOffered, setRenewalOffered] = useState(false)
   const [waitlisted, setWaitlisted] = useState(false)
   const [renewalOffer, setRenewalOffer] = useState<any>(null)
-  // Set only when the saved data moves the journey forward after an action.
-  const [unlocked, setUnlocked] = useState<{ from: StepKey; to: StepKey } | null>(null)
   const prevKey = useRef<StepKey | null>(null)
 
   const [picked, setPicked] = useState<StepKey | null>(null)
@@ -232,13 +230,12 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
     })
   }, [app, viewings, tenancyRow, liveTerms, waitlisted, payments, awaitingCode])
 
-  // The first load never shows a banner. After that, a banner appears only when the journey really moved to a later stage.
+  // When the journey really moves to a later stage, go back to the current stage. The status card already shows what changed.
   useEffect(() => {
     const cur = journey?.currentKey ?? null
     const prev = prevKey.current
     prevKey.current = cur
     if (cur && prev && cur !== prev && STEP_ORDER.indexOf(cur) > STEP_ORDER.indexOf(prev)) {
-      setUnlocked({ from: prev, to: cur })
       setPicked(null)
     }
   }, [journey?.currentKey])
@@ -784,18 +781,6 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
         </div>
       )}
 
-      {unlocked && (
-        <div role="status" className="space-y-2 rounded-xl border-2 border-primary bg-primary/5 p-4 text-sm">
-          <p className="flex items-center gap-2 text-base font-bold text-primary">
-            <CheckCircle2 size={20} aria-hidden /> {STEP_TITLE[unlocked.to]} is now open
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={btnP} onClick={() => { const k = unlocked.to; setUnlocked(null); selectStep(k) }}>Go to {STEP_TITLE[unlocked.to]} <ArrowDown size={15} aria-hidden /></button>
-            <button type="button" className={btnS} onClick={() => setUnlocked(null)}>Dismiss</button>
-          </div>
-        </div>
-      )}
-
       {/* The one status and action card */}
       <section aria-labelledby="status-heading" className={`rounded-xl border border-border border-t-4 bg-card p-4 sm:p-5 ${TOP[panel.tone]}`}>
         {justSubmitted && app.status === 'pending' && (
@@ -843,7 +828,7 @@ export function RentalJourney({ applicationId }: { applicationId: string }) {
       <section aria-labelledby="detail-heading" className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="detail-heading" ref={detailRef} tabIndex={-1} className="scroll-mt-4 text-lg font-bold text-foreground outline-none">{selStep.title}</h2>
-          <Pill tone={selStep.tone}>{selStep.label}</Pill>
+          {selected !== journey.currentKey && <Pill tone={selStep.tone}>{selStep.label}</Pill>}
         </div>
 
         {selected !== journey.currentKey && (
