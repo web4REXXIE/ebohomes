@@ -589,8 +589,8 @@ export default function HomeClient() {
           <div className="relative isolate overflow-hidden bg-forest">
             <HeroBackground />
             {/* Neutral dark layer (no green) so the photo still shows, plus a darker pool behind the text so it is easy to read. */}
-            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/45 via-black/40 to-black/55" aria-hidden="true" />
-            <div className="absolute inset-0 z-[3] [background:radial-gradient(ellipse_75%_55%_at_50%_42%,rgba(0,0,0,0.6),transparent_75%)]" aria-hidden="true" />
+            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/55 via-black/50 to-black/65" aria-hidden="true" />
+            <div className="absolute inset-0 z-[3] [background:radial-gradient(ellipse_75%_55%_at_50%_42%,rgba(0,0,0,0.75),transparent_80%)]" aria-hidden="true" />
             <div className="container-content relative z-10 pb-32 pt-14 text-center md:pb-44 md:pt-24">
               <motion.p
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
@@ -607,7 +607,7 @@ export default function HomeClient() {
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                className="mx-auto mt-4 max-w-xl text-pretty text-body-lg text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95),0_2px_14px_rgba(0,0,0,0.85)]"
+                className="mx-auto mt-4 max-w-xl text-pretty rounded-2xl bg-black/30 px-4 py-2.5 text-body-lg font-medium text-white backdrop-blur-[2px] [text-shadow:0_1px_3px_rgba(0,0,0,0.95),0_2px_14px_rgba(0,0,0,0.85)]"
               >
                 Find Homes. Skip the Stress. Browse reviewed rental homes across Ebonyi State, request a viewing and apply online, all in one place.
               </motion.p>
