@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { ArrowLeft, ArrowRight, Building2, Loader2, MapPin } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
@@ -10,12 +11,19 @@ import { BlockScene, CompoundScene, type SceneGroup, type TileTone } from '@/com
 import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
 import { bedroomsLabel, displayTitle, toMoney } from '@/lib/property-display'
+import { TrustedBadge } from '@/components/trusted-badge'
 import { buildingNames, groupUnits, naturalSort, unitState, type ViewUnit } from '@/lib/estate-view'
+
+const Building3D = dynamic(() => import('@/components/building-3d'), {
+  ssr: false,
+  loading: () => <div className="h-[420px] animate-pulse rounded-xl bg-secondary" />,
+})
 
 // The tenant's view of a building, compound, estate or hostel: what is in it and which homes are to let.
 // Read only. A home is "to let" only when its unit is available AND its listing is approved (see lib/estate-view.ts).
 // No tenant names, reasons or landlord details are shown here. Row-level security decides which places can be read.
-type Estate = { id: string; name: string; kind: string; address_text: string | null; cover_photo_url: string | null; units: ViewUnit[] | null }
+type Estate = { id: string; owner_id: string | null; name: string; kind: string; address_text: string | null; cover_photo_url: string | null; units: ViewUnit[] | null }
+type LandlordInfo = { id: string; name: string; trusted: boolean }
 type LiveListing = { id: string; title: string | null; price_monthly: number | string | null; bedrooms: number | string | null; property_type: string | null; location_text: string | null }
 
 const naira = (n: number) => '₦' + n.toLocaleString('en-NG', { maximumFractionDigits: 0 })
@@ -33,6 +41,8 @@ export default function EstatePage() {
   const [state, setState] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading')
   const [onlyLet, setOnlyLet] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [landlord, setLandlord] = useState<LandlordInfo | null>(null)
+  const [mode, setMode] = useState<'3d' | 'flat'>('3d')
 
   const load = useCallback(async () => {
     if (!isValidListingId(estateId)) {
@@ -42,7 +52,7 @@ export default function EstatePage() {
     setState('loading')
     const { data, error } = await supabase
       .from('estates')
-      .select('id, name, kind, address_text, cover_photo_url, units(id, unit_label, floor_no, group_label, status, listing_id)')
+      .select('id, owner_id, name, kind, address_text, cover_photo_url, units(id, unit_label, floor_no, group_label, status, listing_id)')
       .eq('id', estateId)
       .maybeSingle()
     if (error) {
@@ -73,6 +83,19 @@ export default function EstatePage() {
     setEstate(e)
     setLive(map)
     setState('ok')
+
+    // The landlord card is a bonus. If it cannot load, the building page works without it.
+    setLandlord(null)
+    if (e.owner_id) {
+      const [pRes, tRes] = await Promise.all([
+        supabase.from('profiles_public').select('full_name').eq('id', e.owner_id).maybeSingle(),
+        supabase.rpc('landlord_is_trusted', { p_landlord: e.owner_id }),
+      ])
+      const fullName = (pRes.data as { full_name: string | null } | null)?.full_name
+      if (!pRes.error && fullName) {
+        setLandlord({ id: e.owner_id, name: fullName, trusted: !tRes.error && tRes.data === true })
+      }
+    }
   }, [estateId])
 
   useEffect(() => { void load() }, [load])
@@ -157,6 +180,25 @@ export default function EstatePage() {
           </div>
         </header>
 
+        {landlord && (
+          <Link
+            href={`/landlord/${landlord.id}`}
+            className="focus-ring flex min-h-11 items-center gap-3 rounded-xl border border-border bg-card p-3 transition hover:bg-secondary"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground" aria-hidden>
+              {landlord.name[0]}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+                <span className="truncate">{landlord.name}</span>
+                {landlord.trusted && <TrustedBadge />}
+              </span>
+              <span className="block text-xs text-muted-foreground">Landlord. See all their properties and checks.</span>
+            </span>
+            <ArrowRight size={16} className="shrink-0 text-muted-foreground" aria-hidden />
+          </Link>
+        )}
+
         {/* Homes to let: the quickest way to a vacant home */}
         <section aria-labelledby="to-let-heading" className="space-y-3">
           <h2 id="to-let-heading" className="text-lg font-bold text-foreground">Homes to let ({toLet.length})</h2>
@@ -188,7 +230,12 @@ export default function EstatePage() {
               Show only homes to let
             </label>
           </div>
-          <p className="text-xs text-muted-foreground">Green outline: to let. Grey: taken or not available. Tap a home for details.</p>
+          <p className="text-xs text-muted-foreground">Green: to let. Grey: taken or not available. Tap a home for details.</p>
+
+          <div className="flex gap-2">
+            <button type="button" className={mode === '3d' ? btnP : btnS} onClick={() => setMode('3d')}>3D view</button>
+            <button type="button" className={mode === 'flat' ? btnP : btnS} onClick={() => setMode('flat')}>Flat view</button>
+          </div>
 
           {isCompound && (
             <nav aria-label="Buildings" className="flex flex-wrap gap-2">
@@ -206,6 +253,20 @@ export default function EstatePage() {
 
           {onlyLet && toLet.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No homes are to let right now.</p>
+          ) : mode === '3d' ? (
+            <div className="space-y-6">
+              {(isCompound ? buildings : [null]).map((b, i) => {
+                const list = (b === null ? units : units.filter((u) => ((u.group_label ?? '').trim() || 'Other') === b))
+                  .filter((u) => !onlyLet || unitState(u, liveIds) === 'to_let')
+                if (list.length === 0) return null
+                return (
+                  <div key={b ?? 'all'} id={`building-${i}`} className="scroll-mt-24 space-y-2">
+                    {b && <p className="text-sm font-bold text-foreground">{b}</p>}
+                    <Building3D units={list} toneOf={toneOf} selectedId={selectedId} onSelect={setSelectedId} />
+                  </div>
+                )
+              })}
+            </div>
           ) : isCompound ? (
             <div className="space-y-6">
               {buildings.map((b, i) => {
