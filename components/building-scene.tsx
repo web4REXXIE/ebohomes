@@ -1,9 +1,12 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import type { ViewUnit, UnitGroup } from '@/lib/estate-view'
 import type { LightState } from '@/lib/light-status'
 
-// The 2D picture of a building (block of flats) or a compound (estate of houses or duplexes, or a hostel).
+// The isometric 3D-look picture of a building (block of flats) or a compound (estate of houses or duplexes, or a hostel).
+// The 3D look is plain CSS: the front stays flat so labels read well and taps work, and a side face and a roof are added.
+// No 3D library and no images, so it stays light on a cheap phone.
 // It only draws what the page already knows. Tenant names are never part of this data.
 // When neighbours report "Light dey", the lived-in windows glow. No report means nothing glows.
 
@@ -95,29 +98,57 @@ function House({ unit, tone, selected, light, onSelect }: { unit: ViewUnit; tone
   )
 }
 
+// Adds depth to a flat box: a darker side face on the right, and optionally a lighter roof (top face) above.
+// Purely decorative (aria-hidden, never takes taps). Angles: side goes up 30 degrees, roof is skewed to match.
+function Box3D({ depth = 14, roof = false, children }: { depth?: number; roof?: boolean; children: ReactNode }) {
+  const rise = Math.round(depth * 0.577)
+  return (
+    <div className="relative" style={{ marginRight: depth, marginTop: roof ? rise : 0 }}>
+      {children}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute bg-primary/70"
+        style={{ left: '100%', top: 0, width: depth, height: '100%', transformOrigin: '0 0', transform: 'skewY(-30deg)' }}
+      />
+      {roof && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute bg-primary/35"
+          style={{ left: 0, bottom: '100%', width: '100%', height: rise, transformOrigin: '0 100%', transform: 'skewX(-60deg)' }}
+        />
+      )}
+    </div>
+  )
+}
+
 // A building (flats). Roof, name board, floors top first, ground and gate.
 export function BlockScene({ name, groups, toneOf, selectedId, onSelect, light }: SceneProps) {
   return (
     <div className="mx-auto mt-3 max-w-md" aria-label={`${name} building`}>
-      <div className="mx-auto mb-1 w-fit max-w-full rounded-md bg-primary px-4 py-1.5 text-center text-sm font-bold text-primary-foreground shadow-sm">{name}</div>
-      <div aria-hidden className="mx-3 h-8 bg-primary" style={{ clipPath: 'polygon(8% 0, 92% 0, 100% 100%, 0 100%)' }} />
-      <div className="space-y-1.5 border-x-4 border-primary/30 bg-secondary px-2 py-2">
-        {groups.map((g) => (
-          <section key={g.key} id={g.key} aria-label={g.title} className="flex scroll-mt-24 items-stretch gap-2 rounded-md border border-border bg-card p-2">
-            <div className="flex w-9 shrink-0 flex-col items-center justify-center rounded-md bg-secondary text-sm font-bold text-foreground" title={g.title}>
-              {g.floor === 0 ? 'G' : g.floor}
-            </div>
-            <div className="flex flex-wrap gap-2 pt-2">
-              {g.shown.map((x) => (
-                <Window key={x.id} unit={x} tone={toneOf(x)} selected={x.id === selectedId} light={light} onSelect={onSelect} />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-      <div aria-hidden className="flex h-6 items-end justify-center border-x-4 border-primary/30 bg-primary/80">
-        <span className="h-4 w-9 rounded-t-md bg-primary-foreground/40" />
-      </div>
+      <div className="mx-auto mb-2 w-fit max-w-full rounded-md bg-primary px-4 py-1.5 text-center text-sm font-bold text-primary-foreground shadow-sm">{name}</div>
+      <Box3D depth={18} roof>
+        <div className="border-x-4 border-primary/30 bg-secondary">
+          <div aria-hidden className="h-2 bg-primary" />
+          <div className="space-y-1.5 px-2 py-2">
+            {groups.map((g) => (
+              <section key={g.key} id={g.key} aria-label={g.title} className="flex scroll-mt-24 items-stretch gap-2 rounded-md border border-border bg-card p-2">
+                <div className="flex w-9 shrink-0 flex-col items-center justify-center rounded-md bg-secondary text-sm font-bold text-foreground" title={g.title}>
+                  {g.floor === 0 ? 'G' : g.floor}
+                </div>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {g.shown.map((x) => (
+                    <Window key={x.id} unit={x} tone={toneOf(x)} selected={x.id === selectedId} light={light} onSelect={onSelect} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+          <div aria-hidden className="flex h-6 items-end justify-center bg-primary/80">
+            <span className="h-4 w-9 rounded-t-md bg-primary-foreground/40" />
+          </div>
+        </div>
+      </Box3D>
+      <div aria-hidden className="mx-auto mt-1 h-2 w-4/5 rounded-full bg-black/10 blur-sm" />
     </div>
   )
 }
@@ -134,14 +165,18 @@ export function CompoundScene({ name, groups, toneOf, selectedId, onSelect, ligh
         </div>
       </div>
       {groups.map((g) => (
-        <section key={g.key} id={g.key} aria-label={g.title} className="scroll-mt-24 rounded-card border border-border bg-card p-3">
-          <h2 className="mb-3 w-fit rounded-chip bg-secondary px-3 py-1 text-sm font-semibold text-foreground">{g.title}</h2>
-          <div className="grid grid-cols-4 gap-x-2 gap-y-3 sm:grid-cols-6">
-            {g.shown.map((x) => (
-              <House key={x.id} unit={x} tone={toneOf(x)} selected={x.id === selectedId} light={light} onSelect={onSelect} />
-            ))}
-          </div>
-          <div aria-hidden className="mt-3 h-2 rounded-full border-y border-dashed border-muted-foreground/40 bg-muted" />
+        <section key={g.key} id={g.key} aria-label={g.title} className="scroll-mt-24">
+          <Box3D depth={12} roof>
+            <div className="rounded-card border border-border bg-card p-3">
+              <h2 className="mb-3 w-fit rounded-chip bg-secondary px-3 py-1 text-sm font-semibold text-foreground">{g.title}</h2>
+              <div className="grid grid-cols-4 gap-x-2 gap-y-3 sm:grid-cols-6">
+                {g.shown.map((x) => (
+                  <House key={x.id} unit={x} tone={toneOf(x)} selected={x.id === selectedId} light={light} onSelect={onSelect} />
+                ))}
+              </div>
+              <div aria-hidden className="mt-3 h-2 rounded-full border-y border-dashed border-muted-foreground/40 bg-muted" />
+            </div>
+          </Box3D>
         </section>
       ))}
     </div>
