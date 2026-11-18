@@ -196,7 +196,12 @@ export default function ListingAuthorityPage() {
     try {
       const p = await authedFetch('/api/listing-authority/prepare', { listing_id: id, mime: file.type, bytes: file.size })
       if (!p.ok) { setErr(p.j?.error ?? 'Could not prepare the upload.'); return }
-      const up = await supabase.storage.from(AUTHORITY_BUCKET).uploadToSignedUrl(p.j.path, p.j.token, file, { contentType: file.type })
+      // If the connection stalls, stop waiting after 90 seconds so the button never spins forever.
+      const timeout = new Promise<{ error: Error }>((resolve) => setTimeout(() => resolve({ error: new Error('timeout') }), 90000))
+      const up = await Promise.race([
+        supabase.storage.from(AUTHORITY_BUCKET).uploadToSignedUrl(p.j.path, p.j.token, file, { contentType: file.type }),
+        timeout,
+      ])
       if (up.error) { setErr('The upload failed. Check your connection and try again.'); return }
       const r = await authedFetch('/api/listing-authority/documents', {
         listing_id: id, doc_type: type, path: p.j.path, name: file.name,
@@ -302,9 +307,8 @@ export default function ListingAuthorityPage() {
         {(status === 'needs_evidence' || status === 'rejected') && <p className="mt-2 border-t border-current/20 pt-2">You can fix this and send it again as many times as you need.</p>}
       </div>
 
-      <p className="rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
-        EboHomes reviews the evidence you send to see that you may list this property. This is a review of documents, not a legal guarantee of ownership.
-        Your documents are private. Only EboHomes staff can open them.
+      <p className="text-xs text-muted-foreground">
+        EboHomes checks your documents to see that you may list this property. It is not a legal guarantee of ownership. Your documents are private and only EboHomes staff can open them.
       </p>
 
       {err && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">{err}</p>}
@@ -413,8 +417,9 @@ export default function ListingAuthorityPage() {
             <input ref={fileRef} type="file" accept={AUTHORITY_ACCEPT} className="hidden" onChange={upload} />
             <button type="button" disabled={busy || !docType || (needsDescription(docType) && desc.trim().length < 5)} onClick={() => fileRef.current?.click()}
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-card text-sm font-semibold disabled:opacity-50">
-              {busy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />} Choose file (JPG, PNG, WEBP or PDF, up to 10MB)
+              {busy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />} {busy ? 'Uploading...' : 'Choose file (JPG, PNG, WEBP or PDF, up to 10MB)'}
             </button>
+            {!docType && <p className="text-xs text-muted-foreground">Choose the kind of document first.</p>}
           </div>)}
       </section>
 
@@ -433,9 +438,6 @@ export default function ListingAuthorityPage() {
                   {gate?.code === 'blocked_none' ? 'Apply for a professional profile' : 'View my professional application'}
                 </Link>)}
             </div>)}
-          <p className="rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
-            Your progress is saved as a draft. A draft is not a claim: it is not sent to EboHomes and does not make this property verified, approved or authorized.
-          </p>
           {missing.length > 0 && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
               <p className="font-semibold">Still needed before you can send:</p>
@@ -448,12 +450,11 @@ export default function ListingAuthorityPage() {
             {status === 'accepted' ? 'Send changes for review' : status === 'needs_evidence' || status === 'rejected' ? 'Send again' : 'Send to EboHomes'}
           </button>
           <button type="button" disabled={busy || (!role && !situation && !ownerName && !companyName && !note)} onClick={async () => { setMsg(null); const ok = await saveDraft(); if (ok) setMsg('Draft saved. It is not sent to EboHomes.') }}
-            className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-border bg-card px-4 text-sm font-semibold disabled:opacity-50">
+            className="inline-flex min-h-12 w-full items-center justify-center rounded-full px-4 text-sm font-semibold text-muted-foreground underline disabled:opacity-50">
             Save draft
           </button>
           {draftErr && <p role="alert" className="text-center text-xs text-red-900">{draftErr}</p>}
-          {!draftErr && draftAt && <p className="text-center text-xs text-muted-foreground">{touched ? 'Saving...' : `Draft saved ${new Date(draftAt).toLocaleString('en-NG')}`}</p>}
-          <p className="text-center text-xs text-muted-foreground">{activeDocs.length} active document{activeDocs.length === 1 ? '' : 's'}</p>
+          {!draftErr && draftAt && <p className="text-center text-xs text-muted-foreground">{touched ? 'Saving...' : `Draft saved ${new Date(draftAt).toLocaleString('en-NG')}. A draft is not sent to EboHomes.`}</p>}
         </>
       ) : (
         <Link href={typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('back') === 'places' ? '/dashboard/estates' : '/dashboard/listings'}
