@@ -2,10 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { ArrowRight, Building2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
 import { naturalSort, unitState, type ViewUnit } from '@/lib/estate-view'
+
+const Building3D = dynamic(() => import('@/components/building-3d'), {
+  ssr: false,
+  loading: () => <div className="h-[260px] animate-pulse rounded-md bg-secondary" />,
+})
 
 type EstateRef = { id: string; name: string; kind: string }
 type UnitRow = {
@@ -24,16 +30,13 @@ type Info = {
 }
 type Peek = { units: ViewUnit[]; live: Set<string> }
 
-const SHOWN = 12
-
 // A feature card on the listing page: "This flat is part of a building. See the whole building."
-// It shows a small picture of the building with this flat highlighted, plus how many flats are to let.
+// It shows a small spinning 3D model of the building with this flat highlighted, plus how many flats are to let.
 // Hidden for one-unit homes (single houses), and hidden if the lookup fails. It never blocks the listing page.
 // If only the picture cannot load, the card still works as a link to the building.
 export function UnitBadge({ listingId, className = '' }: { listingId: string; className?: string }) {
   const [info, setInfo] = useState<Info | null>(null)
   const [peek, setPeek] = useState<Peek | null>(null)
-  const [shown, setShown] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -80,27 +83,17 @@ export function UnitBadge({ listingId, className = '' }: { listingId: string; cl
     }
   }, [listingId])
 
-  // Let the tiles fade in one after another once everything is ready.
-  useEffect(() => {
-    if (!info) return
-    const t = requestAnimationFrame(() => setShown(true))
-    return () => cancelAnimationFrame(t)
-  }, [info, peek])
-
   const view = useMemo(() => {
     if (!peek || !info) return null
     const sorted = [...peek.units].sort((a, b) => naturalSort(a.unit_label, b.unit_label))
-    const idx = Math.max(0, sorted.findIndex((x) => x.id === info.unitId))
-    const start = Math.max(0, Math.min(idx - 5, sorted.length - SHOWN))
-    const tiles = sorted.slice(start, start + SHOWN)
     const toLet = sorted.filter((x) => unitState(x, peek.live) === 'to_let').length
-    return {
-      tiles,
-      total: sorted.length,
-      toLet,
-      before: start,
-      after: Math.max(0, sorted.length - (start + SHOWN)),
-    }
+    // In a compound, show only the building this flat is in, so the model stays clear.
+    const hasFloors = sorted.some((u) => u.floor_no !== null)
+    const hasBuildings = hasFloors && sorted.some((u) => (u.group_label ?? '').trim() !== '')
+    const me = sorted.find((u) => u.id === info.unitId)
+    const myGroup = (me?.group_label ?? '').trim()
+    const scene = hasBuildings && myGroup ? sorted.filter((u) => (u.group_label ?? '').trim() === myGroup) : sorted
+    return { scene, total: sorted.length, toLet, sceneName: hasBuildings && myGroup ? myGroup : info.estateName }
   }, [peek, info])
 
   // Say plainly what this place is and where the flat sits: a flat in a building, a flat in a building of a compound,
@@ -155,47 +148,29 @@ export function UnitBadge({ listingId, className = '' }: { listingId: string; cl
       {place && <p className="mt-1 text-sm text-muted-foreground">{place.sentence}</p>}
 
       {view && (
-        <div className="mt-3 rounded-md bg-secondary p-3" role="img" aria-label={summary ?? undefined}>
-          <div aria-hidden className="grid grid-cols-6 gap-1.5">
-            {view.tiles.map((x, i) => {
-              const mine = x.id === info.unitId
-              const open = unitState(x, peek!.live) === 'to_let'
-              const tone = mine
-                ? 'relative bg-primary text-primary-foreground'
-                : open
-                  ? 'border-2 border-success bg-card text-success'
-                  : 'bg-muted text-muted-foreground'
-              return (
-                <span
-                  key={x.id}
-                  style={{ transitionDelay: `${i * 40}ms` }}
-                  className={`flex h-10 items-center justify-center overflow-hidden rounded-t-md rounded-b-sm px-0.5 text-[10px] font-bold transition-all duration-300 motion-reduce:transition-none ${shown ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'} motion-reduce:translate-y-0 motion-reduce:opacity-100 ${tone}`}
-                >
-                  {mine && <span className="absolute -inset-0.5 rounded-t-md rounded-b-sm ring-2 ring-primary/60 motion-safe:animate-pulse" />}
-                  <span className="relative truncate">{x.unit_label}</span>
-                </span>
-              )
-            })}
+        <div className="mt-3 rounded-md bg-secondary p-2" role="img" aria-label={summary ?? undefined}>
+          <div aria-hidden>
+            <Building3D
+              preview
+              height={260}
+              units={view.scene}
+              name={view.sceneName}
+              toneOf={(u) => (unitState(u, peek!.live) === 'to_let' ? 'to_let' : 'taken')}
+              selectedId={info.unitId}
+            />
           </div>
-          {(view.before > 0 || view.after > 0) && (
-            <p aria-hidden className="mt-2 text-[11px] text-muted-foreground">
-              {view.before > 0 ? `+${view.before} before` : ''}
-              {view.before > 0 && view.after > 0 ? ' · ' : ''}
-              {view.after > 0 ? `+${view.after} more` : ''}
-            </p>
-          )}
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 px-1 text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">{view.total} {view.total === 1 ? 'flat' : 'flats'}</span>
             {' · '}
             <span className="font-semibold text-success">{view.toLet} to let</span>
             {' · '}
-            <span className="font-semibold text-primary">You are here</span>
+            <span className="font-semibold text-primary">Your flat is gold</span>
           </p>
         </div>
       )}
 
       <span className="mt-3 flex min-h-12 items-center justify-center gap-2 rounded-button bg-primary px-4 text-sm font-bold text-primary-foreground">
-        View {place?.word ?? 'building'}
+        Explore the {place?.word ?? 'building'} in 3D
         <ArrowRight size={16} aria-hidden className="transition-transform group-hover:translate-x-1 group-active:translate-x-1 motion-reduce:transition-none" />
       </span>
     </Link>
