@@ -6,8 +6,12 @@ import { EMPTY_LIGHT, lightHeadline, parseLight, reportsLine, timeAgo, type Ligh
 
 // "Light dey?" for one building. Everyone sees the status; residents can report.
 // If the database function is missing or fails, the card simply does not show and the page works as before.
+type AskInfo = { open: boolean; mine: boolean; canAsk: boolean }
+const NO_ASK: AskInfo = { open: false, mine: false, canAsk: false }
+
 export function LightDeyCard({ estateId, isResident, onStatus }: { estateId: string; isResident: boolean; onStatus?: (s: LightState) => void }) {
   const [info, setInfo] = useState<LightInfo>(EMPTY_LIGHT)
+  const [ask, setAsk] = useState<AskInfo>(NO_ASK)
   const [available, setAvailable] = useState(false)
   const [sending, setSending] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -19,9 +23,27 @@ export function LightDeyCard({ estateId, isResident, onStatus }: { estateId: str
     setAvailable(true)
   }, [estateId])
 
+  // Is a neighbour asking? Can I ask? Only residents get an answer, so a failure just hides the ask buttons.
+  const loadAsk = useCallback(async () => {
+    if (!isResident) {
+      setAsk(NO_ASK)
+      return
+    }
+    const { data, error } = await supabase.rpc('estate_light_ask', { p_estate: estateId })
+    if (error || typeof data !== 'object' || data === null) return
+    const r = data as Record<string, unknown>
+    setAsk({ open: r.open === true, mine: r.mine === true, canAsk: r.can_ask === true })
+  }, [estateId, isResident])
+
   useEffect(() => {
     load()
-  }, [load])
+    loadAsk()
+    const t = setInterval(() => {
+      load()
+      loadAsk()
+    }, 60000)
+    return () => clearInterval(t)
+  }, [load, loadAsk])
 
   // Lets the building picture glow when neighbours say the light is on.
   useEffect(() => {
@@ -40,6 +62,21 @@ export function LightDeyCard({ estateId, isResident, onStatus }: { estateId: str
     }
     setInfo(parseLight(data))
     setMsg({ ok: true, text: 'Thanks, your neighbours can see it.' })
+    loadAsk()
+  }
+
+  const askNeighbours = async () => {
+    if (sending) return
+    setSending(true)
+    setMsg(null)
+    const { error } = await supabase.rpc('ask_light', { p_estate: estateId })
+    setSending(false)
+    if (error) {
+      setMsg({ ok: false, text: error.message || 'Could not ask. Try again.' })
+      return
+    }
+    setMsg({ ok: true, text: 'Asked. Your neighbours have been told. No names are shown.' })
+    loadAsk()
   }
 
   if (!available) return null
@@ -65,6 +102,16 @@ export function LightDeyCard({ estateId, isResident, onStatus }: { estateId: str
 
       {isResident && (
         <div className="mt-3">
+          {ask.open && !ask.mine && (
+            <p role="status" className="mb-2 rounded-card border border-primary/40 bg-secondary p-3 text-sm font-semibold text-foreground">
+              A neighbour is asking: Light dey? Tap your answer below.
+            </p>
+          )}
+          {ask.open && ask.mine && (
+            <p role="status" className="mb-2 rounded-card border border-border bg-secondary p-3 text-sm text-foreground">
+              You asked. We will show the answer here as soon as a neighbour replies.
+            </p>
+          )}
           <p className="mb-2 text-sm text-muted-foreground">Help your neighbours. How is the light right now?</p>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -84,6 +131,16 @@ export function LightDeyCard({ estateId, isResident, onStatus }: { estateId: str
               🕯️ No light
             </button>
           </div>
+          {ask.canAsk && (
+            <button
+              type="button"
+              disabled={sending}
+              onClick={askNeighbours}
+              className="focus-ring mt-2 min-h-12 w-full rounded-button border border-primary bg-card px-3 text-sm font-semibold text-primary hover:bg-secondary disabled:opacity-50"
+            >
+              ❓ Ask neighbours: Light dey?
+            </button>
+          )}
           {msg && (
             <p role="status" className={`mt-2 rounded-card border p-3 text-sm ${msg.ok ? 'border-success bg-success-soft text-success' : 'border-danger bg-danger-soft text-danger'}`}>
               {msg.text}
