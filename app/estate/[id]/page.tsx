@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
 import { bedroomsLabel, displayTitle, toMoney } from '@/lib/property-display'
 import { TrustedBadge } from '@/components/trusted-badge'
+import { LightDeyCard } from '@/components/light-dey-card'
 import { buildingNames, groupUnits, naturalSort, unitState, type ViewUnit } from '@/lib/estate-view'
 
 const Building3D = dynamic(() => import('@/components/building-3d'), {
@@ -42,6 +43,7 @@ export default function EstatePage() {
   const [onlyLet, setOnlyLet] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [landlord, setLandlord] = useState<LandlordInfo | null>(null)
+  const [resident, setResident] = useState(false)
   const [mode, setMode] = useState<'3d' | 'flat'>('3d')
 
   const load = useCallback(async () => {
@@ -83,6 +85,11 @@ export default function EstatePage() {
     setEstate(e)
     setLive(map)
     setState('ok')
+
+    // Do I live here? Only residents see the report and ask buttons. If this fails, the page works without it.
+    setResident(false)
+    const rv = await supabase.rpc('estate_resident_view', { p_estate: e.id })
+    setResident(!rv.error && (rv.data as { resident?: boolean } | null)?.resident === true)
 
     // The landlord card is a bonus. If it cannot load, the building page works without it.
     setLandlord(null)
@@ -179,6 +186,8 @@ export default function EstatePage() {
             </p>
           </div>
         </header>
+
+        <LightDeyCard estateId={estate.id} isResident={resident} />
 
         {landlord && (
           <Link
