@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, MapPin } from 'lucide-react';
+import { Loader2, Lock, MapPin } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -43,6 +43,9 @@ export default function EditListingPage() {
   const [errors, setErrors] = useState<Errors>({});
   const [showMap, setShowMap] = useState(false);
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
+  // True while a tenant has applied, an offer is open or a tenancy is in progress.
+  // The database enforces this too (listing_rent_locked). Here it only locks the field and explains why.
+  const [rentLocked, setRentLocked] = useState(false);
 
   const [formData, setFormData] = useState({
     location: '',
@@ -105,6 +108,10 @@ export default function EditListingPage() {
         if (!Number.isNaN(lat) && !Number.isNaN(lng)) setPin({ lat, lng });
       }
 
+      // If this cannot be read, the field stays open. The database still refuses the change.
+      const { data: locked } = await supabase.rpc('listing_rent_locked', { p_listing: id });
+      setRentLocked(locked === true);
+
       setLoading(false);
     };
     fetchListing();
@@ -118,7 +125,7 @@ export default function EditListingPage() {
     if (!formData.location.trim()) e.location = 'Enter the neighbourhood or area.';
     if (!formData.propertyType) e.propertyType = 'Choose a property type.';
     if (!formData.bedrooms) e.bedrooms = 'Choose the number of bedrooms.';
-    if (!formData.monthlyRent || !(Number(formData.monthlyRent) > 0)) e.monthlyRent = 'Enter the monthly rent.';
+    if (!rentLocked && (!formData.monthlyRent || !(Number(formData.monthlyRent) > 0))) e.monthlyRent = 'Enter the monthly rent.';
     if (!formData.phoneNumber.trim()) e.phoneNumber = 'Enter a phone number.';
     return e;
   };
@@ -152,7 +159,8 @@ export default function EditListingPage() {
         lng: pin ? pin.lng : null,
         property_type: formData.propertyType,
         bedrooms: Number(formData.bedrooms),
-        price_monthly: Number(formData.monthlyRent),
+        // While the rent is locked it is not sent at all, so a save can never touch it.
+        ...(rentLocked ? {} : { price_monthly: Number(formData.monthlyRent) }),
         description: cleanDescription(formData.description),
         contact_info: formData.phoneNumber,
         availability_date: formData.availabilityDate || null,
@@ -253,7 +261,27 @@ export default function EditListingPage() {
         <section className="space-y-4 rounded-card border border-border bg-card p-4 shadow-rest" aria-label="Price and contact">
           <div>
             <label htmlFor="edit-rent" className={labelCls}>Monthly rent (₦)</label>
-            <input id="edit-rent" type="number" inputMode="numeric" min={0} value={formData.monthlyRent} onChange={set('monthlyRent')} className={inputCls} {...aria('monthlyRent')} />
+            <input
+              id="edit-rent"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={formData.monthlyRent}
+              onChange={set('monthlyRent')}
+              disabled={rentLocked}
+              aria-describedby={rentLocked ? 'edit-rent-locked' : errors.monthlyRent ? 'edit-monthlyRent-err' : undefined}
+              aria-invalid={!!errors.monthlyRent}
+              className={`${inputCls} ${rentLocked ? 'cursor-not-allowed bg-muted text-muted-foreground' : ''}`}
+            />
+            {rentLocked && (
+              <p id="edit-rent-locked" className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground">
+                <Lock size={14} className="mt-0.5 shrink-0" aria-hidden />
+                <span>
+                  The rent is locked because a tenant has applied or a rental is in progress. It unlocks when the
+                  applications and rental are closed.
+                </span>
+              </p>
+            )}
             {fieldErr('monthlyRent')}
           </div>
 
@@ -303,4 +331,4 @@ export default function EditListingPage() {
       )}
     </div>
   );
-}
+        }
