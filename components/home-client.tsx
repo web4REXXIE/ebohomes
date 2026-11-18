@@ -210,6 +210,49 @@ function ListingRow({ items, speed }: { items: Listing[]; speed: number }) {
   return <div className="flex items-start gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{cards}</div>
 }
 
+// Recently added: the same cards, moving one at a time every few seconds. It loops, pauses while the person
+// touches, drags, hovers or focuses it, and does not move at all for people who prefer reduced motion.
+function RollingRow({ items, intervalMs = 4500, pauseMs = 9000 }: { items: Listing[]; intervalMs?: number; pauseMs?: number }) {
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, align: 'start', duration: 40 })
+  const pausedUntil = useRef(0)
+  const pause = () => { pausedUntil.current = Date.now() + pauseMs }
+
+  useEffect(() => {
+    if (!emblaApi) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    emblaApi.on('pointerDown', pause)
+    const t = setInterval(() => {
+      if (document.hidden || Date.now() < pausedUntil.current) return
+      emblaApi.scrollNext()
+    }, intervalMs)
+    return () => {
+      clearInterval(t)
+      emblaApi.off('pointerDown', pause)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emblaApi, intervalMs, pauseMs])
+
+  return (
+    <div
+      className="overflow-hidden"
+      ref={emblaRef}
+      onMouseEnter={pause}
+      onMouseMove={pause}
+      onFocusCapture={pause}
+    >
+      <div className="-ml-4 flex touch-pan-y items-start">
+        {items.map((l) => (
+          <div key={l.id} className="min-w-0 shrink-0 grow-0 pl-4">
+            <div className="w-72 shrink-0">
+              <ListingCard {...cardProps(l)} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ---------------- hero background ---------------- */
 
 function HeroSlide({ src, state, reduce }: { src: string; state: 'current' | 'previous' | 'hidden'; reduce: boolean }) {
@@ -524,24 +567,24 @@ export default function HomeClient() {
           <div className="relative isolate overflow-hidden bg-forest">
             <HeroBackground />
             {/* A light dark layer only, so the photo shows and the white text stays readable. No green tint. */}
-            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/45 via-black/25 to-black/40" aria-hidden="true" />
+            <div className="absolute inset-0 z-[3] bg-gradient-to-b from-black/60 via-black/50 to-black/60" aria-hidden="true" />
             <div className="container-content relative z-10 pb-32 pt-14 text-center md:pb-44 md:pt-24">
               <motion.p
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                className="mb-4 text-caption font-semibold uppercase tracking-widest text-featured"
+                className="mb-4 text-caption font-semibold uppercase tracking-widest text-featured [text-shadow:0_1px_8px_rgba(0,0,0,0.6)]"
               >
                 Real Estate You Can Trust.
               </motion.p>
               <motion.h1
                 id="home-hero-heading"
                 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.06, ease: [0.22, 1, 0.36, 1] }}
-                className="mx-auto max-w-3xl text-balance text-display font-bold text-white"
+                className="mx-auto max-w-3xl text-balance text-display font-bold text-white [text-shadow:0_2px_14px_rgba(0,0,0,0.6)]"
               >
                 Find a place that feels like home.
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                className="mx-auto mt-4 max-w-xl text-pretty text-body-lg text-white/85"
+                className="mx-auto mt-4 max-w-xl text-pretty text-body-lg text-white [text-shadow:0_1px_10px_rgba(0,0,0,0.65)]"
               >
                 Find Homes. Skip the Stress. Browse reviewed rental homes across Ebonyi State, request a viewing and apply online, all in one place.
               </motion.p>
@@ -741,7 +784,7 @@ export default function HomeClient() {
                 <SectionHead title="Recently added" sub="The newest homes on EboHomes." href="/search?sort=newest" tone="dark" />
               </div>
               <div className="pl-5 md:pl-8">
-                <ListingRow items={recent} speed={0.5} />
+                {recent.length >= 4 ? <RollingRow items={recent} /> : <ListingRow items={recent} speed={0.5} />}
               </div>
             </div>
           </Section>
