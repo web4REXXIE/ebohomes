@@ -20,11 +20,18 @@ export const BENCH = M('bench.glb')
 // Models come in different sizes, so each one is scaled to a height I choose and set on the ground.
 export function fit(source: THREE.Object3D, height: number) {
   const obj = cloneSkinned(source)
-  const size = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3())
-  const s = size.y > 0 ? height / size.y : 1
+  // Animated characters are measured with their bones applied (precise), otherwise they come out tiny.
+  let skinned = false
+  obj.traverse((o) => {
+    if ((o as THREE.SkinnedMesh).isSkinnedMesh) skinned = true
+  })
+  obj.updateMatrixWorld(true)
+  const size = new THREE.Box3().setFromObject(obj, skinned).getSize(new THREE.Vector3())
+  const s = size.y > 0 && Number.isFinite(size.y) ? height / size.y : 1
   obj.scale.multiplyScalar(s)
-  const box = new THREE.Box3().setFromObject(obj)
-  obj.position.y -= box.min.y
+  obj.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(obj, skinned)
+  if (Number.isFinite(box.min.y)) obj.position.y -= box.min.y
   return obj
 }
 
