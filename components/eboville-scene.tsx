@@ -348,6 +348,14 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
       <group ref={bob}>
         <primitive object={obj} />
       </group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+        <ringGeometry args={[0.55, 0.8, 32]} />
+        <meshBasicMaterial color={GOLD} />
+      </mesh>
+      <mesh position={[0, height + 0.55, 0]} rotation={[Math.PI, 0, 0]}>
+        <coneGeometry args={[0.2, 0.4, 12]} />
+        <meshBasicMaterial color={GOLD} />
+      </mesh>
     </group>
   )
 }
@@ -376,13 +384,14 @@ function Marker({ pathRef }: { pathRef: MutableRefObject<THREE.Vector3[]> }) {
 
 // The camera glides along with the character (also up the stairs), keeping the same angle.
 function Follow({ posRef, controls }: { posRef: MutableRefObject<THREE.Vector3>; controls: MutableRefObject<any> }) {
-  const camera = useThree((s) => s.camera)
-  useFrame(() => {
+  const camera = useThree((st) => st.camera)
+  useFrame((_, dt) => {
     const c = controls.current
     if (!c) return
-    const dx = (posRef.current.x - c.target.x) * 0.08
-    const dy = (posRef.current.y + 1 - c.target.y) * 0.08
-    const dz = (posRef.current.z - c.target.z) * 0.08
+    const k = 1 - Math.exp(-Math.min(dt, 0.1) * 9)
+    const dx = (posRef.current.x - c.target.x) * k
+    const dy = (posRef.current.y + 1 - c.target.y) * k
+    const dz = (posRef.current.z - c.target.z) * k
     c.target.x += dx
     c.target.y += dy
     c.target.z += dz
@@ -405,7 +414,7 @@ const labelStyle: CSSProperties = {
   pointerEvents: 'none',
 }
 
-const padBtn: CSSProperties = { borderRadius: 12, border: '1px solid rgba(10,46,26,0.25)', background: 'rgba(250,247,242,0.92)', color: FOREST, fontSize: 18, fontWeight: 700 }
+const padBtn: CSSProperties = { touchAction: 'none', borderRadius: 14, border: '1px solid rgba(10,46,26,0.25)', background: 'rgba(250,247,242,0.92)', color: FOREST, fontSize: 18, fontWeight: 700 }
 const chipBtn: CSSProperties = { minHeight: 40, borderRadius: 999, border: '1px solid rgba(10,46,26,0.25)', background: 'rgba(250,247,242,0.95)', color: FOREST, fontSize: 12, fontWeight: 700, padding: '0 12px' }
 
 const tap = (fn: () => void) => (e: ThreeEvent<MouseEvent>) => {
@@ -755,6 +764,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
   const farOut = Math.max(16, L.half * 1.2, L.height * 2.2)
 
   return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', userSelect: 'none', WebkitUserSelect: 'none' }} onContextMenu={(e) => e.preventDefault()}>
     <Canvas dpr={[1, 1.5]} camera={{ position: [0, camY, camZ], fov: 50 }}>
       <color attach="background" args={[sky]} />
       <fog attach="fog" args={[sky, 24, 60]} />
@@ -875,11 +885,11 @@ export default function EbovilleScene({ character, theme, night, light, level, l
         {level >= 3 && GARDEN.map(([x, z, h]) => <Piece key={`${x}-${z}`} url={BUSH} height={h} position={[x, 0, z]} />)}
       </Suspense>
 
-      <OrbitControls ref={controls} target={[0, 1, 0.5]} enablePan={false} minDistance={2.5} maxDistance={farOut} maxPolarAngle={Math.PI / 2.1} />
+      <OrbitControls ref={controls} target={[0, 1, 0.5]} enablePan={false} enableDamping={false} minDistance={2.5} maxDistance={farOut} maxPolarAngle={Math.PI / 2.1} />
       <Follow posRef={posRef} controls={controls} />
 
-      <Html fullscreen style={{ pointerEvents: 'none' }}>
-        <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 46px)', gridAutoRows: '46px', gap: 4, pointerEvents: 'auto', touchAction: 'none' }}>
+    </Canvas>
+        <div style={{ position: 'absolute', right: 10, bottom: 10, zIndex: 20, display: 'grid', gridTemplateColumns: 'repeat(3, 54px)', gridAutoRows: '54px', gap: 4, pointerEvents: 'auto', touchAction: 'none' }}>
           <span />
           <button type="button" aria-label="Walk forward" style={padBtn} onPointerDown={holdStart(1, 0)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▲</button>
           <span />
@@ -887,7 +897,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
           <button type="button" aria-label="Walk back" style={padBtn} onPointerDown={holdStart(-1, 0)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▼</button>
           <button type="button" aria-label="Walk right" style={padBtn} onPointerDown={holdStart(0, 1)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▶</button>
         </div>
-        <div style={{ position: 'absolute', left: 8, bottom: 8, display: 'flex', flexDirection: 'column', gap: 6, pointerEvents: 'auto' }}>
+        <div style={{ position: 'absolute', left: 10, bottom: 10, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 6, pointerEvents: 'auto' }}>
           {L.towers.length > 0 && (
             <>
               <button type="button" style={chipBtn} onClick={() => floor(1)}>⬆ Up a floor</button>
@@ -898,10 +908,9 @@ export default function EbovilleScene({ character, theme, night, light, level, l
           <button type="button" style={chipBtn} onClick={() => zoomMe(5)}>🔍 Zoom to me</button>
           <button type="button" style={chipBtn} onClick={() => zoomMe(Math.max(16, L.half * 1.2, L.height * 2.2))}>🏘️ See all</button>
         </div>
-        <div style={{ position: 'absolute', left: 8, top: 8, fontSize: 11, color: night ? '#e6f0ea' : FOREST, background: night ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '4px 8px', pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', left: 8, top: 8, zIndex: 20, fontSize: 11, color: night ? '#e6f0ea' : FOREST, background: night ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '4px 8px', pointerEvents: 'none' }}>
           🟢 To let · 🟡 Yours · 🔵 Neighbour · ⚪ Taken
         </div>
-      </Html>
-    </Canvas>
+    </div>
   )
 }
