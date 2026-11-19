@@ -6,8 +6,9 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html, OrbitControls, useAnimations, useGLTF } from '@react-three/drei'
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { themeOf } from '@/lib/lodge-themes'
+import type { LightState } from '@/lib/light-status'
 
-// EboVille, step 2: tap the ground and your character walks there.
+// EboVille, step 3: walk to the Lodge board and the light pole. The light glows at night when neighbours say it is on.
 // Files live in /public/models. Names with spaces are encoded so the browser can find them.
 const M = (file: string) => '/models/' + encodeURIComponent(file)
 
@@ -23,6 +24,13 @@ const BENCH = M('bench.glb')
 const WALK_SPEED = 2.4 // units per second: raise to walk faster
 const LIMIT = 11 // how far from the middle you can walk
 
+export type Spot = 'board' | 'light'
+// Where the character stands when it gets to each place.
+const SPOTS: Record<Spot, [number, number]> = {
+  board: [0, -3.2],
+  light: [-3.4, 0.9],
+}
+
 // Round areas the character should not stand on. Change a number if something feels blocked or open.
 type Obstacle = { x: number; z: number; r: number }
 const OBSTACLES: Obstacle[] = [
@@ -35,6 +43,8 @@ const OBSTACLES: Obstacle[] = [
   { x: 2.6, z: 2.8, r: 0.6 },
   { x: -5.5, z: -6, r: 3 },
   { x: 5.5, z: -6, r: 3 },
+  { x: 0, z: -5, r: 0.9 },
+  { x: -4.5, z: 0.5, r: 0.5 },
 ]
 
 // Keeps a tapped spot inside the compound and pushes it out of trees, the bench and buildings.
@@ -83,9 +93,11 @@ function Piece({ url, height, position, rotY = 0 }: { url: string; height: numbe
 type Shared = {
   targetRef: React.MutableRefObject<THREE.Vector3 | null>
   posRef: React.MutableRefObject<THREE.Vector3>
+  pendingRef: React.MutableRefObject<Spot | null>
+  onArriveRef: React.MutableRefObject<(s: Spot) => void>
 }
 
-function Character({ url, height, targetRef, posRef, onAnims }: Shared & { url: string; height: number; onAnims: (names: string[]) => void }) {
+function Character({ url, height, targetRef, posRef, pendingRef, onArriveRef, onAnims }: Shared & { url: string; height: number; onAnims: (names: string[]) => void }) {
   const group = useRef<THREE.Group>(null)
   const bob = useRef<THREE.Group>(null)
   const { scene, animations } = useGLTF(url)
@@ -125,6 +137,10 @@ function Character({ url, height, targetRef, posRef, onAnims }: Shared & { url: 
       const dist = Math.hypot(dx, dz)
       if (dist < 0.08) {
         targetRef.current = null
+        // Arrived at the board or the light pole: tell the page to open it.
+        const spot = pendingRef.current
+        pendingRef.current = null
+        if (spot) onArriveRef.current(spot)
       } else {
         isMoving = true
         const step = Math.min(dist, WALK_SPEED * dt)
@@ -197,24 +213,139 @@ function Follow({ posRef, controls }: { posRef: React.MutableRefObject<THREE.Vec
   return null
 }
 
-export default function EbovilleScene({ character, theme }: { character: 'woman' | 'man'; theme?: string | null }) {
+const labelStyle: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 700,
+  color: '#0A2E1A',
+  background: 'rgba(250,247,242,0.92)',
+  borderRadius: 999,
+  padding: '2px 8px',
+  whiteSpace: 'nowrap',
+  pointerEvents: 'none',
+}
+
+// The Lodge board, built in code: two posts and a green board with a cream face.
+function Board({ onTap }: { onTap: () => void }) {
+  return (
+    <group
+      position={[0, 0, -5]}
+      onClick={(e: ThreeEvent<MouseEvent>) => {
+        e.stopPropagation()
+        onTap()
+      }}
+    >
+      <mesh position={[-0.95, 0.95, 0]}>
+        <boxGeometry args={[0.14, 1.9, 0.14]} />
+        <meshStandardMaterial color="#5b4630" />
+      </mesh>
+      <mesh position={[0.95, 0.95, 0]}>
+        <boxGeometry args={[0.14, 1.9, 0.14]} />
+        <meshStandardMaterial color="#5b4630" />
+      </mesh>
+      <mesh position={[0, 1.4, 0]}>
+        <boxGeometry args={[2.3, 1.15, 0.12]} />
+        <meshStandardMaterial color="#0A2E1A" />
+      </mesh>
+      <mesh position={[0, 1.4, 0.07]}>
+        <boxGeometry args={[2.05, 0.9, 0.02]} />
+        <meshStandardMaterial color="#FAF7F2" />
+      </mesh>
+      <mesh position={[0, 2.05, 0]}>
+        <boxGeometry args={[2.6, 0.12, 0.4]} />
+        <meshStandardMaterial color="#0A2E1A" />
+      </mesh>
+      <Html position={[0, 2.5, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+        <div style={labelStyle}>Lodge board</div>
+      </Html>
+    </group>
+  )
+}
+
+// The light pole. The bulb glows when neighbours say the light is on.
+function LightPole({ light, night, onTap }: { light: LightState; night: boolean; onTap: () => void }) {
+  const on = light === 'on'
+  return (
+    <group
+      position={[-4.5, 0, 0.5]}
+      onClick={(e: ThreeEvent<MouseEvent>) => {
+        e.stopPropagation()
+        onTap()
+      }}
+    >
+      <mesh position={[0, 1.5, 0]}>
+        <cylinderGeometry args={[0.06, 0.09, 3, 12]} />
+        <meshStandardMaterial color="#2b3a33" />
+      </mesh>
+      <mesh position={[0, 3.1, 0]}>
+        <sphereGeometry args={[0.22, 16, 16]} />
+        <meshStandardMaterial
+          color={on ? '#ffe2a0' : '#8a8f8c'}
+          emissive={on ? '#ffc85a' : '#000000'}
+          emissiveIntensity={on ? (night ? 3 : 0.5) : 0}
+        />
+      </mesh>
+      {/* an invisible fat tube so the pole is easy to tap with a thumb */}
+      <mesh position={[0, 1.7, 0]}>
+        <cylinderGeometry args={[0.6, 0.6, 3.4, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      <Html position={[0, 3.7, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+        <div style={labelStyle}>{light === 'on' ? 'Light dey' : light === 'off' ? 'No light' : 'Light dey?'}</div>
+      </Html>
+    </group>
+  )
+}
+
+export default function EbovilleScene({
+  character,
+  theme,
+  night,
+  light,
+  onArrive,
+}: {
+  character: 'woman' | 'man'
+  theme?: string | null
+  night: boolean
+  light: LightState
+  onArrive: (s: Spot) => void
+}) {
   const t = themeOf(theme)
   const targetRef = useRef<THREE.Vector3 | null>(null)
   const posRef = useRef(new THREE.Vector3(0, 0, 0.5))
+  const pendingRef = useRef<Spot | null>(null)
+  const onArriveRef = useRef(onArrive)
+  onArriveRef.current = onArrive
   const controls = useRef<any>(null)
   const [anims, setAnims] = useState<string[]>([])
 
   const goTo = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
+    pendingRef.current = null
     targetRef.current = settle(e.point.clone())
   }
+  const goSpot = (s: Spot) => {
+    pendingRef.current = s
+    targetRef.current = new THREE.Vector3(SPOTS[s][0], 0, SPOTS[s][1])
+  }
+
+  const sky = night ? '#0b1a14' : '#dff0e6'
+  const lamps = night && light === 'on'
 
   return (
     <Canvas dpr={[1, 1.5]} camera={{ position: [0, 3.2, 8.5], fov: 45 }}>
-      <color attach="background" args={['#dff0e6']} />
-      <fog attach="fog" args={['#dff0e6', 16, 34]} />
-      <hemisphereLight args={['#ffffff', '#b7c9bd', 1]} />
-      <directionalLight position={[6, 10, 6]} intensity={1.1} />
+      <color attach="background" args={[sky]} />
+      <fog attach="fog" args={[sky, 16, 34]} />
+      <hemisphereLight args={night ? ['#8fa8ff', '#1b2a22', 0.45] : ['#ffffff', '#b7c9bd', 1]} />
+      <directionalLight position={[6, 10, 6]} intensity={night ? 0.25 : 1.1} color={night ? '#9db4ff' : '#ffffff'} />
+
+      {/* When the light is on at night: warm glow at the pole and in front of the two buildings. */}
+      {lamps && (
+        <>
+          <pointLight position={[-4.5, 3.1, 0.5]} intensity={40} distance={14} decay={2} color="#ffc85a" />
+          <pointLight position={[-5.5, 2.2, -3.2]} intensity={30} distance={10} decay={2} color="#ffd89a" />
+          <pointLight position={[5.5, 2.2, -3.2]} intensity={30} distance={10} decay={2} color="#ffd89a" />
+        </>
+      )}
 
       {/* grass and the plaza, in the lodge theme colour. Tap either to walk. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} onClick={goTo}>
@@ -227,9 +358,11 @@ export default function EbovilleScene({ character, theme }: { character: 'woman'
       </mesh>
 
       <Marker targetRef={targetRef} />
+      <Board onTap={() => goSpot('board')} />
+      <LightPole light={light} night={night} onTap={() => goSpot('light')} />
 
       <Suspense fallback={null}>
-        <Character key={character} url={CHARACTERS[character]} height={1.8} targetRef={targetRef} posRef={posRef} onAnims={setAnims} />
+        <Character key={character} url={CHARACTERS[character]} height={1.8} targetRef={targetRef} posRef={posRef} pendingRef={pendingRef} onArriveRef={onArriveRef} onAnims={setAnims} />
         <Piece url={BUILDING} height={4.5} position={[-5.5, 0, -6]} rotY={0.2} />
         <Piece url={BUILDING} height={4.5} position={[5.5, 0, -6]} rotY={-0.2} />
         <Piece url={TREES[0]} height={3} position={[-7, 0, 1]} />
@@ -253,8 +386,8 @@ export default function EbovilleScene({ character, theme }: { character: 'woman'
 
       {/* Temporary helper text. Tell me what it says, then I will remove it. */}
       <Html fullscreen style={{ pointerEvents: 'none' }}>
-        <div style={{ position: 'absolute', left: 8, top: 8, right: 8, fontSize: 11, color: '#0A2E1A', background: 'rgba(255,255,255,0.8)', borderRadius: 8, padding: '4px 8px' }}>
-          Tap the ground to walk. Animations found: {anims.length > 0 ? anims.join(', ') : 'none'}
+        <div style={{ position: 'absolute', left: 8, top: 8, right: 8, fontSize: 11, color: night ? '#e6f0ea' : '#0A2E1A', background: night ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)', borderRadius: 8, padding: '4px 8px' }}>
+          Tap the ground to walk. Tap the board or the pole. Animations found: {anims.length > 0 ? anims.join(', ') : 'none'}
         </div>
       </Html>
     </Canvas>
