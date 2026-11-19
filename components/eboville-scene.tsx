@@ -5,23 +5,41 @@ import * as THREE from 'three'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html, OrbitControls, useAnimations, useGLTF } from '@react-three/drei'
 import { themeOf } from '@/lib/lodge-themes'
+import { naturalSort } from '@/lib/estate-view'
 import type { LightState } from '@/lib/light-status'
 import { BENCH, BUILDING, BUSH, CHARACTERS, Piece, TREES, fit } from '@/components/eboville-shared'
 
-// EboVille town: doors for every home, Lodge board, light pole, meeting hall and gate.
+// EboVille town. Three layouts, picked from the homes:
+//  block    one building with floors: balconies on every floor and an outside staircase.
+//  compound several buildings side by side, each with its own staircase.
+//  estate   houses along streets (no floors): you walk along the street to each door.
 // The Lodge Level changes what you see: level 3 garden, level 5 string lights, level 7 gate lanterns.
 
 export type DoorTone = 'to_let' | 'mine' | 'neighbour' | 'taken'
-export type DoorUnit = { id: string; label: string; floor: number | null; tone: DoorTone }
-type PlacedDoor = DoorUnit & { x: number; y: number }
+export type DoorUnit = { id: string; label: string; floor: number | null; tone: DoorTone; building?: string | null }
+
+type Mode = 'block' | 'compound' | 'estate'
+type DoorPlaced = DoorUnit & { x: number; y: number; frontZ: number; standZ: number; level: number; b: number }
+type Bld = { name: string; cx: number; width: number; levels: number; height: number; tx: number | null }
+type Tower = { x: number; zNear: number; zFar: number; levels: number; b: number }
+type Row = { front: number; street: number }
+type Layout = { mode: Mode; doors: DoorPlaced[]; blds: Bld[]; towers: Tower[]; rows: Row[]; half: number; laneX: number; minZ: number; height: number }
+type Cur = { b: number; level: number } // b: building (block/compound) or street row (estate). -1 = the plaza.
+type Dest = { b: number; level: number; x: number; z: number }
 
 const WALK_SPEED = 2.4 // units per second: raise to walk faster
-const LIMIT = 11 // how far from the middle you can walk
-const WALL_Z = -8.5 // middle of the door wall
-const WALL_FRONT = -8 // the face of the wall where the doors are
+const FH = 2.0 // height of one floor
 const DOOR_GAP = 1.1
-const ROW_H = 1.5
-const PER_ROW = 8
+const WALL_Z = -8.5 // middle of the building wall
+const FRONT = -8 // the face of the wall where the doors are
+const STAND_G = -6.6 // where you stand on the ground in front of a door
+const STAND_UP = FRONT + 0.5 // where you stand on a balcony
+const MIN_Z_BUILDINGS = -6.8
+const EST_ROW = 5 // houses per street
+const EST_ROWS = 5 // streets shown
+const EST_GAP = 3
+const ROW_SP = 6.5
+const STEPS = 8
 
 const GREEN = '#16a34a'
 const GOLD = '#d4a017'
@@ -32,7 +50,6 @@ const CREAM = '#FAF7F2'
 const TONE_COLOR: Record<DoorTone, string> = { to_let: GREEN, mine: GOLD, neighbour: BLUE, taken: GREY }
 
 type SpotKey = 'board' | 'light' | 'hall' | 'gate'
-// Where the character stands when it gets to each place.
 const SPOTS: Record<SpotKey, [number, number]> = {
   board: [0, -2.4],
   light: [-3.4, 0.9],
@@ -40,31 +57,159 @@ const SPOTS: Record<SpotKey, [number, number]> = {
   gate: [-6.2, 3.8],
 }
 
-// Round areas a tapped spot is pushed out of. Change a number if something feels blocked or open.
 type Obstacle = { x: number; z: number; r: number }
-const OBSTACLES: Obstacle[] = [
-  { x: -7, z: 1, r: 0.9 },
-  { x: 7.5, z: -2, r: 0.9 },
-  { x: -3.5, z: -2.5, r: 0.8 },
-  { x: 4, z: -3, r: 0.8 },
-  { x: 3, z: 0.8, r: 1 },
-  { x: -2.2, z: 2.5, r: 0.6 },
-  { x: 2.6, z: 2.8, r: 0.6 },
-  { x: -9.5, z: -4.5, r: 2.5 },
-  { x: 9.5, z: -4.5, r: 2.5 },
+// Round areas a tapped spot is pushed out of. Change a number if something feels blocked or open.
+const OBST_PLAZA: Obstacle[] = [
   { x: 0, z: -4, r: 0.9 },
   { x: -4.5, z: 0.5, r: 0.5 },
   { x: 8, z: 2, r: 1.5 },
   { x: -8, z: 5, r: 1.3 },
+  { x: -2.2, z: 2.5, r: 0.6 },
+  { x: 2.6, z: 2.8, r: 0.6 },
+  { x: 3, z: 0.8, r: 1 },
+]
+const OBST_TREES: Obstacle[] = [
+  { x: -7, z: 1, r: 0.9 },
+  { x: 7.5, z: -2, r: 0.9 },
+  { x: -3.5, z: -2.5, r: 0.8 },
+  { x: 4, z: -3, r: 0.8 },
 ]
 
-function settle(p: THREE.Vector3): THREE.Vector3 {
-  const len = Math.hypot(p.x, p.z)
-  if (len > LIMIT) {
-    p.x = (p.x / len) * LIMIT
-    p.z = (p.z / len) * LIMIT
+const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
+const startZ = (t: Tower, f: number) => (f % 2 === 0 ? t.zFar : t.zNear)
+const endZ = (t: Tower, f: number) => (f % 2 === 0 ? t.zNear : t.zFar)
+
+function buildLayout(doors: DoorUnit[]): Layout {
+  const hasFloors = doors.some((d) => d.floor !== null)
+
+  if (!hasFloors) {
+    const list = doors.slice(0, EST_ROW * EST_ROWS)
+    const n = Math.max(1, Math.ceil(list.length / EST_ROW))
+    const rows: Row[] = Array.from({ length: n }, (_, r) => ({ front: FRONT - r * ROW_SP, street: FRONT - r * ROW_SP + 1.5 }))
+    const placed: DoorPlaced[] = list.map((d, i) => {
+      const r = Math.floor(i / EST_ROW)
+      const inRow = Math.min(EST_ROW, list.length - r * EST_ROW)
+      const c = i % EST_ROW
+      return { ...d, x: (c - (inRow - 1) / 2) * EST_GAP, y: 0.1, frontZ: rows[r].front, standZ: rows[r].street, level: 0, b: r }
+    })
+    const rowW = EST_ROW * EST_GAP
+    return { mode: 'estate', doors: placed, blds: [], towers: [], rows, half: rowW / 2 + 4.5, laneX: rowW / 2 + 3, minZ: rows[n - 1].street - 1.2, height: 3 }
   }
-  for (const o of OBSTACLES) {
+
+  const labels = doors.map((d) => (d.building ?? '').trim())
+  const unique = Array.from(new Set(labels))
+  const names = unique.length > 1 ? unique.sort((a, b) => naturalSort(a, b)) : ['']
+  const compound = names.length > 1
+
+  type Raw = { name: string; left: number; width: number; floors: number[]; list: DoorUnit[]; hasTower: boolean }
+  const raws: Raw[] = []
+  let cursor = 0
+  for (const name of names) {
+    const list = doors.filter((d) => (compound ? (d.building ?? '').trim() === name : true))
+    const floors = Array.from(new Set(list.map((d) => d.floor ?? 0))).sort((a, b) => a - b)
+    const most = Math.max(1, ...floors.map((f) => list.filter((d) => (d.floor ?? 0) === f).length))
+    const width = Math.max(4, most * DOOR_GAP + 0.8)
+    const hasTower = floors.length > 1
+    raws.push({ name: name || 'Other', left: cursor, width, floors, list, hasTower })
+    cursor += width + (hasTower ? 3.2 : 1.6)
+  }
+  const last = raws[raws.length - 1]
+  const maxX = last.left + last.width + (last.hasTower ? 1.75 : 0)
+  const shift = -maxX / 2
+
+  const blds: Bld[] = []
+  const towers: Tower[] = []
+  const placed: DoorPlaced[] = []
+  raws.forEach((r, bi) => {
+    const cx = r.left + r.width / 2 + shift
+    const levels = r.floors.length
+    blds.push({ name: r.name, cx, width: r.width, levels, height: levels * FH, tx: r.hasTower ? r.left + r.width + 1 + shift : null })
+    if (r.hasTower) towers.push({ x: r.left + r.width + 1 + shift, zNear: STAND_UP, zFar: FRONT - 2.2, levels: levels - 1, b: bi })
+    r.floors.forEach((f, li) => {
+      const row = r.list.filter((d) => (d.floor ?? 0) === f).sort((a, b) => naturalSort(a.label, b.label))
+      row.forEach((d, i) => {
+        placed.push({ ...d, x: cx + (i - (row.length - 1) / 2) * DOOR_GAP, y: li * FH + 0.1, frontZ: FRONT, standZ: li === 0 ? STAND_G : STAND_UP, level: li, b: bi })
+      })
+    })
+  })
+  const tallest = Math.max(...blds.map((b) => b.height))
+  return {
+    mode: compound ? 'compound' : 'block',
+    doors: placed,
+    blds,
+    towers,
+    rows: [],
+    half: Math.max(Math.abs(-maxX / 2), Math.abs(maxX / 2)) + 3,
+    laneX: 0,
+    minZ: MIN_Z_BUILDINGS,
+    height: tallest,
+  }
+}
+
+// Works out the points to walk through, including the stairs, so you never walk through a wall.
+function buildRoute(cur: Cur, dest: Dest, L: Layout, pos: THREE.Vector3): { pts: THREE.Vector3[]; stairs: boolean } {
+  const pts: THREE.Vector3[] = []
+  let stairs = false
+
+  if (L.mode === 'estate') {
+    if (cur.b !== dest.b) {
+      if (cur.b < 0) {
+        pts.push(V(pos.x, 0, -1.2))
+        pts.push(V(L.laneX, 0, -1.2))
+      } else {
+        pts.push(V(L.laneX, 0, pos.z))
+      }
+      pts.push(V(L.laneX, 0, dest.b < 0 ? -1.2 : L.rows[dest.b].street))
+    }
+    pts.push(V(dest.x, 0, dest.z))
+    return { pts, stairs }
+  }
+
+  let lvl = cur.level
+  const same = dest.level === lvl && (lvl === 0 || dest.b === cur.b)
+  if (!same && lvl > 0) {
+    const t = L.towers.find((x) => x.b === cur.b)
+    if (t) {
+      pts.push(V(t.x, lvl * FH, t.zNear))
+      for (let f = lvl - 1; f >= 0; f--) {
+        pts.push(V(t.x, (f + 1) * FH, endZ(t, f)))
+        pts.push(V(t.x, f * FH, startZ(t, f)))
+      }
+      pts.push(V(t.x, 0, t.zFar - 0.7))
+      pts.push(V(t.x + 1.2, 0, t.zFar - 0.7))
+      pts.push(V(t.x + 1.2, 0, STAND_G))
+      stairs = true
+    }
+    lvl = 0
+  }
+  if (dest.level > 0 && lvl === 0) {
+    const t = L.towers.find((x) => x.b === dest.b)
+    if (t) {
+      pts.push(V(t.x + 1.2, 0, STAND_G))
+      pts.push(V(t.x + 1.2, 0, t.zFar - 0.7))
+      pts.push(V(t.x, 0, t.zFar - 0.7))
+      pts.push(V(t.x, 0, t.zFar))
+      for (let f = 0; f < dest.level; f++) pts.push(V(t.x, (f + 1) * FH, endZ(t, f)))
+      pts.push(V(t.x, dest.level * FH, t.zNear))
+      stairs = true
+    }
+  }
+  pts.push(V(dest.x, dest.level * FH, dest.z))
+  return { pts, stairs }
+}
+
+// Keeps a tapped spot inside the compound and pushes it out of trees, houses and the Lodge props.
+function settle(p: THREE.Vector3, L: Layout): THREE.Vector3 {
+  const limit = Math.max(11, L.half)
+  const len = Math.hypot(p.x, p.z)
+  if (len > limit) {
+    p.x = (p.x / len) * limit
+    p.z = (p.z / len) * limit
+  }
+  const list: Obstacle[] = [...OBST_PLAZA]
+  if (L.mode !== 'estate') list.push(...OBST_TREES)
+  else for (const d of L.doors) list.push({ x: d.x, z: d.frontZ - 1, r: 1.1 })
+  for (const o of list) {
     const dx = p.x - o.x
     const dz = p.z - o.z
     const d = Math.hypot(dx, dz)
@@ -75,39 +220,9 @@ function settle(p: THREE.Vector3): THREE.Vector3 {
       p.z = o.z + (d === 0 ? 0 : dz * k)
     }
   }
-  if (p.z < -6.8) p.z = -6.8 // never walk into the door wall
+  if (p.z < L.minZ) p.z = L.minZ
   p.y = 0
   return p
-}
-
-function chunk<T>(list: T[], n: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n))
-  return out
-}
-
-// Puts the doors on the wall: one row per floor. Houses without floors, or more than 6 rows, are simply filled row by row.
-function layoutDoors(doors: DoorUnit[]) {
-  let rows: DoorUnit[][] = []
-  if (doors.some((d) => d.floor !== null)) {
-    const byFloor = new Map<number, DoorUnit[]>()
-    for (const d of doors) {
-      const k = d.floor ?? 0
-      const list = byFloor.get(k)
-      if (list) list.push(d)
-      else byFloor.set(k, [d])
-    }
-    const keys = Array.from(byFloor.keys()).sort((a, b) => a - b)
-    rows = keys.flatMap((k) => chunk(byFloor.get(k) ?? [], PER_ROW))
-  }
-  if (rows.length === 0 || rows.length > 6) rows = chunk(doors, PER_ROW)
-  const placed: PlacedDoor[] = []
-  let widest = 4
-  rows.forEach((row, ri) => {
-    widest = Math.max(widest, row.length * DOOR_GAP + 0.8)
-    row.forEach((d, i) => placed.push({ ...d, x: (i - (row.length - 1) / 2) * DOOR_GAP, y: ri * ROW_H + 0.1 }))
-  })
-  return { placed, width: widest, height: Math.max(rows.length, 1) * ROW_H + 0.3 }
 }
 
 // The door number, drawn once on a tiny picture. Much lighter on cheap phones than 40 text labels.
@@ -135,13 +250,14 @@ function useLabel(text: string, bg: string) {
 }
 
 type Shared = {
-  targetRef: MutableRefObject<THREE.Vector3 | null>
+  pathRef: MutableRefObject<THREE.Vector3[]>
   posRef: MutableRefObject<THREE.Vector3>
   pendingRef: MutableRefObject<string | null>
+  busyRef: MutableRefObject<boolean>
   onArriveRef: MutableRefObject<(key: string) => void>
 }
 
-function Character({ url, height, targetRef, posRef, pendingRef, onArriveRef }: Shared & { url: string; height: number }) {
+function Character({ url, height, pathRef, posRef, pendingRef, busyRef, onArriveRef }: Shared & { url: string; height: number }) {
   const group = useRef<THREE.Group>(null)
   const bob = useRef<THREE.Group>(null)
   const { scene, animations } = useGLTF(url)
@@ -172,30 +288,37 @@ function Character({ url, height, targetRef, posRef, pendingRef, onArriveRef }: 
   useFrame((state, dt) => {
     const g = group.current
     if (!g) return
-    const t = targetRef.current
+    const path = pathRef.current
+    const t = path[0]
     let isMoving = false
     if (t) {
       const dx = t.x - g.position.x
       const dz = t.z - g.position.z
       const dist = Math.hypot(dx, dz)
       if (dist < 0.08) {
-        targetRef.current = null
-        // Arrived at a door, the board, the pole, the hall or the gate: tell the page to open it.
-        const key = pendingRef.current
-        pendingRef.current = null
-        if (key) onArriveRef.current(key)
+        g.position.y = t.y
+        path.shift()
+        if (path.length === 0) {
+          busyRef.current = false
+          // Arrived at a door, the board, the pole, the hall or the gate: tell the page to open it.
+          const key = pendingRef.current
+          pendingRef.current = null
+          if (key) onArriveRef.current(key)
+        }
       } else {
         isMoving = true
         const step = Math.min(dist, WALK_SPEED * dt)
-        g.position.x += (dx / dist) * step
-        g.position.z += (dz / dist) * step
+        const f = step / dist
+        g.position.x += dx * f
+        g.position.z += dz * f
+        g.position.y += (t.y - g.position.y) * f
         const want = Math.atan2(dx, dz)
         let diff = want - g.rotation.y
         diff = Math.atan2(Math.sin(diff), Math.cos(diff))
         g.rotation.y += diff * Math.min(1, dt * 10)
       }
     }
-    posRef.current.set(g.position.x, 0, g.position.z)
+    posRef.current.set(g.position.x, g.position.y, g.position.z)
 
     if (isMoving !== moving.current) {
       moving.current = isMoving
@@ -207,7 +330,7 @@ function Character({ url, height, targetRef, posRef, pendingRef, onArriveRef }: 
   })
 
   return (
-    <group ref={group} position={[posRef.current.x, 0, posRef.current.z]}>
+    <group ref={group} position={[posRef.current.x, posRef.current.y, posRef.current.z]}>
       <group ref={bob}>
         <primitive object={obj} />
       </group>
@@ -215,15 +338,16 @@ function Character({ url, height, targetRef, posRef, pendingRef, onArriveRef }: 
   )
 }
 
-function Marker({ targetRef }: { targetRef: MutableRefObject<THREE.Vector3 | null> }) {
+function Marker({ pathRef }: { pathRef: MutableRefObject<THREE.Vector3[]> }) {
   const ref = useRef<THREE.Mesh>(null)
   useFrame((state) => {
     const m = ref.current
     if (!m) return
-    const t = targetRef.current
+    const p = pathRef.current
+    const t = p.length > 0 ? p[p.length - 1] : null
     m.visible = t !== null
     if (t) {
-      m.position.set(t.x, 0.03, t.z)
+      m.position.set(t.x, t.y + 0.03, t.z)
       const s = 1 + Math.sin(state.clock.elapsedTime * 6) * 0.12
       m.scale.set(s, s, s)
     }
@@ -236,17 +360,20 @@ function Marker({ targetRef }: { targetRef: MutableRefObject<THREE.Vector3 | nul
   )
 }
 
-// The camera glides along with the character, keeping the same angle.
+// The camera glides along with the character (also up the stairs), keeping the same angle.
 function Follow({ posRef, controls }: { posRef: MutableRefObject<THREE.Vector3>; controls: MutableRefObject<any> }) {
   const camera = useThree((s) => s.camera)
   useFrame(() => {
     const c = controls.current
     if (!c) return
     const dx = (posRef.current.x - c.target.x) * 0.08
+    const dy = (posRef.current.y + 1 - c.target.y) * 0.08
     const dz = (posRef.current.z - c.target.z) * 0.08
     c.target.x += dx
+    c.target.y += dy
     c.target.z += dz
     camera.position.x += dx
+    camera.position.y += dy
     camera.position.z += dz
     c.update()
   })
@@ -269,12 +396,12 @@ const tap = (fn: () => void) => (e: ThreeEvent<MouseEvent>) => {
   fn()
 }
 
-function Door({ d, selected, lit, onTap }: { d: PlacedDoor; selected: boolean; lit: boolean; onTap: () => void }) {
+function Door({ d, selected, lit, onTap }: { d: DoorPlaced; selected: boolean; lit: boolean; onTap: () => void }) {
   const tex = useLabel(d.label, selected ? GOLD : CREAM)
   const color = TONE_COLOR[d.tone]
   const intensity = selected ? 0.7 : d.tone === 'taken' ? 0 : lit ? 0.9 : 0.25
   return (
-    <group position={[d.x, d.y, WALL_FRONT]} onClick={tap(onTap)}>
+    <group position={[d.x, d.y, d.frontZ]} onClick={tap(onTap)}>
       <mesh position={[0, 0.6, 0.02]}>
         <boxGeometry args={[0.86, 1.15, 0.06]} />
         <meshStandardMaterial color={selected ? GOLD : FOREST} />
@@ -291,6 +418,51 @@ function Door({ d, selected, lit, onTap }: { d: PlacedDoor; selected: boolean; l
       <mesh position={[0, 0.7, 0.1]}>
         <boxGeometry args={[1.0, 1.45, 0.2]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
+
+// One outside staircase: solid steps that zigzag up, with a landing slab on every floor.
+function Stairs({ t, color, landing }: { t: Tower; color: string; landing: string }) {
+  const flights = Array.from({ length: t.levels }, (_, f) => f)
+  return (
+    <group>
+      {flights.map((f) => {
+        const a = startZ(t, f)
+        const b = endZ(t, f)
+        const depth = Math.abs(b - a) / STEPS + 0.02
+        return Array.from({ length: STEPS }, (_, i) => {
+          const h = ((i + 0.5) * FH) / STEPS + 0.05
+          const z = a + ((b - a) * (i + 0.5)) / STEPS
+          return (
+            <mesh key={`${f}-${i}`} position={[t.x, f * FH + h / 2, z]}>
+              <boxGeometry args={[1.2, h, depth]} />
+              <meshStandardMaterial color={color} />
+            </mesh>
+          )
+        })
+      })}
+      {flights.map((f) => (
+        <mesh key={`l${f}`} position={[t.x, (f + 1) * FH - 0.06, (t.zFar - 0.5 + FRONT + 1) / 2]}>
+          <boxGeometry args={[1.6, 0.12, FRONT + 1 - (t.zFar - 0.5)]} />
+          <meshStandardMaterial color={landing} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function House({ d, body, roof }: { d: DoorPlaced; body: string; roof: string }) {
+  return (
+    <group position={[d.x, 0, d.frontZ - 1]}>
+      <mesh position={[0, 0.75, 0]}>
+        <boxGeometry args={[2.1, 1.5, 2]} />
+        <meshStandardMaterial color={body} />
+      </mesh>
+      <mesh position={[0, 1.9, 0]} rotation={[0, Math.PI / 4, 0]}>
+        <coneGeometry args={[1.75, 0.9, 4]} />
+        <meshStandardMaterial color={roof} />
       </mesh>
     </group>
   )
@@ -351,7 +523,7 @@ function LightPole({ light, night, onTap }: { light: LightState; night: boolean;
   )
 }
 
-// The meeting hall: a small hall with a green roof. Its door faces the plaza.
+// The meeting hall: a small hall with a green roof.
 function Hall({ onTap }: { onTap: () => void }) {
   return (
     <group position={[8, 0, 2]} onClick={tap(onTap)}>
@@ -444,48 +616,77 @@ type Props = {
 
 export default function EbovilleScene({ character, theme, night, light, level, lodgeName, trusted, doors, selectedDoor, onArrive }: Props) {
   const t = themeOf(theme)
-  const targetRef = useRef<THREE.Vector3 | null>(null)
+  const pathRef = useRef<THREE.Vector3[]>([])
   const posRef = useRef(new THREE.Vector3(0, 0, 0.5))
   const pendingRef = useRef<string | null>(null)
+  const busyRef = useRef(false) // true while climbing or going down stairs: new taps wait
+  const stateRef = useRef<Cur>({ b: -1, level: 0 })
   const onArriveRef = useRef(onArrive)
   onArriveRef.current = onArrive
   const controls = useRef<any>(null)
 
-  const layout = useMemo(() => layoutDoors(doors), [doors])
+  const L = useMemo(() => buildLayout(doors), [doors])
+  const estate = L.mode === 'estate'
+
+  const start = (dest: Dest, key: string | null) => {
+    if (busyRef.current) return
+    const { pts, stairs } = buildRoute(stateRef.current, dest, L, posRef.current)
+    stateRef.current = dest.level > 0 ? { b: dest.b, level: dest.level } : { b: estate ? dest.b : -1, level: 0 }
+    pathRef.current = pts
+    pendingRef.current = key
+    busyRef.current = stairs
+  }
 
   const goTo = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    pendingRef.current = null
-    targetRef.current = settle(e.point.clone())
+    const p = settle(e.point.clone(), L)
+    let row = -1
+    if (estate && p.z < -5.2) {
+      let best = 0
+      L.rows.forEach((r, i) => {
+        if (Math.abs(r.street - p.z) < Math.abs(L.rows[best].street - p.z)) best = i
+      })
+      p.z = L.rows[best].street
+      row = best
+    }
+    start({ b: row, level: 0, x: p.x, z: p.z }, null)
   }
-  const goSpot = (key: string, x: number, z: number) => {
-    pendingRef.current = key
-    targetRef.current = new THREE.Vector3(x, 0, z)
+  const goBalcony = (bi: number, lvl: number) => (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    const b = L.blds[bi]
+    const x = Math.min(b.cx + b.width / 2 - 0.5, Math.max(b.cx - b.width / 2 + 0.5, e.point.x))
+    start({ b: bi, level: lvl, x, z: STAND_UP }, null)
   }
-  const goPlace = (k: SpotKey) => goSpot(k, SPOTS[k][0], SPOTS[k][1])
+  const goDoor = (d: DoorPlaced) => start({ b: d.b, level: d.level, x: d.x, z: d.standZ }, 'door:' + d.id)
+  const goPlace = (k: SpotKey) => start({ b: -1, level: 0, x: SPOTS[k][0], z: SPOTS[k][1] }, k)
 
   const sky = night ? '#0b1a14' : '#dff0e6'
   const lamps = night && light === 'on'
+  const lampXs = estate ? [0] : L.blds.slice(0, 2).map((b) => b.cx)
+  const camY = estate ? 6.5 : Math.max(3.8, L.height * 0.45 + 2.5)
+  const camZ = estate ? 11 : 9.5 + L.height * 0.5 + Math.max(0, L.half - 12) * 0.5
+  const farOut = Math.max(16, L.half * 1.2, L.height * 2.2)
 
   return (
-    <Canvas dpr={[1, 1.5]} camera={{ position: [0, 3.8, 9.5], fov: 45 }}>
+    <Canvas dpr={[1, 1.5]} camera={{ position: [0, camY, camZ], fov: 45 }}>
       <color attach="background" args={[sky]} />
-      <fog attach="fog" args={[sky, 20, 44]} />
+      <fog attach="fog" args={[sky, 24, 60]} />
       <hemisphereLight args={night ? ['#8fa8ff', '#1b2a22', 0.45] : ['#ffffff', '#b7c9bd', 1]} />
       <directionalLight position={[6, 10, 6]} intensity={night ? 0.25 : 1.1} color={night ? '#9db4ff' : '#ffffff'} />
 
-      {/* When the light is on at night: warm glow at the pole and along the door wall. */}
+      {/* When the light is on at night: warm glow at the pole and along the doors. */}
       {lamps && (
         <>
           <pointLight position={[-4.5, 3.1, 0.5]} intensity={40} distance={14} decay={2} color="#ffc85a" />
-          <pointLight position={[-3, 2.6, -6.4]} intensity={30} distance={10} decay={2} color="#ffd89a" />
-          <pointLight position={[3, 2.6, -6.4]} intensity={30} distance={10} decay={2} color="#ffd89a" />
+          {lampXs.map((x) => (
+            <pointLight key={x} position={[x, 2.6, -6.4]} intensity={30} distance={10} decay={2} color="#ffd89a" />
+          ))}
         </>
       )}
 
       {/* grass and the plaza, in the lodge theme colour. Tap either to walk. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} onClick={goTo}>
-        <circleGeometry args={[16, 48]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, -(L.rows.length > 1 ? (L.rows.length - 1) * ROW_SP * 0.5 : 0)]} onClick={goTo}>
+        <circleGeometry args={[Math.max(16, L.half + 6, L.rows.length * ROW_SP + 8), 48]} />
         <meshStandardMaterial color="#b9d7a8" />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} onClick={goTo}>
@@ -493,32 +694,70 @@ export default function EbovilleScene({ character, theme, night, light, level, l
         <meshStandardMaterial color={t.plaza} />
       </mesh>
 
-      <Marker targetRef={targetRef} />
+      <Marker pathRef={pathRef} />
 
-      {/* the door wall: one door for every home */}
-      <mesh position={[0, layout.height / 2, WALL_Z]} onClick={goTo}>
-        <boxGeometry args={[layout.width, layout.height, 1]} />
-        <meshStandardMaterial color={t.body} />
-      </mesh>
-      <mesh position={[0, layout.height + 0.1, WALL_Z]}>
-        <boxGeometry args={[layout.width + 0.5, 0.2, 1.4]} />
-        <meshStandardMaterial color={t.ledge} />
-      </mesh>
-      {layout.placed.map((d) => (
-        <Door key={d.id} d={d} selected={d.id === selectedDoor} lit={lamps} onTap={() => goSpot('door:' + d.id, d.x, -6.6)} />
+      {/* buildings with balconies and an outside staircase (block and compound) */}
+      {L.blds.map((b, bi) => (
+        <group key={bi}>
+          <mesh position={[b.cx, b.height / 2, WALL_Z]} onClick={goTo}>
+            <boxGeometry args={[b.width, b.height, 1]} />
+            <meshStandardMaterial color={t.body} />
+          </mesh>
+          <mesh position={[b.cx, b.height + 0.1, WALL_Z]}>
+            <boxGeometry args={[b.width + 0.5, 0.2, 1.4]} />
+            <meshStandardMaterial color={t.ledge} />
+          </mesh>
+          {Array.from({ length: Math.max(0, b.levels - 1) }, (_, i) => i + 1).map((lvl) => {
+            const w = b.width + (b.tx !== null ? 1 : 0.3)
+            const x = b.cx + (b.tx !== null ? 0.5 : 0)
+            return (
+              <group key={lvl}>
+                <mesh position={[x, lvl * FH - 0.06, FRONT + 0.5]} onClick={goBalcony(bi, lvl)}>
+                  <boxGeometry args={[w, 0.12, 1]} />
+                  <meshStandardMaterial color={t.ledge} />
+                </mesh>
+                <mesh position={[x, lvl * FH + 0.2, FRONT + 0.98]}>
+                  <boxGeometry args={[w, 0.4, 0.05]} />
+                  <meshStandardMaterial color={t.edge} />
+                </mesh>
+              </group>
+            )
+          })}
+          {L.blds.length > 1 && (
+            <Html position={[b.cx, b.height + 0.9, WALL_Z]} center distanceFactor={12} style={{ pointerEvents: 'none' }}>
+              <div style={labelStyle}>{b.name}</div>
+            </Html>
+          )}
+          {/* level 5: string lights over the doors */}
+          {level >= 5 &&
+            Array.from({ length: 9 }, (_, i) => {
+              const f = i / 8
+              return (
+                <mesh key={i} position={[b.cx + (f - 0.5) * b.width, 1.9 - Math.sin(f * Math.PI) * 0.18, FRONT + 0.15]}>
+                  <sphereGeometry args={[0.07, 8, 8]} />
+                  <meshStandardMaterial color="#ffe2a0" emissive="#ffc85a" emissiveIntensity={night ? 3 : 0.8} />
+                </mesh>
+              )
+            })}
+        </group>
+      ))}
+      {L.towers.map((tw) => (
+        <Stairs key={tw.b} t={tw} color={t.edge} landing={t.ledge} />
       ))}
 
-      {/* level 5: string lights over the doors */}
-      {level >= 5 &&
-        Array.from({ length: 17 }, (_, i) => {
-          const f = i / 16
-          return (
-            <mesh key={i} position={[(f - 0.5) * layout.width, layout.height - 0.2 - Math.sin(f * Math.PI) * 0.18, WALL_FRONT + 0.15]}>
-              <sphereGeometry args={[0.07, 8, 8]} />
-              <meshStandardMaterial color="#ffe2a0" emissive="#ffc85a" emissiveIntensity={night ? 3 : 0.8} />
-            </mesh>
-          )
-        })}
+      {/* estate: a house and a street for every row of homes */}
+      {estate &&
+        L.rows.map((r, i) => (
+          <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, r.street]} onClick={goTo}>
+            <planeGeometry args={[L.laneX * 2, 2.4]} />
+            <meshStandardMaterial color={t.plaza} />
+          </mesh>
+        ))}
+      {estate && L.doors.map((d) => <House key={'h' + d.id} d={d} body={t.body} roof={t.roof} />)}
+
+      {L.doors.map((d) => (
+        <Door key={d.id} d={d} selected={d.id === selectedDoor} lit={lamps} onTap={() => goDoor(d)} />
+      ))}
 
       <Board onTap={() => goPlace('board')} />
       <LightPole light={light} night={night} onTap={() => goPlace('light')} />
@@ -526,20 +765,24 @@ export default function EbovilleScene({ character, theme, night, light, level, l
       <Gate name={lodgeName} trusted={trusted} level={level} night={night} onTap={() => goPlace('gate')} />
 
       <Suspense fallback={null}>
-        <Character key={character} url={CHARACTERS[character]} height={1.8} targetRef={targetRef} posRef={posRef} pendingRef={pendingRef} onArriveRef={onArriveRef} />
-        <Piece url={BUILDING} height={4.5} position={[-9.5, 0, -4.5]} rotY={0.3} />
-        <Piece url={BUILDING} height={4.5} position={[9.5, 0, -4.5]} rotY={-0.3} />
-        <Piece url={TREES[0]} height={3} position={[-7, 0, 1]} />
-        <Piece url={TREES[1]} height={3.4} position={[7.5, 0, -2]} />
-        <Piece url={TREES[2]} height={2.6} position={[-3.5, 0, -2.5]} />
-        <Piece url={TREES[0]} height={2.8} position={[4, 0, -3]} />
+        <Character key={character} url={CHARACTERS[character]} height={1.8} pathRef={pathRef} posRef={posRef} pendingRef={pendingRef} busyRef={busyRef} onArriveRef={onArriveRef} />
+        <Piece url={BUILDING} height={4.5} position={[-(L.half + 3.5), 0, -4.5]} rotY={0.3} />
+        <Piece url={BUILDING} height={4.5} position={[L.half + 3.5, 0, -4.5]} rotY={-0.3} />
+        {!estate && (
+          <>
+            <Piece url={TREES[0]} height={3} position={[-7, 0, 1]} />
+            <Piece url={TREES[1]} height={3.4} position={[7.5, 0, -2]} />
+            <Piece url={TREES[2]} height={2.6} position={[-3.5, 0, -2.5]} />
+            <Piece url={TREES[0]} height={2.8} position={[4, 0, -3]} />
+          </>
+        )}
         <Piece url={BUSH} height={0.7} position={[-2.2, 0, 2.5]} />
         <Piece url={BUSH} height={0.6} position={[2.6, 0, 2.8]} />
         <Piece url={BENCH} height={0.8} position={[3, 0, 0.8]} rotY={-Math.PI / 2} />
         {level >= 3 && GARDEN.map(([x, z, h]) => <Piece key={`${x}-${z}`} url={BUSH} height={h} position={[x, 0, z]} />)}
       </Suspense>
 
-      <OrbitControls ref={controls} target={[0, 1, 0.5]} enablePan={false} minDistance={4} maxDistance={16} maxPolarAngle={Math.PI / 2.1} />
+      <OrbitControls ref={controls} target={[0, 1, 0.5]} enablePan={false} minDistance={4} maxDistance={farOut} maxPolarAngle={Math.PI / 2.1} />
       <Follow posRef={posRef} controls={controls} />
 
       <Html fullscreen style={{ pointerEvents: 'none' }}>
@@ -556,6 +799,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
           }}
         >
           🟢 To let · 🟡 Yours · 🔵 Neighbour · ⚪ Taken
+          {L.towers.length > 0 ? ' · Tap an upstairs door to climb' : ''}
         </div>
       </Html>
     </Canvas>
