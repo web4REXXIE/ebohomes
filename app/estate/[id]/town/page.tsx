@@ -4,11 +4,13 @@ import { Component, useCallback, useEffect, useState, type ReactNode } from 'rea
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Loader2, X } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
+import { LightDeyCard } from '@/components/light-dey-card'
 import { supabase } from '@/lib/supabase'
 import { isValidListingId } from '@/lib/listing-id'
+import { timeAgo, type LightState } from '@/lib/light-status'
 
 const EbovilleScene = dynamic(() => import('@/components/eboville-scene'), {
   ssr: false,
@@ -36,6 +38,9 @@ class SceneGuard extends Component<{ children: ReactNode }, { failed: boolean }>
   }
 }
 
+type BoardPost = { id: string; kind: string; title: string; author: string; created_at: string }
+const KIND: Record<string, string> = { notice: 'Notice', poll: 'Poll', meeting: 'Meeting' }
+
 const btnP =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
 const btnS =
@@ -49,6 +54,13 @@ export default function TownPage() {
   const [theme, setTheme] = useState<string | null>(null)
   const [webgl, setWebgl] = useState<boolean | null>(null)
   const [character, setCharacter] = useState<'woman' | 'man'>('woman')
+  const [night, setNight] = useState(false)
+  const [light, setLight] = useState<LightState>('unknown')
+  const [resident, setResident] = useState(false)
+  const [panel, setPanel] = useState<'board' | 'light' | null>(null)
+  const [boardRole, setBoardRole] = useState<string | null>(null)
+  const [posts, setPosts] = useState<BoardPost[]>([])
+  const [boardLoading, setBoardLoading] = useState(false)
 
   const load = useCallback(async () => {
     if (!isValidListingId(estateId)) {
@@ -64,11 +76,18 @@ export default function TownPage() {
     setName(e.name)
     setTheme(e.theme ?? null)
     setState('ok')
+
+    // Do I live here? Only residents can report the light. If this fails, the page still works.
+    const rv = await supabase.rpc('estate_resident_view', { p_estate: estateId })
+    const view = rv.error ? null : (rv.data as { resident?: boolean } | null)
+    setResident(view?.resident === true)
   }, [estateId])
 
   useEffect(() => { void load() }, [load])
 
   useEffect(() => {
+    const h = new Date().getHours()
+    setNight(h >= 18 || h < 6)
     try {
       const c = document.createElement('canvas')
       setWebgl(!!(c.getContext('webgl2') || c.getContext('webgl')))
@@ -76,6 +95,32 @@ export default function TownPage() {
       setWebgl(false)
     }
   }, [])
+
+  const loadBoard = useCallback(async () => {
+    if (!isValidListingId(estateId)) return
+    setBoardLoading(true)
+    const { data, error } = await supabase.rpc('lodge_board', { p_estate: estateId })
+    setBoardLoading(false)
+    if (error) {
+      setBoardRole(null)
+      setPosts([])
+      return
+    }
+    const r = data as { role: string | null; posts: BoardPost[] } | null
+    setBoardRole(r?.role ?? null)
+    setPosts((r?.posts ?? []).slice(0, 3))
+  }, [estateId])
+
+  // Called when the character reaches the board or the light pole.
+  const onArrive = useCallback(
+    (spot: 'board' | 'light') => {
+      setPanel(spot)
+      if (spot === 'board') void loadBoard()
+    },
+    [loadBoard],
+  )
+
+  const lightWord = light === 'on' ? 'Light dey' : light === 'off' ? 'No light' : 'No update yet'
 
   let body: ReactNode
   if (state === 'loading') {
@@ -97,7 +142,7 @@ export default function TownPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">EboVille</p>
           <h1 className="text-2xl font-bold text-foreground">{name}</h1>
-          <p className="text-sm text-muted-foreground">Your lodge, as a little town. Drag to look around. Pinch to zoom.</p>
+          <p className="text-sm text-muted-foreground">Tap the ground to walk. Walk to the Lodge board or the light pole.</p>
         </div>
 
         {webgl === false ? (
@@ -106,15 +151,18 @@ export default function TownPage() {
           <div className="overflow-hidden rounded-xl border border-border" style={{ height: 480, touchAction: 'none' }}>
             {webgl && (
               <SceneGuard>
-                <EbovilleScene character={character} theme={theme} />
+                <EbovilleScene character={character} theme={theme} night={night} light={light} onArrive={onArrive} />
               </SceneGuard>
             )}
           </div>
         )}
 
-        <div className="flex gap-2">
+        <p className="text-sm text-foreground"><span className="font-semibold">Light:</span> {lightWord}</p>
+
+        <div className="flex flex-wrap gap-2">
           <button type="button" className={character === 'woman' ? btnP : btnS} onClick={() => setCharacter('woman')}>Her</button>
           <button type="button" className={character === 'man' ? btnP : btnS} onClick={() => setCharacter('man')}>Him</button>
+          <button type="button" className={btnS} onClick={() => setNight((n) => !n)}>{night ? '☀️ Day' : '🌙 Night'}</button>
         </div>
       </div>
     )
@@ -132,6 +180,53 @@ export default function TownPage() {
         </div>
       </main>
       <Footer />
+
+      {/* The light card stays mounted, hidden, so the glow in the scene always knows the light status. */}
+      {estateId && (
+        <div className={panel === 'light' ? 'fixed inset-0 z-50 flex items-end justify-center sm:items-center' : 'hidden'} role={panel === 'light' ? 'dialog' : undefined} aria-modal={panel === 'light' ? true : undefined} aria-label="Light dey?">
+          <button type="button" aria-label="Close" className="absolute inset-0 bg-black/50" onClick={() => setPanel(null)} />
+          <div className="relative w-full max-w-md space-y-3 rounded-t-2xl border border-border bg-card p-5 pb-8 shadow-2xl sm:rounded-2xl sm:pb-5">
+            <button type="button" aria-label="Close" onClick={() => setPanel(null)} className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary">
+              <X size={20} aria-hidden />
+            </button>
+            <LightDeyCard estateId={estateId} isResident={resident} onStatus={setLight} />
+          </div>
+        </div>
+      )}
+
+      {panel === 'board' && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label="Lodge board">
+          <button type="button" aria-label="Close" className="absolute inset-0 bg-black/50" onClick={() => setPanel(null)} />
+          <div className="relative w-full max-w-md space-y-3 rounded-t-2xl border border-border bg-card p-5 pb-8 shadow-2xl sm:rounded-2xl sm:pb-5">
+            <button type="button" aria-label="Close" onClick={() => setPanel(null)} className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary">
+              <X size={20} aria-hidden />
+            </button>
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">Lodge board</p>
+            <h3 className="pr-10 text-xl font-bold text-foreground">What is happening here</h3>
+
+            {boardLoading ? (
+              <div className="flex justify-center py-6" role="status" aria-label="Loading"><Loader2 className="animate-spin text-primary" size={22} aria-hidden /></div>
+            ) : !boardRole ? (
+              <p className="text-sm text-muted-foreground">The board is for the people who live here and the owner. Log in with your home account to see it.</p>
+            ) : posts.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">Nobody don post anything yet. Be the first.</p>
+            ) : (
+              <ul className="space-y-2">
+                {posts.map((p) => (
+                  <li key={p.id} className="rounded-xl border border-border p-3">
+                    <p className="text-xs text-muted-foreground">{KIND[p.kind] ?? 'Post'} · {p.author} · {timeAgo(p.created_at)}</p>
+                    <p className="text-sm font-semibold text-foreground">{p.title}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {boardRole && (
+              <Link href={`/estate/${estateId}/board`} className={`${btnP} w-full`}>Open the Lodge board <ArrowRight size={15} aria-hidden /></Link>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
