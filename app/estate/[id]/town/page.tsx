@@ -176,7 +176,7 @@ export default function TownPage() {
   }, [units])
   const shownUnits = useMemo(() => sortedUnits.slice(0, MAX_DOORS), [sortedUnits])
   const doors: DoorUnit[] = useMemo(
-    () => shownUnits.map((u) => ({ id: u.id, label: u.unit_label, floor: u.floor_no, tone: toneOf(u) })),
+    () => shownUnits.map((u) => ({ id: u.id, label: u.unit_label, floor: u.floor_no, tone: toneOf(u), building: u.group_label })),
     [shownUnits, toneOf],
   )
 
@@ -331,8 +331,8 @@ export default function TownPage() {
           </div>
         )}
 
-        {sortedUnits.length > MAX_DOORS && view === 'town' && (
-          <p className="text-xs text-muted-foreground">The door wall shows the first {MAX_DOORS} homes. See the building page for all of them.</p>
+        {sortedUnits.length > (hasFloors ? MAX_DOORS : 25) && view === 'town' && (
+          <p className="text-xs text-muted-foreground">The town shows the first {hasFloors ? MAX_DOORS : 25} homes. See the building page for all of them.</p>
         )}
 
         <div className="flex flex-wrap gap-2">
