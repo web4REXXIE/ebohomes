@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, type CSSProperties, type MutableRefObject } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type PointerEvent as RPointerEvent } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html, OrbitControls, useAnimations, useGLTF } from '@react-three/drei'
@@ -49,12 +49,13 @@ const FOREST = '#0A2E1A'
 const CREAM = '#FAF7F2'
 const TONE_COLOR: Record<DoorTone, string> = { to_let: GREEN, mine: GOLD, neighbour: BLUE, taken: GREY }
 
-type SpotKey = 'board' | 'light' | 'hall' | 'gate'
+type SpotKey = 'board' | 'light' | 'hall' | 'gate' | 'bench'
 const SPOTS: Record<SpotKey, [number, number]> = {
   board: [0, -2.4],
   light: [-3.4, 0.9],
   hall: [6.2, 1.8],
   gate: [-6.2, 3.8],
+  bench: [3, 0.8],
 }
 
 type Obstacle = { x: number; z: number; r: number }
@@ -254,10 +255,11 @@ type Shared = {
   posRef: MutableRefObject<THREE.Vector3>
   pendingRef: MutableRefObject<string | null>
   busyRef: MutableRefObject<boolean>
+  sitRef: MutableRefObject<boolean>
   onArriveRef: MutableRefObject<(key: string) => void>
 }
 
-function Character({ url, height, pathRef, posRef, pendingRef, busyRef, onArriveRef }: Shared & { url: string; height: number }) {
+function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, onArriveRef }: Shared & { url: string; height: number }) {
   const group = useRef<THREE.Group>(null)
   const bob = useRef<THREE.Group>(null)
   const { scene, animations } = useGLTF(url)
@@ -267,6 +269,7 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, onArrive
   const moving = useRef(false)
 
   const idleName = names.find((n) => /idle/i.test(n)) ?? null
+  const sitName = names.find((n) => /sit/i.test(n)) ?? null
   const walkName = names.find((n) => /walk/i.test(n)) ?? names.find((n) => /run/i.test(n)) ?? null
 
   const play = useCallback(
@@ -291,6 +294,17 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, onArrive
     const path = pathRef.current
     const t = path[0]
     let isMoving = false
+    if (sitRef.current && !t) {
+      // Sitting on the bench: lower onto the seat, face the plaza, play the sitting pose.
+      g.position.y += (0.32 - g.position.y) * Math.min(1, dt * 8)
+      let dd = -Math.PI / 2 - g.rotation.y
+      dd = Math.atan2(Math.sin(dd), Math.cos(dd))
+      g.rotation.y += dd * Math.min(1, dt * 8)
+      posRef.current.set(g.position.x, g.position.y, g.position.z)
+      play(sitName ?? idleName ?? names[0] ?? null)
+      moving.current = false
+      return
+    }
     if (t) {
       const dx = t.x - g.position.x
       const dz = t.z - g.position.z
@@ -390,6 +404,9 @@ const labelStyle: CSSProperties = {
   whiteSpace: 'nowrap',
   pointerEvents: 'none',
 }
+
+const padBtn: CSSProperties = { borderRadius: 12, border: '1px solid rgba(10,46,26,0.25)', background: 'rgba(250,247,242,0.92)', color: FOREST, fontSize: 18, fontWeight: 700 }
+const chipBtn: CSSProperties = { minHeight: 40, borderRadius: 999, border: '1px solid rgba(10,46,26,0.25)', background: 'rgba(250,247,242,0.95)', color: FOREST, fontSize: 12, fontWeight: 700, padding: '0 12px' }
 
 const tap = (fn: () => void) => (e: ThreeEvent<MouseEvent>) => {
   e.stopPropagation()
@@ -621,8 +638,15 @@ export default function EbovilleScene({ character, theme, night, light, level, l
   const pendingRef = useRef<string | null>(null)
   const busyRef = useRef(false) // true while climbing or going down stairs: new taps wait
   const stateRef = useRef<Cur>({ b: -1, level: 0 })
-  const onArriveRef = useRef(onArrive)
-  onArriveRef.current = onArrive
+  const sitRef = useRef(false)
+  const [sitting, setSitting] = useState(false)
+  const onArriveRef = useRef<(key: string) => void>(onArrive)
+  onArriveRef.current = (key: string) => {
+    if (key === 'bench') {
+      sitRef.current = true
+      setSitting(true)
+    } else onArrive(key)
+  }
   const controls = useRef<any>(null)
 
   const L = useMemo(() => buildLayout(doors), [doors])
@@ -630,6 +654,8 @@ export default function EbovilleScene({ character, theme, night, light, level, l
 
   const start = (dest: Dest, key: string | null) => {
     if (busyRef.current) return
+    sitRef.current = false
+    setSitting(false)
     const { pts, stairs } = buildRoute(stateRef.current, dest, L, posRef.current)
     stateRef.current = dest.level > 0 ? { b: dest.b, level: dest.level } : { b: estate ? dest.b : -1, level: 0 }
     pathRef.current = pts
@@ -639,7 +665,10 @@ export default function EbovilleScene({ character, theme, night, light, level, l
 
   const goTo = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    const p = settle(e.point.clone(), L)
+    walkToPoint(e.point.clone())
+  }
+  const walkToPoint = (raw: THREE.Vector3) => {
+    const p = settle(raw, L)
     let row = -1
     if (estate && p.z < -5.2) {
       let best = 0
@@ -660,15 +689,73 @@ export default function EbovilleScene({ character, theme, night, light, level, l
   const goDoor = (d: DoorPlaced) => start({ b: d.b, level: d.level, x: d.x, z: d.standZ }, 'door:' + d.id)
   const goPlace = (k: SpotKey) => start({ b: -1, level: 0, x: SPOTS[k][0], z: SPOTS[k][1] }, k)
 
+  // Arrow pad: walk a short step in the direction the camera is looking (up = forward). Only on the ground.
+  const nudge = (fwd: number, side: number) => {
+    const c = controls.current
+    if (!c || busyRef.current || stateRef.current.level > 0) return
+    const f = new THREE.Vector3().subVectors(c.target, c.object.position)
+    f.y = 0
+    if (f.lengthSq() < 0.0001) return
+    f.normalize()
+    const r = new THREE.Vector3(-f.z, 0, f.x)
+    const p = posRef.current.clone()
+    p.y = 0
+    p.addScaledVector(f, fwd * 1.4).addScaledVector(r, side * 1.4)
+    sitRef.current = false
+    setSitting(false)
+    walkToPoint(p)
+  }
+  const holdRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const holdStart = (fwd: number, side: number) => (e: RPointerEvent) => {
+    e.stopPropagation()
+    nudge(fwd, side)
+    if (holdRef.current) clearInterval(holdRef.current)
+    holdRef.current = setInterval(() => nudge(fwd, side), 220)
+  }
+  const holdStop = () => {
+    if (holdRef.current) clearInterval(holdRef.current)
+    holdRef.current = null
+  }
+  useEffect(() => holdStop, [])
+
+  // Up or down one floor using the outside staircase.
+  const floor = (dir: 1 | -1) => {
+    if (busyRef.current || L.towers.length === 0) return
+    const cur = stateRef.current
+    let bi = cur.level > 0 ? cur.b : -1
+    if (bi < 0) {
+      let best = L.towers[0].b
+      for (const tw of L.towers) if (Math.abs(L.blds[tw.b].cx - posRef.current.x) < Math.abs(L.blds[best].cx - posRef.current.x)) best = tw.b
+      bi = best
+    }
+    const b = L.blds[bi]
+    const next = Math.max(0, Math.min(b.levels - 1, cur.level + dir))
+    if (next === cur.level) return
+    const x = Math.min(b.cx + b.width / 2 - 0.5, Math.max(b.cx - b.width / 2 + 0.5, posRef.current.x))
+    start({ b: bi, level: next, x, z: next === 0 ? STAND_G : STAND_UP }, null)
+  }
+  const standUp = () => {
+    sitRef.current = false
+    setSitting(false)
+  }
+  const zoomMe = (dist: number) => {
+    const c = controls.current
+    if (!c) return
+    const dir = new THREE.Vector3().subVectors(c.object.position, c.target).normalize()
+    c.target.set(posRef.current.x, posRef.current.y + 1, posRef.current.z)
+    c.object.position.copy(c.target).addScaledVector(dir, dist)
+    c.update()
+  }
+
   const sky = night ? '#0b1a14' : '#dff0e6'
   const lamps = night && light === 'on'
   const lampXs = estate ? [0] : L.blds.slice(0, 2).map((b) => b.cx)
-  const camY = estate ? 6.5 : Math.max(3.8, L.height * 0.45 + 2.5)
-  const camZ = estate ? 11 : 9.5 + L.height * 0.5 + Math.max(0, L.half - 12) * 0.5
+  const camY = 3.4
+  const camZ = 7.6
   const farOut = Math.max(16, L.half * 1.2, L.height * 2.2)
 
   return (
-    <Canvas dpr={[1, 1.5]} camera={{ position: [0, camY, camZ], fov: 45 }}>
+    <Canvas dpr={[1, 1.5]} camera={{ position: [0, camY, camZ], fov: 50 }}>
       <color attach="background" args={[sky]} />
       <fog attach="fog" args={[sky, 24, 60]} />
       <hemisphereLight args={night ? ['#8fa8ff', '#1b2a22', 0.45] : ['#ffffff', '#b7c9bd', 1]} />
@@ -765,7 +852,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
       <Gate name={lodgeName} trusted={trusted} level={level} night={night} onTap={() => goPlace('gate')} />
 
       <Suspense fallback={null}>
-        <Character key={character} url={CHARACTERS[character]} height={1.8} pathRef={pathRef} posRef={posRef} pendingRef={pendingRef} busyRef={busyRef} onArriveRef={onArriveRef} />
+        <Character key={character} url={CHARACTERS[character]} height={2.0} pathRef={pathRef} posRef={posRef} pendingRef={pendingRef} busyRef={busyRef} sitRef={sitRef} onArriveRef={onArriveRef} />
         <Piece url={BUILDING} height={4.5} position={[-(L.half + 3.5), 0, -4.5]} rotY={0.3} />
         <Piece url={BUILDING} height={4.5} position={[L.half + 3.5, 0, -4.5]} rotY={-0.3} />
         {!estate && (
@@ -778,28 +865,41 @@ export default function EbovilleScene({ character, theme, night, light, level, l
         )}
         <Piece url={BUSH} height={0.7} position={[-2.2, 0, 2.5]} />
         <Piece url={BUSH} height={0.6} position={[2.6, 0, 2.8]} />
-        <Piece url={BENCH} height={0.8} position={[3, 0, 0.8]} rotY={-Math.PI / 2} />
+        <group onClick={tap(() => goPlace('bench'))}>
+          <Piece url={BENCH} height={0.8} position={[3, 0, 0.8]} rotY={-Math.PI / 2} />
+          <mesh position={[3, 0.45, 0.8]}>
+            <boxGeometry args={[1.2, 0.9, 2.2]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+        </group>
         {level >= 3 && GARDEN.map(([x, z, h]) => <Piece key={`${x}-${z}`} url={BUSH} height={h} position={[x, 0, z]} />)}
       </Suspense>
 
-      <OrbitControls ref={controls} target={[0, 1, 0.5]} enablePan={false} minDistance={4} maxDistance={farOut} maxPolarAngle={Math.PI / 2.1} />
+      <OrbitControls ref={controls} target={[0, 1, 0.5]} enablePan={false} minDistance={2.5} maxDistance={farOut} maxPolarAngle={Math.PI / 2.1} />
       <Follow posRef={posRef} controls={controls} />
 
       <Html fullscreen style={{ pointerEvents: 'none' }}>
-        <div
-          style={{
-            position: 'absolute',
-            left: 8,
-            bottom: 8,
-            fontSize: 11,
-            color: night ? '#e6f0ea' : FOREST,
-            background: night ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)',
-            borderRadius: 8,
-            padding: '4px 8px',
-          }}
-        >
+        <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 46px)', gridAutoRows: '46px', gap: 4, pointerEvents: 'auto', touchAction: 'none' }}>
+          <span />
+          <button type="button" aria-label="Walk forward" style={padBtn} onPointerDown={holdStart(1, 0)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▲</button>
+          <span />
+          <button type="button" aria-label="Walk left" style={padBtn} onPointerDown={holdStart(0, -1)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>◀</button>
+          <button type="button" aria-label="Walk back" style={padBtn} onPointerDown={holdStart(-1, 0)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▼</button>
+          <button type="button" aria-label="Walk right" style={padBtn} onPointerDown={holdStart(0, 1)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▶</button>
+        </div>
+        <div style={{ position: 'absolute', left: 8, bottom: 8, display: 'flex', flexDirection: 'column', gap: 6, pointerEvents: 'auto' }}>
+          {L.towers.length > 0 && (
+            <>
+              <button type="button" style={chipBtn} onClick={() => floor(1)}>⬆ Up a floor</button>
+              <button type="button" style={chipBtn} onClick={() => floor(-1)}>⬇ Down a floor</button>
+            </>
+          )}
+          {sitting && <button type="button" style={chipBtn} onClick={standUp}>🧍 Stand up</button>}
+          <button type="button" style={chipBtn} onClick={() => zoomMe(5)}>🔍 Zoom to me</button>
+          <button type="button" style={chipBtn} onClick={() => zoomMe(Math.max(16, L.half * 1.2, L.height * 2.2))}>🏘️ See all</button>
+        </div>
+        <div style={{ position: 'absolute', left: 8, top: 8, fontSize: 11, color: night ? '#e6f0ea' : FOREST, background: night ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '4px 8px', pointerEvents: 'none' }}>
           🟢 To let · 🟡 Yours · 🔵 Neighbour · ⚪ Taken
-          {L.towers.length > 0 ? ' · Tap an upstairs door to climb' : ''}
         </div>
       </Html>
     </Canvas>
