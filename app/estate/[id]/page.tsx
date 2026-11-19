@@ -220,6 +220,18 @@ export default function EstatePage() {
 
         <LightDeyCard estateId={estate.id} isResident={resident} />
 
+        <Link
+          href={`/estate/${estate.id}/town`}
+          className="focus-ring flex min-h-14 items-center gap-3 rounded-xl bg-primary p-4 text-primary-foreground shadow-sm transition active:scale-[0.99]"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl" aria-hidden>🏘️</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-bold">Enter EboVille</span>
+            <span className="block text-xs opacity-90">Walk around {estate.name}, meet neighbours, open the board and your room.</span>
+          </span>
+          <ArrowRight size={18} className="shrink-0" aria-hidden />
+        </Link>
+
         {landlord && (
           <Link
             href={`/landlord/${landlord.id}`}
