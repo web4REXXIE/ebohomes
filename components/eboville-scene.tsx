@@ -167,6 +167,21 @@ function buildRoute(cur: Cur, dest: Dest, L: Layout, pos: THREE.Vector3): { pts:
   }
 
   let lvl = cur.level
+  // Between two floors of the same building: go straight up or down the stairs, never via the ground.
+  if (lvl > 0 && dest.level > 0 && dest.b === cur.b && dest.level !== lvl) {
+    const t = L.towers.find((x) => x.b === cur.b)
+    if (t) {
+      if (dest.level > lvl) {
+        pts.push(V(t.x, lvl * FH, startZ(t, lvl)))
+        for (let f = lvl; f < dest.level; f++) pts.push(V(t.x, (f + 1) * FH, endZ(t, f)))
+      } else {
+        pts.push(V(t.x, lvl * FH, endZ(t, lvl - 1)))
+        for (let f = lvl - 1; f >= dest.level; f--) pts.push(V(t.x, f * FH, startZ(t, f)))
+      }
+      pts.push(V(dest.x, dest.level * FH, dest.z))
+      return { pts, stairs: true }
+    }
+  }
   const same = dest.level === lvl && (lvl === 0 || dest.b === cur.b)
   if (!same && lvl > 0) {
     const t = L.towers.find((x) => x.b === cur.b)
@@ -257,9 +272,16 @@ type Shared = {
   busyRef: MutableRefObject<boolean>
   sitRef: MutableRefObject<boolean>
   onArriveRef: MutableRefObject<(key: string) => void>
+  joyRef: MutableRefObject<{ x: number; y: number }>
+  joyMoveRef: MutableRefObject<(p: THREE.Vector3, dx: number, dz: number, m: number, dt: number) => void>
+  joyBusyRef: MutableRefObject<() => void>
+  flushRef: MutableRefObject<(p: THREE.Vector3) => void>
+  onStandRef: MutableRefObject<() => void>
 }
 
-function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, onArriveRef }: Shared & { url: string; height: number }) {
+function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, onArriveRef, joyRef, joyMoveRef, joyBusyRef, flushRef, onStandRef }: Shared & { url: string; height: number }) {
+  const camera = useThree((st) => st.camera)
+  const fw = useMemo(() => new THREE.Vector3(), [])
   const group = useRef<THREE.Group>(null)
   const bob = useRef<THREE.Group>(null)
   const { scene, animations } = useGLTF(url)
@@ -291,6 +313,42 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
   useFrame((state, dt) => {
     const g = group.current
     if (!g) return
+    const j = joyRef.current
+    const jm = Math.hypot(j.x, j.y)
+    if (jm > 0.12) {
+      if (busyRef.current) {
+        // On the stairs: finish the current flight, then the joystick takes over.
+        joyBusyRef.current()
+      } else {
+        if (sitRef.current) onStandRef.current()
+        pathRef.current.length = 0
+        pendingRef.current = null
+        camera.getWorldDirection(fw)
+        fw.y = 0
+        if (fw.lengthSq() > 0.0001) {
+          fw.normalize()
+          let dx = fw.x * -j.y + -fw.z * j.x
+          let dz = fw.z * -j.y + fw.x * j.x
+          const len = Math.hypot(dx, dz)
+          if (len > 0.0001) {
+            dx /= len
+            dz /= len
+            const m = Math.min(1, jm)
+            joyMoveRef.current(g.position, dx, dz, m, dt)
+            let diff = Math.atan2(dx, dz) - g.rotation.y
+            diff = Math.atan2(Math.sin(diff), Math.cos(diff))
+            g.rotation.y += diff * Math.min(1, dt * 12)
+            posRef.current.copy(g.position)
+            if (!moving.current) {
+              moving.current = true
+              play(walkName ?? idleName)
+            }
+            if (bob.current) bob.current.position.y = !walkName ? Math.abs(Math.sin(state.clock.elapsedTime * 10)) * 0.07 : 0
+            return
+          }
+        }
+      }
+    }
     const path = pathRef.current
     const t = path[0]
     let isMoving = false
@@ -312,7 +370,9 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
       if (dist < 0.08) {
         g.position.y = t.y
         path.shift()
-        if (path.length === 0) {
+        // A new command that waited for a landing starts here.
+        flushRef.current(g.position)
+        if (pathRef.current.length === 0) {
           busyRef.current = false
           // Arrived at a door, the board, the pole, the hall or the gate: tell the page to open it.
           const key = pendingRef.current
@@ -385,10 +445,18 @@ function Marker({ pathRef }: { pathRef: MutableRefObject<THREE.Vector3[]> }) {
 // The camera glides along with the character (also up the stairs), keeping the same angle.
 function Follow({ posRef, controls }: { posRef: MutableRefObject<THREE.Vector3>; controls: MutableRefObject<any> }) {
   const camera = useThree((st) => st.camera)
+  const first = useRef(true)
   useFrame((_, dt) => {
     const c = controls.current
     if (!c) return
-    const k = 1 - Math.exp(-Math.min(dt, 0.1) * 9)
+    if (first.current) {
+      first.current = false
+      c.target.set(posRef.current.x, posRef.current.y + 1, posRef.current.z)
+      camera.position.set(posRef.current.x, posRef.current.y + 3.2, posRef.current.z + 7)
+      c.update()
+      return
+    }
+    const k = 1 - Math.exp(-Math.min(dt, 0.1) * 16)
     const dx = (posRef.current.x - c.target.x) * k
     const dy = (posRef.current.y + 1 - c.target.y) * k
     const dz = (posRef.current.z - c.target.z) * k
@@ -414,8 +482,54 @@ const labelStyle: CSSProperties = {
   pointerEvents: 'none',
 }
 
-const padBtn: CSSProperties = { touchAction: 'none', borderRadius: 14, border: '1px solid rgba(10,46,26,0.25)', background: 'rgba(250,247,242,0.92)', color: FOREST, fontSize: 18, fontWeight: 700 }
 const chipBtn: CSSProperties = { minHeight: 40, borderRadius: 999, border: '1px solid rgba(10,46,26,0.25)', background: 'rgba(250,247,242,0.95)', color: FOREST, fontSize: 12, fontWeight: 700, padding: '0 12px' }
+
+// Round joystick: drag the knob any way to walk that way, release to stop.
+function Joystick({ joyRef }: { joyRef: MutableRefObject<{ x: number; y: number }> }) {
+  const base = useRef<HTMLDivElement>(null)
+  const knob = useRef<HTMLDivElement>(null)
+  const id = useRef<number | null>(null)
+  const R = 40
+  const move = (e: RPointerEvent) => {
+    const b = base.current
+    if (!b) return
+    const r = b.getBoundingClientRect()
+    let dx = e.clientX - (r.left + r.width / 2)
+    let dy = e.clientY - (r.top + r.height / 2)
+    const len = Math.hypot(dx, dy)
+    if (len > R) {
+      dx = (dx / len) * R
+      dy = (dy / len) * R
+    }
+    joyRef.current = { x: dx / R, y: dy / R }
+    if (knob.current) knob.current.style.transform = `translate(${dx}px, ${dy}px)`
+  }
+  const end = () => {
+    id.current = null
+    joyRef.current = { x: 0, y: 0 }
+    if (knob.current) knob.current.style.transform = 'translate(0px, 0px)'
+  }
+  return (
+    <div
+      ref={base}
+      aria-label="Walking joystick"
+      style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 20, width: 120, height: 120, borderRadius: '50%', background: 'rgba(250,247,242,0.6)', border: '2px solid rgba(10,46,26,0.3)', touchAction: 'none', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onPointerDown={(e) => {
+        e.stopPropagation()
+        id.current = e.pointerId
+        e.currentTarget.setPointerCapture(e.pointerId)
+        move(e)
+      }}
+      onPointerMove={(e) => {
+        if (id.current === e.pointerId) move(e)
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+    >
+      <div ref={knob} style={{ width: 52, height: 52, borderRadius: '50%', background: FOREST, opacity: 0.9, pointerEvents: 'none' }} />
+    </div>
+  )
+}
 
 const tap = (fn: () => void) => (e: ThreeEvent<MouseEvent>) => {
   e.stopPropagation()
@@ -661,8 +775,9 @@ export default function EbovilleScene({ character, theme, night, light, level, l
   const L = useMemo(() => buildLayout(doors), [doors])
   const estate = L.mode === 'estate'
 
-  const start = (dest: Dest, key: string | null) => {
-    if (busyRef.current) return
+  const queuedRef = useRef<(() => void) | null>(null)
+  const joyRef = useRef({ x: 0, y: 0 })
+  const startNow = (dest: Dest, key: string | null) => {
     sitRef.current = false
     setSitting(false)
     const { pts, stairs } = buildRoute(stateRef.current, dest, L, posRef.current)
@@ -670,6 +785,67 @@ export default function EbovilleScene({ character, theme, night, light, level, l
     pathRef.current = pts
     pendingRef.current = key
     busyRef.current = stairs
+  }
+  // On the stairs a new command waits for the next landing (at most one flight), then starts from there.
+  const start = (dest: Dest, key: string | null) => {
+    if (busyRef.current) {
+      queuedRef.current = () => startNow(dest, key)
+      return
+    }
+    queuedRef.current = null
+    startNow(dest, key)
+  }
+  const flushRef = useRef<(p: THREE.Vector3) => void>(() => {})
+  flushRef.current = (p: THREE.Vector3) => {
+    const q = queuedRef.current
+    if (!q) return
+    queuedRef.current = null
+    if (p.y > 0.05 && L.towers.length > 0) {
+      let best = L.towers[0]
+      for (const tw of L.towers) if (Math.abs(tw.x - p.x) < Math.abs(best.x - p.x)) best = tw
+      stateRef.current = { b: best.b, level: Math.max(1, Math.round(p.y / FH)) }
+    } else stateRef.current = { b: -1, level: 0 }
+    busyRef.current = false
+    q()
+  }
+  const joyBusyRef = useRef<() => void>(() => {})
+  joyBusyRef.current = () => {
+    if (queuedRef.current) return
+    queuedRef.current = () => {
+      pathRef.current = []
+      pendingRef.current = null
+    }
+  }
+  const joyMoveRef = useRef<(p: THREE.Vector3, dx: number, dz: number, m: number, dt: number) => void>(() => {})
+  joyMoveRef.current = (p, dx, dz, m, dt) => {
+    const sp = WALK_SPEED * 1.3 * m * dt
+    const cur = stateRef.current
+    if (cur.level > 0 && cur.b >= 0 && L.blds[cur.b]) {
+      // On a balcony: slide along it.
+      const b = L.blds[cur.b]
+      p.x = Math.min(b.cx + b.width / 2 - 0.5, Math.max(b.cx - b.width / 2 + 0.5, p.x + dx * sp))
+      p.z = STAND_UP
+      p.y = cur.level * FH
+      return
+    }
+    const q = settle(V(p.x + dx * sp, 0, p.z + dz * sp), L)
+    p.x = q.x
+    p.z = q.z
+    p.y = 0
+    let row = -1
+    if (estate && p.z < -5.2) {
+      let best = 0
+      L.rows.forEach((r, i) => {
+        if (Math.abs(r.street - p.z) < Math.abs(L.rows[best].street - p.z)) best = i
+      })
+      row = best
+    }
+    stateRef.current = { b: row, level: 0 }
+  }
+  const onStandRef = useRef<() => void>(() => {})
+  onStandRef.current = () => {
+    sitRef.current = false
+    setSitting(false)
   }
 
   const goTo = (e: ThreeEvent<MouseEvent>) => {
@@ -698,38 +874,9 @@ export default function EbovilleScene({ character, theme, night, light, level, l
   const goDoor = (d: DoorPlaced) => start({ b: d.b, level: d.level, x: d.x, z: d.standZ }, 'door:' + d.id)
   const goPlace = (k: SpotKey) => start({ b: -1, level: 0, x: SPOTS[k][0], z: SPOTS[k][1] }, k)
 
-  // Arrow pad: walk a short step in the direction the camera is looking (up = forward). Only on the ground.
-  const nudge = (fwd: number, side: number) => {
-    const c = controls.current
-    if (!c || busyRef.current || stateRef.current.level > 0) return
-    const f = new THREE.Vector3().subVectors(c.target, c.object.position)
-    f.y = 0
-    if (f.lengthSq() < 0.0001) return
-    f.normalize()
-    const r = new THREE.Vector3(-f.z, 0, f.x)
-    const p = posRef.current.clone()
-    p.y = 0
-    p.addScaledVector(f, fwd * 1.4).addScaledVector(r, side * 1.4)
-    sitRef.current = false
-    setSitting(false)
-    walkToPoint(p)
-  }
-  const holdRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const holdStart = (fwd: number, side: number) => (e: RPointerEvent) => {
-    e.stopPropagation()
-    nudge(fwd, side)
-    if (holdRef.current) clearInterval(holdRef.current)
-    holdRef.current = setInterval(() => nudge(fwd, side), 220)
-  }
-  const holdStop = () => {
-    if (holdRef.current) clearInterval(holdRef.current)
-    holdRef.current = null
-  }
-  useEffect(() => holdStop, [])
-
   // Up or down one floor using the outside staircase.
   const floor = (dir: 1 | -1) => {
-    if (busyRef.current || L.towers.length === 0) return
+    if (L.towers.length === 0) return
     const cur = stateRef.current
     let bi = cur.level > 0 ? cur.b : -1
     if (bi < 0) {
@@ -764,7 +911,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
   const farOut = Math.max(16, L.half * 1.2, L.height * 2.2)
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', userSelect: 'none', WebkitUserSelect: 'none' }} onContextMenu={(e) => e.preventDefault()}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none', WebkitUserSelect: 'none' }} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0 }} onContextMenu={(e) => e.preventDefault()}>
     <Canvas dpr={[1, 1.5]} camera={{ position: [0, camY, camZ], fov: 50 }}>
       <color attach="background" args={[sky]} />
       <fog attach="fog" args={[sky, 24, 60]} />
@@ -862,7 +1009,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
       <Gate name={lodgeName} trusted={trusted} level={level} night={night} onTap={() => goPlace('gate')} />
 
       <Suspense fallback={null}>
-        <Character key={character} url={CHARACTERS[character]} height={2.0} pathRef={pathRef} posRef={posRef} pendingRef={pendingRef} busyRef={busyRef} sitRef={sitRef} onArriveRef={onArriveRef} />
+        <Character key={character} url={CHARACTERS[character]} height={2.0} pathRef={pathRef} posRef={posRef} pendingRef={pendingRef} busyRef={busyRef} sitRef={sitRef} onArriveRef={onArriveRef} joyRef={joyRef} joyMoveRef={joyMoveRef} joyBusyRef={joyBusyRef} flushRef={flushRef} onStandRef={onStandRef} />
         <Piece url={BUILDING} height={4.5} position={[-(L.half + 3.5), 0, -4.5]} rotY={0.3} />
         <Piece url={BUILDING} height={4.5} position={[L.half + 3.5, 0, -4.5]} rotY={-0.3} />
         {!estate && (
@@ -889,14 +1036,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
       <Follow posRef={posRef} controls={controls} />
 
     </Canvas>
-        <div style={{ position: 'absolute', right: 10, bottom: 10, zIndex: 20, display: 'grid', gridTemplateColumns: 'repeat(3, 54px)', gridAutoRows: '54px', gap: 4, pointerEvents: 'auto', touchAction: 'none' }}>
-          <span />
-          <button type="button" aria-label="Walk forward" style={padBtn} onPointerDown={holdStart(1, 0)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▲</button>
-          <span />
-          <button type="button" aria-label="Walk left" style={padBtn} onPointerDown={holdStart(0, -1)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>◀</button>
-          <button type="button" aria-label="Walk back" style={padBtn} onPointerDown={holdStart(-1, 0)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▼</button>
-          <button type="button" aria-label="Walk right" style={padBtn} onPointerDown={holdStart(0, 1)} onPointerUp={holdStop} onPointerLeave={holdStop} onPointerCancel={holdStop}>▶</button>
-        </div>
+        <Joystick joyRef={joyRef} />
         <div style={{ position: 'absolute', left: 10, bottom: 10, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 6, pointerEvents: 'auto' }}>
           {L.towers.length > 0 && (
             <>
