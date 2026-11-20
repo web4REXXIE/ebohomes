@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type PointerEvent as RPointerEvent } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html, OrbitControls, useAnimations, useGLTF } from '@react-three/drei'
@@ -20,16 +20,17 @@ export type DoorUnit = { id: string; label: string; floor: number | null; tone: 
 
 type Mode = 'block' | 'compound' | 'estate'
 type DoorPlaced = DoorUnit & { x: number; y: number; frontZ: number; standZ: number; level: number; b: number }
-type Bld = { name: string; cx: number; width: number; levels: number; height: number; tx: number | null }
-type Tower = { x: number; zNear: number; zFar: number; levels: number; b: number }
+type Bld = { name: string; cx: number; width: number; levels: number; height: number; bay: number | null }
+// The stairwell sits inside the building line. Two half flights per floor: up on the front lane to a half landing at the right, back along the back lane to the next floor at the left.
+type Tower = { x: number; x0: number; x1: number; xl: number; xr: number; zF: number; zB: number; levels: number; b: number }
 type Row = { front: number; street: number }
 type Layout = { mode: Mode; doors: DoorPlaced[]; blds: Bld[]; towers: Tower[]; rows: Row[]; half: number; laneX: number; minZ: number; height: number }
-type Cur = { b: number; level: number } // b: building (block/compound) or street row (estate). -1 = the plaza.
+type Cur = { b: number; level: number; mid?: boolean } // b: building (block/compound) or street row (estate). -1 = the plaza.
 type Dest = { b: number; level: number; x: number; z: number }
 
 const WALK_SPEED = 2.4 // units per second: raise to walk faster
-const FH = 2.0 // height of one floor
-const DOOR_GAP = 1.1
+const FH = 2.4 // height of one floor
+const DOOR_GAP = 1.5
 const WALL_Z = -8.5 // middle of the building wall
 const FRONT = -8 // the face of the wall where the doors are
 const STAND_G = -6.6 // where you stand on the ground in front of a door
@@ -39,7 +40,10 @@ const EST_ROW = 5 // houses per street
 const EST_ROWS = 5 // streets shown
 const EST_GAP = 3
 const ROW_SP = 6.5
-const STEPS = 8
+const STEPS = 5 // steps in each half flight
+const BAY_W = 4.0 // width of the stairwell built into the building
+const ZF = -8.5 // front lane of the stairs
+const ZB = -9.5 // back lane of the stairs
 
 const GREEN = '#16a34a'
 const GOLD = '#d4a017'
@@ -77,8 +81,26 @@ const OBST_TREES: Obstacle[] = [
 ]
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
-const startZ = (t: Tower, f: number) => (f % 2 === 0 ? t.zFar : t.zNear)
-const endZ = (t: Tower, f: number) => (f % 2 === 0 ? t.zNear : t.zFar)
+
+type StairLine = { t: Tower; pts: THREE.Vector3[]; cum: number[] }
+// The whole staircase as one line, used to walk it with the joystick. Every 4th point is a floor.
+function stairLine(t: Tower): StairLine {
+  const pts: THREE.Vector3[] = [V(t.xl, 0, t.zF)]
+  for (let f = 0; f < t.levels; f++) {
+    pts.push(V(t.xr, f * FH + FH / 2, t.zF), V(t.xr, f * FH + FH / 2, t.zB), V(t.xl, (f + 1) * FH, t.zB), V(t.xl, (f + 1) * FH, t.zF))
+  }
+  const cum = [0]
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z))
+  return { t, pts, cum }
+}
+
+// Where am I, when I am somewhere inside the stairwell?
+function curFromPos(t: Tower, p: THREE.Vector3): Cur {
+  const r = p.y / FH
+  const k = Math.round(r)
+  if (Math.abs(r - k) < 0.02) return k === 0 ? { b: -1, level: 0 } : { b: t.b, level: k }
+  return { b: t.b, level: Math.floor(r), mid: true }
+}
 
 function buildLayout(doors: DoorUnit[]): Layout {
   const hasFloors = doors.some((d) => d.floor !== null)
@@ -112,10 +134,10 @@ function buildLayout(doors: DoorUnit[]): Layout {
     const width = Math.max(4, most * DOOR_GAP + 0.8)
     const hasTower = floors.length > 1
     raws.push({ name: name || 'Other', left: cursor, width, floors, list, hasTower })
-    cursor += width + (hasTower ? 3.2 : 1.6)
+    cursor += width + (hasTower ? BAY_W + 1.6 : 1.6)
   }
   const last = raws[raws.length - 1]
-  const maxX = last.left + last.width + (last.hasTower ? 1.75 : 0)
+  const maxX = last.left + last.width + (last.hasTower ? BAY_W : 0)
   const shift = -maxX / 2
 
   const blds: Bld[] = []
@@ -124,8 +146,9 @@ function buildLayout(doors: DoorUnit[]): Layout {
   raws.forEach((r, bi) => {
     const cx = r.left + r.width / 2 + shift
     const levels = r.floors.length
-    blds.push({ name: r.name, cx, width: r.width, levels, height: levels * FH, tx: r.hasTower ? r.left + r.width + 1 + shift : null })
-    if (r.hasTower) towers.push({ x: r.left + r.width + 1 + shift, zNear: STAND_UP, zFar: FRONT - 2.2, levels: levels - 1, b: bi })
+    const bay0 = r.left + r.width + shift
+    blds.push({ name: r.name, cx, width: r.width, levels, height: levels * FH, bay: r.hasTower ? bay0 : null })
+    if (r.hasTower) towers.push({ x: bay0 + BAY_W / 2, x0: bay0, x1: bay0 + BAY_W, xl: bay0 + 0.55, xr: bay0 + BAY_W - 0.75, zF: ZF, zB: ZB, levels: levels - 1, b: bi })
     r.floors.forEach((f, li) => {
       const row = r.list.filter((d) => (d.floor ?? 0) === f).sort((a, b) => naturalSort(a.label, b.label))
       row.forEach((d, i) => {
@@ -166,47 +189,60 @@ function buildRoute(cur: Cur, dest: Dest, L: Layout, pos: THREE.Vector3): { pts:
     return { pts, stairs }
   }
 
-  let lvl = cur.level
-  // Between two floors of the same building: go straight up or down the stairs, never via the ground.
-  if (lvl > 0 && dest.level > 0 && dest.b === cur.b && dest.level !== lvl) {
-    const t = L.towers.find((x) => x.b === cur.b)
-    if (t) {
-      if (dest.level > lvl) {
-        pts.push(V(t.x, lvl * FH, startZ(t, lvl)))
-        for (let f = lvl; f < dest.level; f++) pts.push(V(t.x, (f + 1) * FH, endZ(t, f)))
+  const towerOf = (bi: number) => L.towers.find((x) => x.b === bi)
+  const H = FH / 2
+  const upFrom = (t: Tower, f: number) => [V(t.xr, f * FH + H, t.zF), V(t.xr, f * FH + H, t.zB), V(t.xl, (f + 1) * FH, t.zB), V(t.xl, (f + 1) * FH, t.zF)]
+  const downFrom = (t: Tower, f: number) => [V(t.xl, (f + 1) * FH, t.zB), V(t.xr, f * FH + H, t.zB), V(t.xr, f * FH + H, t.zF), V(t.xl, f * FH, t.zF)]
+  const inBuilding = cur.level > 0 || !!cur.mid
+  const tFrom = inBuilding ? towerOf(cur.b) : undefined
+
+  // Already on the right balcony: just walk along it.
+  if (tFrom && !cur.mid && dest.level === cur.level && dest.b === cur.b) {
+    pts.push(V(dest.x, dest.level * FH, dest.z))
+    return { pts, stairs }
+  }
+
+  if (tFrom) {
+    const sameB = dest.level > 0 && dest.b === cur.b
+    const target = sameB ? dest.level : 0
+    let node = cur.level
+    if (cur.mid) {
+      const back = pos.z < (tFrom.zF + tFrom.zB) / 2
+      if (target >= cur.level + 1) {
+        if (!back) pts.push(V(tFrom.xr, cur.level * FH + H, tFrom.zB))
+        pts.push(V(tFrom.xl, (cur.level + 1) * FH, tFrom.zB), V(tFrom.xl, (cur.level + 1) * FH, tFrom.zF))
+        node = cur.level + 1
       } else {
-        pts.push(V(t.x, lvl * FH, endZ(t, lvl - 1)))
-        for (let f = lvl - 1; f >= dest.level; f--) pts.push(V(t.x, f * FH, startZ(t, f)))
+        if (back) pts.push(V(tFrom.xr, cur.level * FH + H, tFrom.zF))
+        pts.push(V(tFrom.xl, cur.level * FH, tFrom.zF))
+        node = cur.level
       }
+    } else if (pos.z > FRONT + 0.2) {
+      // On the balcony: step back into the stairwell.
+      pts.push(V(tFrom.xl, cur.level * FH, STAND_UP), V(tFrom.xl, cur.level * FH, tFrom.zF))
+    }
+    if (target > node) for (let f = node; f < target; f++) pts.push(...upFrom(tFrom, f))
+    else if (target < node) for (let f = node - 1; f >= target; f--) pts.push(...downFrom(tFrom, f))
+    if (target > 0) pts.push(V(tFrom.xl, target * FH, STAND_UP))
+    else {
+      pts.push(V(tFrom.xl, 0, -7.0))
+    }
+    stairs = true
+    if (sameB) {
       pts.push(V(dest.x, dest.level * FH, dest.z))
-      return { pts, stairs: true }
+      return { pts, stairs }
     }
+  } else if (!inBuilding && pos.y < 0.05 && pos.z < MIN_Z_BUILDINGS - 0.1) {
+    // Standing at the foot of the stairs: step out of the stairwell first.
+    pts.push(V(pos.x, 0, -7.0))
   }
-  const same = dest.level === lvl && (lvl === 0 || dest.b === cur.b)
-  if (!same && lvl > 0) {
-    const t = L.towers.find((x) => x.b === cur.b)
+
+  if (dest.level > 0) {
+    const t = towerOf(dest.b)
     if (t) {
-      pts.push(V(t.x, lvl * FH, t.zNear))
-      for (let f = lvl - 1; f >= 0; f--) {
-        pts.push(V(t.x, (f + 1) * FH, endZ(t, f)))
-        pts.push(V(t.x, f * FH, startZ(t, f)))
-      }
-      pts.push(V(t.x, 0, t.zFar - 0.7))
-      pts.push(V(t.x + 1.2, 0, t.zFar - 0.7))
-      pts.push(V(t.x + 1.2, 0, STAND_G))
-      stairs = true
-    }
-    lvl = 0
-  }
-  if (dest.level > 0 && lvl === 0) {
-    const t = L.towers.find((x) => x.b === dest.b)
-    if (t) {
-      pts.push(V(t.x + 1.2, 0, STAND_G))
-      pts.push(V(t.x + 1.2, 0, t.zFar - 0.7))
-      pts.push(V(t.x, 0, t.zFar - 0.7))
-      pts.push(V(t.x, 0, t.zFar))
-      for (let f = 0; f < dest.level; f++) pts.push(V(t.x, (f + 1) * FH, endZ(t, f)))
-      pts.push(V(t.x, dest.level * FH, t.zNear))
+      pts.push(V(t.xl, 0, -7.0), V(t.xl, 0, t.zF))
+      for (let f = 0; f < dest.level; f++) pts.push(...upFrom(t, f))
+      pts.push(V(t.xl, dest.level * FH, STAND_UP))
       stairs = true
     }
   }
@@ -273,7 +309,7 @@ type Shared = {
   sitRef: MutableRefObject<boolean>
   onArriveRef: MutableRefObject<(key: string) => void>
   joyRef: MutableRefObject<{ x: number; y: number }>
-  joyMoveRef: MutableRefObject<(p: THREE.Vector3, dx: number, dz: number, m: number, dt: number) => void>
+  joyMoveRef: MutableRefObject<(p: THREE.Vector3, dx: number, dz: number, m: number, dt: number) => number | null | undefined>
   joyBusyRef: MutableRefObject<() => void>
   flushRef: MutableRefObject<(p: THREE.Vector3) => void>
   onStandRef: MutableRefObject<() => void>
@@ -334,10 +370,12 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
             dx /= len
             dz /= len
             const m = Math.min(1, jm)
-            joyMoveRef.current(g.position, dx, dz, m, dt)
-            let diff = Math.atan2(dx, dz) - g.rotation.y
-            diff = Math.atan2(Math.sin(diff), Math.cos(diff))
-            g.rotation.y += diff * Math.min(1, dt * 12)
+            const hd = joyMoveRef.current(g.position, dx, dz, m, dt)
+            if (hd !== null) {
+              let diff = (hd === undefined ? Math.atan2(dx, dz) : hd) - g.rotation.y
+              diff = Math.atan2(Math.sin(diff), Math.cos(diff))
+              g.rotation.y += diff * Math.min(1, dt * 12)
+            }
             posRef.current.copy(g.position)
             if (!moving.current) {
               moving.current = true
@@ -381,7 +419,7 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
         }
       } else {
         isMoving = true
-        const step = Math.min(dist, WALK_SPEED * dt)
+        const step = Math.min(dist, WALK_SPEED * (Math.abs(t.y - g.position.y) > 0.05 ? 0.8 : 1) * dt)
         const f = step / dist
         g.position.x += dx * f
         g.position.z += dz * f
@@ -456,9 +494,10 @@ function Follow({ posRef, controls }: { posRef: MutableRefObject<THREE.Vector3>;
       c.update()
       return
     }
-    const k = 1 - Math.exp(-Math.min(dt, 0.1) * 16)
+    const k = 1 - Math.exp(-Math.min(dt, 0.1) * 22)
+    const ky = 1 - Math.exp(-Math.min(dt, 0.1) * 30)
     const dx = (posRef.current.x - c.target.x) * k
-    const dy = (posRef.current.y + 1 - c.target.y) * k
+    const dy = (posRef.current.y + 1 - c.target.y) * ky
     const dz = (posRef.current.z - c.target.z) * k
     c.target.x += dx
     c.target.y += dy
@@ -536,59 +575,174 @@ const tap = (fn: () => void) => (e: ThreeEvent<MouseEvent>) => {
   fn()
 }
 
+// A tree or bush that sways a little in the breeze. The group sits at the base of the plant.
+function Sway({ position, seed = 0, amp = 0.03, children }: { position: [number, number, number]; seed?: number; amp?: number; children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null)
+  useFrame((st) => {
+    const g = ref.current
+    if (!g) return
+    const tm = st.clock.elapsedTime
+    g.rotation.z = Math.sin(tm * 0.9 + seed) * amp
+    g.rotation.x = Math.cos(tm * 0.7 + seed * 1.3) * amp * 0.6
+  })
+  return (
+    <group ref={ref} position={position}>
+      {children}
+    </group>
+  )
+}
+
+// A few slow clouds drifting across the sky.
+function Clouds({ night }: { night: boolean }) {
+  const ref = useRef<THREE.Group>(null)
+  useFrame((st) => {
+    const g = ref.current
+    if (!g) return
+    g.children.forEach((c, i) => {
+      c.position.x = ((st.clock.elapsedTime * (0.25 + i * 0.07) + i * 14) % 60) - 30
+    })
+  })
+  return (
+    <group ref={ref}>
+      {[0, 1, 2, 3].map((i) => (
+        <mesh key={i} position={[0, 11 + (i % 2) * 2, -16 - i * 3]} scale={[3 + i * 0.6, 0.7, 1.4]}>
+          <sphereGeometry args={[1, 10, 8]} />
+          <meshBasicMaterial color={night ? '#27403a' : '#ffffff'} transparent opacity={night ? 0.5 : 0.85} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
 function Door({ d, selected, lit, onTap }: { d: DoorPlaced; selected: boolean; lit: boolean; onTap: () => void }) {
   const tex = useLabel(d.label, selected ? GOLD : CREAM)
   const color = TONE_COLOR[d.tone]
   const intensity = selected ? 0.7 : d.tone === 'taken' ? 0 : lit ? 0.9 : 0.25
+  const leaf = useRef<THREE.MeshStandardMaterial>(null)
+  const phase = useMemo(() => (d.x * 1.7 + d.y) % 6.28, [d.x, d.y])
+  // Homes to let breathe gently so the eye finds them.
+  useFrame((st) => {
+    if (leaf.current && d.tone === 'to_let' && !selected) leaf.current.emissiveIntensity = intensity + 0.3 + Math.sin(st.clock.elapsedTime * 2.2 + phase) * 0.3
+  })
   return (
     <group position={[d.x, d.y, d.frontZ]} onClick={tap(onTap)}>
-      <mesh position={[0, 0.6, 0.02]}>
-        <boxGeometry args={[0.86, 1.15, 0.06]} />
+      {/* frame, leaf, number plate and a step */}
+      <mesh position={[0, 0.65, 0.02]}>
+        <boxGeometry args={[1.02, 1.3, 0.06]} />
         <meshStandardMaterial color={selected ? GOLD : FOREST} />
       </mesh>
-      <mesh position={[0, 0.58, 0.06]}>
-        <boxGeometry args={[0.72, 1.0, 0.04]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={intensity} />
+      <mesh position={[0, 0.62, 0.06]}>
+        <boxGeometry args={[0.86, 1.14, 0.04]} />
+        <meshStandardMaterial ref={leaf} color={color} emissive={color} emissiveIntensity={intensity} />
       </mesh>
-      <mesh position={[0, 1.34, 0.05]}>
-        <planeGeometry args={[0.6, 0.3]} />
+      <mesh position={[0.26, 0.6, 0.1]}>
+        <sphereGeometry args={[0.04, 8, 8]} />
+        <meshStandardMaterial color="#e8d9a0" />
+      </mesh>
+      <mesh position={[0, 1.55, 0.05]}>
+        <planeGeometry args={[0.8, 0.36]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
+      <mesh position={[0, 0.03, 0.35]}>
+        <boxGeometry args={[1.1, 0.06, 0.6]} />
+        <meshStandardMaterial color="#c9c4b6" />
+      </mesh>
       {/* a bigger invisible box so a thumb can hit the door easily */}
-      <mesh position={[0, 0.7, 0.1]}>
-        <boxGeometry args={[1.0, 1.45, 0.2]} />
+      <mesh position={[0, 0.8, 0.12]}>
+        <boxGeometry args={[1.3, 1.7, 0.3]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
     </group>
   )
 }
 
-// One outside staircase: solid steps that zigzag up, with a landing slab on every floor.
-function Stairs({ t, color, landing }: { t: Tower; color: string; landing: string }) {
+// The stairwell built into the building: walls, a roof, switchback stairs with a half landing, and a floor slab at every level.
+function Stairs({ t, wall, slab, edge }: { t: Tower; wall: string; slab: string; edge: string }) {
+  const H = (t.levels + 1) * FH
+  const half = FH / 2
+  const run = t.xr - t.xl
+  const ang = Math.atan2(half, run)
+  const len = Math.hypot(run, half)
+  const treadColor = '#e6e1d4'
+  const under = '#a39f93'
   const flights = Array.from({ length: t.levels }, (_, f) => f)
+  const stepsOf = (f: number, up: boolean) =>
+    Array.from({ length: STEPS }, (_, i) => {
+      const x = up ? t.xl + (run * (i + 0.5)) / STEPS : t.xr - (run * (i + 0.5)) / STEPS
+      const top = f * FH + (up ? 0 : half) + (half * (i + 1)) / STEPS
+      return (
+        <mesh key={`${f}-${up ? 'a' : 'b'}-${i}`} position={[x, top - 0.07, up ? t.zF : t.zB]}>
+          <boxGeometry args={[run / STEPS + 0.02, 0.14, 0.9]} />
+          <meshStandardMaterial color={treadColor} />
+        </mesh>
+      )
+    })
+  const zMid = (t.zF + t.zB) / 2
   return (
     <group>
-      {flights.map((f) => {
-        const a = startZ(t, f)
-        const b = endZ(t, f)
-        const depth = Math.abs(b - a) / STEPS + 0.02
-        return Array.from({ length: STEPS }, (_, i) => {
-          const h = ((i + 0.5) * FH) / STEPS + 0.05
-          const z = a + ((b - a) * (i + 0.5)) / STEPS
-          return (
-            <mesh key={`${f}-${i}`} position={[t.x, f * FH + h / 2, z]}>
-              <boxGeometry args={[1.2, h, depth]} />
-              <meshStandardMaterial color={color} />
-            </mesh>
-          )
-        })
-      })}
+      {/* walls: back, right and left. The front stays open so you can see the stairs. */}
+      <mesh position={[t.x, H / 2, t.zB - 0.55]}>
+        <boxGeometry args={[BAY_W, H, 0.15]} />
+        <meshStandardMaterial color={wall} />
+      </mesh>
+      <mesh position={[t.x1 + 0.075, H / 2, zMid - 0.05]}>
+        <boxGeometry args={[0.15, H, 2.2]} />
+        <meshStandardMaterial color={wall} />
+      </mesh>
+      <mesh position={[t.x0 - 0.075, H / 2, zMid - 0.05]}>
+        <boxGeometry args={[0.15, H, 2.2]} />
+        <meshStandardMaterial color={wall} />
+      </mesh>
+      <mesh position={[t.x, H + 0.1, zMid - 0.05]}>
+        <boxGeometry args={[BAY_W + 0.5, 0.2, 2.8]} />
+        <meshStandardMaterial color={edge} />
+      </mesh>
+      <mesh position={[t.x, 0.04, zMid - 0.05]}>
+        <boxGeometry args={[BAY_W, 0.08, 2.1]} />
+        <meshStandardMaterial color={slab} />
+      </mesh>
       {flights.map((f) => (
-        <mesh key={`l${f}`} position={[t.x, (f + 1) * FH - 0.06, (t.zFar - 0.5 + FRONT + 1) / 2]}>
-          <boxGeometry args={[1.6, 0.12, FRONT + 1 - (t.zFar - 0.5)]} />
-          <meshStandardMaterial color={landing} />
-        </mesh>
+        <group key={f}>
+          {stepsOf(f, true)}
+          {stepsOf(f, false)}
+          {/* the sloping concrete under each half flight */}
+          <mesh position={[(t.xl + t.xr) / 2, f * FH + half / 2 - 0.2, t.zF]} rotation={[0, 0, ang]}>
+            <boxGeometry args={[len, 0.18, 0.9]} />
+            <meshStandardMaterial color={under} />
+          </mesh>
+          <mesh position={[(t.xl + t.xr) / 2, f * FH + half + half / 2 - 0.2, t.zB]} rotation={[0, 0, -ang]}>
+            <boxGeometry args={[len, 0.18, 0.9]} />
+            <meshStandardMaterial color={under} />
+          </mesh>
+          {/* half landing at the right end */}
+          <mesh position={[(t.xr + t.x1) / 2, f * FH + half - 0.07, zMid - 0.05]}>
+            <boxGeometry args={[t.x1 - t.xr, 0.14, 2.1]} />
+            <meshStandardMaterial color={slab} />
+          </mesh>
+          <mesh position={[(t.xr + t.x1) / 2, f * FH + half + 0.22, FRONT]}>
+            <boxGeometry args={[t.x1 - t.xr, 0.44, 0.06]} />
+            <meshStandardMaterial color={edge} />
+          </mesh>
+        </group>
       ))}
+      {/* a floor slab at every level above the ground */}
+      {flights.map((f) => {
+        const y = (f + 1) * FH - 0.07
+        const wF = t.xl + 0.5 - t.x0
+        const wB = t.xl + 0.05 - t.x0
+        return (
+          <group key={`s${f}`}>
+            <mesh position={[t.x0 + wF / 2, y, t.zF]}>
+              <boxGeometry args={[wF, 0.14, 1.0]} />
+              <meshStandardMaterial color={slab} />
+            </mesh>
+            <mesh position={[t.x0 + wB / 2, y, t.zB]}>
+              <boxGeometry args={[wB, 0.14, 1.0]} />
+              <meshStandardMaterial color={slab} />
+            </mesh>
+          </group>
+        )
+      })}
     </group>
   )
 }
@@ -777,7 +931,17 @@ export default function EbovilleScene({ character, theme, night, light, level, l
 
   const queuedRef = useRef<(() => void) | null>(null)
   const joyRef = useRef({ x: 0, y: 0 })
+  const lines = useMemo(() => L.towers.map(stairLine), [L])
+  const stairRef = useRef<{ line: StairLine; s: number } | null>(null)
+  // If the joystick has me on the steps, work out where I really am before a tap or button plans a route.
+  const syncStair = () => {
+    const st = stairRef.current
+    if (!st) return
+    stairRef.current = null
+    stateRef.current = curFromPos(st.line.t, posRef.current)
+  }
   const startNow = (dest: Dest, key: string | null) => {
+    syncStair()
     sitRef.current = false
     setSitting(false)
     const { pts, stairs } = buildRoute(stateRef.current, dest, L, posRef.current)
@@ -803,7 +967,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
     if (p.y > 0.05 && L.towers.length > 0) {
       let best = L.towers[0]
       for (const tw of L.towers) if (Math.abs(tw.x - p.x) < Math.abs(best.x - p.x)) best = tw
-      stateRef.current = { b: best.b, level: Math.max(1, Math.round(p.y / FH)) }
+      stateRef.current = curFromPos(best, p)
     } else stateRef.current = { b: -1, level: 0 }
     busyRef.current = false
     q()
@@ -816,19 +980,103 @@ export default function EbovilleScene({ character, theme, night, light, level, l
       pendingRef.current = null
     }
   }
-  const joyMoveRef = useRef<(p: THREE.Vector3, dx: number, dz: number, m: number, dt: number) => void>(() => {})
+  const joyMoveRef = useRef<(p: THREE.Vector3, dx: number, dz: number, m: number, dt: number) => number | null | undefined>(() => undefined)
+  const enterStair = (tw: Tower, k: number, p: THREE.Vector3) => {
+    const line = lines.find((l) => l.t === tw)
+    if (!line) return
+    stairRef.current = { line, s: line.cum[k * 4] }
+    p.set(tw.xl, k * FH, tw.zF)
+  }
+  // Walk the staircase with the joystick: push along the steps to go up or down, push toward the camera at a floor to step out.
+  const stairStep = (st: { line: StairLine; s: number }, p: THREE.Vector3, dx: number, dz: number, sp: number): number | null => {
+    const { pts, cum, t: tw } = st.line
+    const n = pts.length
+    const total = cum[n - 1]
+    const tang = (i: number) => {
+      const a = pts[i]
+      const b = pts[i + 1]
+      const l = Math.hypot(b.x - a.x, b.z - a.z) || 1
+      return { x: (b.x - a.x) / l, z: (b.z - a.z) / l }
+    }
+    let iF = 0
+    while (iF < n - 2 && cum[iF + 1] <= st.s + 1e-6) iF++
+    let iB = 0
+    while (iB < n - 2 && cum[iB + 1] < st.s - 1e-6) iB++
+    // at a floor? then pushing toward the camera steps out
+    const nodeK = cum.findIndex((c, i) => i % 4 === 0 && Math.abs(c - st.s) < 0.03)
+    if (nodeK >= 0 && dz > 0.6) {
+      const k = nodeK / 4
+      p.set(tw.xl, k * FH, tw.zF)
+      stateRef.current = k === 0 ? { b: -1, level: 0 } : { b: tw.b, level: k }
+      stairRef.current = null
+      return null
+    }
+    const uF = tang(iF)
+    const uB = tang(iB)
+    const fwd = dx * uF.x + dz * uF.z
+    const bwd = -(dx * uB.x + dz * uB.z)
+    let delta = 0
+    let u = uF
+    if (fwd >= bwd) {
+      if (fwd > 0.15) delta = fwd * sp
+    } else if (bwd > 0.15) {
+      delta = -bwd * sp
+      u = { x: -uB.x, z: -uB.z }
+    }
+    if (delta === 0) return null
+    st.s = Math.min(total, Math.max(0, st.s + delta))
+    let j = 0
+    while (j < n - 2 && cum[j + 1] <= st.s) j++
+    const f = (st.s - cum[j]) / (cum[j + 1] - cum[j] || 1)
+    p.set(pts[j].x + (pts[j + 1].x - pts[j].x) * f, pts[j].y + (pts[j + 1].y - pts[j].y) * f, pts[j].z + (pts[j + 1].z - pts[j].z) * f)
+    return Math.atan2(u.x, u.z)
+  }
   joyMoveRef.current = (p, dx, dz, m, dt) => {
     const sp = WALK_SPEED * 1.3 * m * dt
+    const st = stairRef.current
+    if (st) return stairStep(st, p, dx, dz, sp)
     const cur = stateRef.current
-    if (cur.level > 0 && cur.b >= 0 && L.blds[cur.b]) {
-      // On a balcony: slide along it.
-      const b = L.blds[cur.b]
-      p.x = Math.min(b.cx + b.width / 2 - 0.5, Math.max(b.cx - b.width / 2 + 0.5, p.x + dx * sp))
-      p.z = STAND_UP
-      p.y = cur.level * FH
-      return
+    if (cur.mid) {
+      // Stopped on a half landing: carry on from there.
+      const tw = L.towers.find((x) => x.b === cur.b)
+      const line = tw ? lines.find((l) => l.t === tw) : undefined
+      if (tw && line) {
+        const back = p.z < (tw.zF + tw.zB) / 2
+        const ns = { line, s: line.cum[cur.level * 4 + (back ? 2 : 1)] }
+        stairRef.current = ns
+        return stairStep(ns, p, dx, dz, sp)
+      }
     }
-    const q = settle(V(p.x + dx * sp, 0, p.z + dz * sp), L)
+    if (cur.level > 0 && cur.b >= 0 && L.blds[cur.b]) {
+      // On a balcony: slide along it. At the stairwell, push away from the camera to go in.
+      const b = L.blds[cur.b]
+      const tw = L.towers.find((x) => x.b === cur.b)
+      const hi = tw ? tw.xl : b.cx + b.width / 2 - 0.5
+      let nx = Math.min(hi, Math.max(b.cx - b.width / 2 + 0.5, p.x + dx * sp))
+      p.y = cur.level * FH
+      if (tw && Math.abs(nx - tw.xl) < 0.5 && (dz < -0.3 || p.z < FRONT + 0.1)) {
+        nx = Math.min(tw.xl + 0.45, Math.max(tw.xl - 0.45, nx))
+        p.x = nx
+        p.z = Math.max(tw.zF, Math.min(STAND_UP, p.z + dz * sp))
+        if (p.z <= tw.zF + 0.02 && Math.abs(p.x - tw.xl) < 0.45) enterStair(tw, cur.level, p)
+        return undefined
+      }
+      p.x = nx
+      p.z += (STAND_UP - p.z) * Math.min(1, dt * 8)
+      return undefined
+    }
+    const nx = p.x + dx * sp
+    const nz = p.z + dz * sp
+    const foot = L.towers.find((tw) => Math.abs(nx - tw.xl) < 0.6)
+    if (foot && nz < MIN_Z_BUILDINGS + 0.2 && (dz < 0 || p.z < MIN_Z_BUILDINGS)) {
+      // Walking into the foot of the stairs.
+      p.x = Math.min(foot.xl + 0.55, Math.max(foot.xl - 0.55, nx))
+      p.z = Math.max(foot.zF, nz)
+      p.y = 0
+      if (p.z <= foot.zF + 0.02 && Math.abs(p.x - foot.xl) < 0.5) enterStair(foot, 0, p)
+      return undefined
+    }
+    const q = settle(V(nx, 0, nz), L)
     p.x = q.x
     p.z = q.z
     p.y = 0
@@ -841,6 +1089,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
       row = best
     }
     stateRef.current = { b: row, level: 0 }
+    return undefined
   }
   const onStandRef = useRef<() => void>(() => {})
   onStandRef.current = () => {
@@ -877,16 +1126,18 @@ export default function EbovilleScene({ character, theme, night, light, level, l
   // Up or down one floor using the outside staircase.
   const floor = (dir: 1 | -1) => {
     if (L.towers.length === 0) return
+    syncStair()
     const cur = stateRef.current
-    let bi = cur.level > 0 ? cur.b : -1
+    let bi = cur.level > 0 || cur.mid ? cur.b : -1
     if (bi < 0) {
       let best = L.towers[0].b
       for (const tw of L.towers) if (Math.abs(L.blds[tw.b].cx - posRef.current.x) < Math.abs(L.blds[best].cx - posRef.current.x)) best = tw.b
       bi = best
     }
     const b = L.blds[bi]
-    const next = Math.max(0, Math.min(b.levels - 1, cur.level + dir))
-    if (next === cur.level) return
+    const here = cur.mid && dir < 0 ? cur.level + 1 : cur.level
+    const next = Math.max(0, Math.min(b.levels - 1, here + dir))
+    if (next === here && !cur.mid) return
     const x = Math.min(b.cx + b.width / 2 - 0.5, Math.max(b.cx - b.width / 2 + 0.5, posRef.current.x))
     start({ b: bi, level: next, x, z: next === 0 ? STAND_G : STAND_UP }, null)
   }
@@ -915,6 +1166,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
     <Canvas dpr={[1, 1.5]} camera={{ position: [0, camY, camZ], fov: 50 }}>
       <color attach="background" args={[sky]} />
       <fog attach="fog" args={[sky, 24, 60]} />
+      <Clouds night={night} />
       <hemisphereLight args={night ? ['#8fa8ff', '#1b2a22', 0.45] : ['#ffffff', '#b7c9bd', 1]} />
       <directionalLight position={[6, 10, 6]} intensity={night ? 0.25 : 1.1} color={night ? '#9db4ff' : '#ffffff'} />
 
@@ -952,8 +1204,10 @@ export default function EbovilleScene({ character, theme, night, light, level, l
             <meshStandardMaterial color={t.ledge} />
           </mesh>
           {Array.from({ length: Math.max(0, b.levels - 1) }, (_, i) => i + 1).map((lvl) => {
-            const w = b.width + (b.tx !== null ? 1 : 0.3)
-            const x = b.cx + (b.tx !== null ? 0.5 : 0)
+            const left = b.cx - b.width / 2 - 0.15
+            const right = b.bay !== null ? b.bay + BAY_W : b.cx + b.width / 2 + 0.15
+            const w = right - left
+            const x = (left + right) / 2
             return (
               <group key={lvl}>
                 <mesh position={[x, lvl * FH - 0.06, FRONT + 0.5]} onClick={goBalcony(bi, lvl)}>
@@ -986,7 +1240,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
         </group>
       ))}
       {L.towers.map((tw) => (
-        <Stairs key={tw.b} t={tw} color={t.edge} landing={t.ledge} />
+        <Stairs key={tw.b} t={tw} wall={t.body} slab={t.ledge} edge={t.edge} />
       ))}
 
       {/* estate: a house and a street for every row of homes */}
@@ -1014,14 +1268,14 @@ export default function EbovilleScene({ character, theme, night, light, level, l
         <Piece url={BUILDING} height={4.5} position={[L.half + 3.5, 0, -4.5]} rotY={-0.3} />
         {!estate && (
           <>
-            <Piece url={TREES[0]} height={3} position={[-7, 0, 1]} />
-            <Piece url={TREES[1]} height={3.4} position={[7.5, 0, -2]} />
-            <Piece url={TREES[2]} height={2.6} position={[-3.5, 0, -2.5]} />
-            <Piece url={TREES[0]} height={2.8} position={[4, 0, -3]} />
+            <Sway position={[-7, 0, 1]} seed={1.7}><Piece url={TREES[0]} height={3} position={[0, 0, 0]} /></Sway>
+            <Sway position={[7.5, 0, -2]} seed={3.4}><Piece url={TREES[1]} height={3.4} position={[0, 0, 0]} /></Sway>
+            <Sway position={[-3.5, 0, -2.5]} seed={5.1}><Piece url={TREES[2]} height={2.6} position={[0, 0, 0]} /></Sway>
+            <Sway position={[4, 0, -3]} seed={6.8}><Piece url={TREES[0]} height={2.8} position={[0, 0, 0]} /></Sway>
           </>
         )}
-        <Piece url={BUSH} height={0.7} position={[-2.2, 0, 2.5]} />
-        <Piece url={BUSH} height={0.6} position={[2.6, 0, 2.8]} />
+        <Sway position={[-2.2, 0, 2.5]} seed={8.5}><Piece url={BUSH} height={0.7} position={[0, 0, 0]} /></Sway>
+        <Sway position={[2.6, 0, 2.8]} seed={10.2}><Piece url={BUSH} height={0.6} position={[0, 0, 0]} /></Sway>
         <group onClick={tap(() => goPlace('bench'))}>
           <Piece url={BENCH} height={0.8} position={[3, 0, 0.8]} rotY={-Math.PI / 2} />
           <mesh position={[3, 0.45, 0.8]}>
@@ -1029,7 +1283,11 @@ export default function EbovilleScene({ character, theme, night, light, level, l
             <meshBasicMaterial transparent opacity={0} depthWrite={false} />
           </mesh>
         </group>
-        {level >= 3 && GARDEN.map(([x, z, h]) => <Piece key={`${x}-${z}`} url={BUSH} height={h} position={[x, 0, z]} />)}
+        {level >= 3 && GARDEN.map(([x, z, h]) => (
+          <Sway key={`${x}-${z}`} position={[x, 0, z]} seed={x + z}>
+            <Piece url={BUSH} height={h} position={[0, 0, 0]} />
+          </Sway>
+        ))}
       </Suspense>
 
       <OrbitControls ref={controls} target={[0, 1, 0.5]} enablePan={false} enableDamping={false} minDistance={2.5} maxDistance={farOut} maxPolarAngle={Math.PI / 2.1} />
