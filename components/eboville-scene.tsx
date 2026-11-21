@@ -8,6 +8,8 @@ import { themeOf } from '@/lib/lodge-themes'
 import { naturalSort } from '@/lib/estate-view'
 import type { LightState } from '@/lib/light-status'
 import { BENCH, BUILDING, BUSH, CHARACTERS, Piece, TREES, fit } from '@/components/eboville-shared'
+import OtherPeople from '@/components/eboville-others'
+import { emoteMs, useEboVillePresence, type Emote } from '@/lib/eboville-presence'
 
 // EboVille town. Three layouts, picked from the homes:
 //  block    one building with floors: balconies on every floor and an outside staircase.
@@ -308,6 +310,7 @@ type Shared = {
   busyRef: MutableRefObject<boolean>
   sitRef: MutableRefObject<boolean>
   onArriveRef: MutableRefObject<(key: string) => void>
+  emoteRef: MutableRefObject<{ e: Emote; until: number } | null>
   joyRef: MutableRefObject<{ x: number; y: number }>
   joyMoveRef: MutableRefObject<(p: THREE.Vector3, dx: number, dz: number, m: number, dt: number) => number | null | undefined>
   joyBusyRef: MutableRefObject<() => void>
@@ -315,7 +318,7 @@ type Shared = {
   onStandRef: MutableRefObject<() => void>
 }
 
-function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, onArriveRef, joyRef, joyMoveRef, joyBusyRef, flushRef, onStandRef }: Shared & { url: string; height: number }) {
+function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, onArriveRef, joyRef, joyMoveRef, joyBusyRef, flushRef, onStandRef, emoteRef, bubble }: Shared & { url: string; height: number; bubble: string | null }) {
   const camera = useThree((st) => st.camera)
   const fw = useMemo(() => new THREE.Vector3(), [])
   const group = useRef<THREE.Group>(null)
@@ -329,6 +332,8 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
   const idleName = names.find((n) => /idle/i.test(n)) ?? null
   const sitName = names.find((n) => /sit/i.test(n)) ?? null
   const walkName = names.find((n) => /walk/i.test(n)) ?? names.find((n) => /run/i.test(n)) ?? null
+  const clapName = names.find((n) => /clap/i.test(n)) ?? null
+  const jumpName = names.find((n) => /_jump$/i.test(n)) ?? null
 
   const play = useCallback(
     (name: string | null) => {
@@ -357,6 +362,7 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
         joyBusyRef.current()
       } else {
         if (sitRef.current) onStandRef.current()
+        emoteRef.current = null
         pathRef.current.length = 0
         pendingRef.current = null
         camera.getWorldDirection(fw)
@@ -390,6 +396,14 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
     const path = pathRef.current
     const t = path[0]
     let isMoving = false
+    // A small action (clap, jump, sit, wave) ends when you walk or after a moment. Sit stays until you walk.
+    const em = emoteRef.current
+    let emoting: Emote | null = null
+    if (em) {
+      if (t) emoteRef.current = null
+      else if (em.e !== 'sit' && performance.now() > em.until) emoteRef.current = null
+      else emoting = em.e
+    }
     if (sitRef.current && !t) {
       // Sitting on the bench: lower onto the seat, face the plaza, play the sitting pose.
       g.position.y += (0.32 - g.position.y) * Math.min(1, dt * 8)
@@ -399,6 +413,13 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
       posRef.current.set(g.position.x, g.position.y, g.position.z)
       play(sitName ?? idleName ?? names[0] ?? null)
       moving.current = false
+      return
+    }
+    if (emoting && !t) {
+      play((emoting === 'clap' ? clapName : emoting === 'jump' ? jumpName : emoting === 'sit' ? sitName : idleName) ?? idleName ?? names[0] ?? null)
+      moving.current = false
+      if (bob.current) bob.current.position.y += ((emoting === 'sit' ? -0.3 : 0) - bob.current.position.y) * Math.min(1, dt * 8)
+      posRef.current.set(g.position.x, g.position.y, g.position.z)
       return
     }
     if (t) {
@@ -432,10 +453,8 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
     }
     posRef.current.set(g.position.x, g.position.y, g.position.z)
 
-    if (isMoving !== moving.current) {
-      moving.current = isMoving
-      play(isMoving ? walkName ?? idleName : idleName ?? names[0] ?? null)
-    }
+    moving.current = isMoving
+    play(isMoving ? walkName ?? idleName : idleName ?? names[0] ?? null)
     if (bob.current) {
       bob.current.position.y = isMoving && !walkName ? Math.abs(Math.sin(state.clock.elapsedTime * 10)) * 0.07 : 0
     }
@@ -450,6 +469,11 @@ function Character({ url, height, pathRef, posRef, pendingRef, busyRef, sitRef, 
         <ringGeometry args={[0.55, 0.8, 32]} />
         <meshBasicMaterial color={GOLD} />
       </mesh>
+      {bubble && (
+        <Html position={[0, height + 1.4, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+          <div style={{ fontSize: 26, lineHeight: 1 }}>{bubble}</div>
+        </Html>
+      )}
       <mesh position={[0, height + 0.55, 0]} rotation={[Math.PI, 0, 0]}>
         <coneGeometry args={[0.2, 0.4, 12]} />
         <meshBasicMaterial color={GOLD} />
@@ -906,9 +930,11 @@ type Props = {
   doors: DoorUnit[]
   selectedDoor: string | null
   onArrive: (key: string) => void
+  estateId?: string
+  presenceLabel?: string | null // "Unit 1A" or "Management". Empty = you are not shown to others.
 }
 
-export default function EbovilleScene({ character, theme, night, light, level, lodgeName, trusted, doors, selectedDoor, onArrive }: Props) {
+export default function EbovilleScene({ character, theme, night, light, level, lodgeName, trusted, doors, selectedDoor, onArrive, estateId, presenceLabel }: Props) {
   const t = themeOf(theme)
   const pathRef = useRef<THREE.Vector3[]>([])
   const posRef = useRef(new THREE.Vector3(0, 0, 0.5))
@@ -917,6 +943,10 @@ export default function EbovilleScene({ character, theme, night, light, level, l
   const stateRef = useRef<Cur>({ b: -1, level: 0 })
   const sitRef = useRef(false)
   const [sitting, setSitting] = useState(false)
+  const emoteRef = useRef<{ e: Emote; until: number } | null>(null)
+  const [bubble, setBubble] = useState<string | null>(null)
+  const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const presence = useEboVillePresence({ estateId, label: presenceLabel ?? null, character, posRef })
   const onArriveRef = useRef<(key: string) => void>(onArrive)
   onArriveRef.current = (key: string) => {
     if (key === 'bench') {
@@ -1141,6 +1171,21 @@ export default function EbovilleScene({ character, theme, night, light, level, l
     const x = Math.min(b.cx + b.width / 2 - 0.5, Math.max(b.cx - b.width / 2 + 0.5, posRef.current.x))
     start({ b: bi, level: next, x, z: next === 0 ? STAND_G : STAND_UP }, null)
   }
+  const EMOJI: Record<Emote, string> = { hi: '👋', clap: '👏', jump: '🦘', sit: '🪑' }
+  const doEmote = (e: Emote) => {
+    if (busyRef.current) return
+    pathRef.current = []
+    pendingRef.current = null
+    sitRef.current = false
+    setSitting(false)
+    emoteRef.current = { e, until: performance.now() + emoteMs(e) }
+    presence.sendEmote(e)
+    setBubble(EMOJI[e])
+    if (bubbleTimer.current) clearTimeout(bubbleTimer.current)
+    if (e !== 'sit') bubbleTimer.current = setTimeout(() => setBubble(null), 2400)
+  }
+  useEffect(() => () => { if (bubbleTimer.current) clearTimeout(bubbleTimer.current) }, [])
+
   const standUp = () => {
     sitRef.current = false
     setSitting(false)
@@ -1263,7 +1308,8 @@ export default function EbovilleScene({ character, theme, night, light, level, l
       <Gate name={lodgeName} trusted={trusted} level={level} night={night} onTap={() => goPlace('gate')} />
 
       <Suspense fallback={null}>
-        <Character key={character} url={CHARACTERS[character]} height={2.0} pathRef={pathRef} posRef={posRef} pendingRef={pendingRef} busyRef={busyRef} sitRef={sitRef} onArriveRef={onArriveRef} joyRef={joyRef} joyMoveRef={joyMoveRef} joyBusyRef={joyBusyRef} flushRef={flushRef} onStandRef={onStandRef} />
+        <Character key={character} url={CHARACTERS[character]} height={2.0} pathRef={pathRef} posRef={posRef} pendingRef={pendingRef} busyRef={busyRef} sitRef={sitRef} onArriveRef={onArriveRef} joyRef={joyRef} joyMoveRef={joyMoveRef} joyBusyRef={joyBusyRef} flushRef={flushRef} onStandRef={onStandRef} emoteRef={emoteRef} bubble={bubble} />
+        <OtherPeople store={presence.store} ids={presence.ids} />
         <Piece url={BUILDING} height={4.5} position={[-(L.half + 3.5), 0, -4.5]} rotY={0.3} />
         <Piece url={BUILDING} height={4.5} position={[L.half + 3.5, 0, -4.5]} rotY={-0.3} />
         {!estate && (
@@ -1295,6 +1341,13 @@ export default function EbovilleScene({ character, theme, night, light, level, l
 
     </Canvas>
         <Joystick joyRef={joyRef} />
+        <div style={{ position: 'absolute', right: 14, bottom: 144, zIndex: 20, display: 'flex', gap: 6, pointerEvents: 'auto' }}>
+          {(['hi', 'clap', 'jump', 'sit'] as Emote[]).map((e) => (
+            <button key={e} type="button" aria-label={e === 'hi' ? 'Wave' : e === 'clap' ? 'Clap' : e === 'jump' ? 'Jump' : 'Sit'} style={{ ...chipBtn, width: 46, padding: 0, fontSize: 20 }} onClick={() => doEmote(e)}>
+              {EMOJI[e]}
+            </button>
+          ))}
+        </div>
         <div style={{ position: 'absolute', left: 10, bottom: 10, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 6, pointerEvents: 'auto' }}>
           {L.towers.length > 0 && (
             <>
@@ -1308,6 +1361,7 @@ export default function EbovilleScene({ character, theme, night, light, level, l
         </div>
         <div style={{ position: 'absolute', left: 8, top: 8, zIndex: 20, fontSize: 11, color: night ? '#e6f0ea' : FOREST, background: night ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '4px 8px', pointerEvents: 'none' }}>
           🟢 To let · 🟡 Yours · 🔵 Neighbour · ⚪ Taken
+          {presenceLabel ? <div>{presence.live ? `👥 ${presence.ids.length + 1} here now` : '👥 Connecting…'}</div> : null}
         </div>
     </div>
   )
