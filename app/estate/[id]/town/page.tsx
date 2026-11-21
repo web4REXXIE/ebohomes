@@ -317,6 +317,8 @@ export default function TownPage() {
                   doors={doors}
                   selectedDoor={panel?.kind === 'door' ? panel.id : null}
                   onArrive={onArrive}
+                  estateId={estate.id}
+                  presenceLabel={summary.role === 'owner' ? 'Management' : summary.myUnitLabel ? 'Unit ' + summary.myUnitLabel : null}
                 />
               </SceneGuard>
             )}
